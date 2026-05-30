@@ -111,9 +111,9 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_AZIMUTH, default=DEFAULT_AZIMUTH): NumberSelector(
                 NumberSelectorConfig(min=-180, max=180, step=0.1)
             ),
-            vol.Optional(CONF_PV_ACTUAL_SENSOR, default=""): _entity_selector(),
-            vol.Optional(CONF_PV_EXPORT_SENSOR, default=""): _entity_selector(),
-            vol.Optional(CONF_BATTERY_STAT_SENSOR, default=""): _entity_selector(),
+            vol.Optional(CONF_PV_ACTUAL_SENSOR): _entity_selector(),
+            vol.Optional(CONF_PV_EXPORT_SENSOR): _entity_selector(),
+            vol.Optional(CONF_BATTERY_STAT_SENSOR): _entity_selector(),
         })
         return self.async_show_form(step_id="site", data_schema=schema)
 
@@ -163,8 +163,8 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_BATTERY_MODE, default="net"): SelectSelector(
                 SelectSelectorConfig(options=["net", "separate"], mode="dropdown")
             ),
-            vol.Optional(CONF_BATTERY_NET_SENSOR, default=""): _entity_selector(),
-            vol.Optional(CONF_BATTERY_CHARGE_SENSOR, default=""): _entity_selector(),
+            vol.Optional(CONF_BATTERY_NET_SENSOR): _entity_selector(),
+            vol.Optional(CONF_BATTERY_CHARGE_SENSOR): _entity_selector(),
         })
         return self.async_show_form(step_id="battery", data_schema=schema)
 
@@ -227,9 +227,9 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
             vol.Required(CONF_AZIMUTH, default=current.get(CONF_AZIMUTH, DEFAULT_AZIMUTH)): NumberSelector(
                 NumberSelectorConfig(min=-180, max=180, step=0.1)
             ),
-            vol.Optional(CONF_PV_ACTUAL_SENSOR, default=current.get(CONF_PV_ACTUAL_SENSOR, "")): _entity_selector(),
-            vol.Optional(CONF_PV_EXPORT_SENSOR, default=current.get(CONF_PV_EXPORT_SENSOR, "")): _entity_selector(),
-            vol.Optional(CONF_BATTERY_STAT_SENSOR, default=current.get(CONF_BATTERY_STAT_SENSOR, "")): _entity_selector(),
+            vol.Optional(CONF_PV_ACTUAL_SENSOR, description={"suggested_value": current.get(CONF_PV_ACTUAL_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_PV_EXPORT_SENSOR, description={"suggested_value": current.get(CONF_PV_EXPORT_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_BATTERY_STAT_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_STAT_SENSOR)}): _entity_selector(),
         })
         return self.async_show_form(step_id="site", data_schema=schema)
 
