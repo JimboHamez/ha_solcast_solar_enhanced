@@ -1,0 +1,19 @@
+run_pv_tuning:
+  name: Run PV Tuning
+  description: >
+    Force an immediate PV tilt/azimuth optimisation run using all available
+    DB records. Requires the database feature to be enabled and sufficient
+    clear-sky records.
+
+run_dampening_update:
+  name: Run Dampening Update
+  description: >
+    Force an immediate recalculation of all hourly shading dampening factors
+    and push them to the base solcast_solar integration. Works even without
+    a database (falls back to base integration values).
+
+fetch_weather:
+  name: Fetch Weather
+  description: >
+    Force an immediate OpenWeatherMap weather fetch. Requires OWM to be
+    enabled and an API key to be configured.
