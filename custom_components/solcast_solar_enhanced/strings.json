@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Site & System",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "System capacity (kW DC)",
+          "tilt": "Panel tilt (°)",
+          "azimuth": "Panel azimuth (°)",
+          "pv_actual_sensor": "PV Power 30min Average sensor",
+          "pv_export_sensor": "PV Export 30min Average sensor",
+          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)"
+        }
+      },
+      "database": {
+        "title": "MySQL Database",
+        "data": {
+          "db_enabled": "Enable MySQL",
+          "db_host": "Host",
+          "db_port": "Port",
+          "db_user": "Username",
+          "db_password": "Password",
+          "db_name": "Database name",
+          "db_readonly": "Read-only mode"
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Enable OpenWeatherMap",
+          "owm_api_key": "API key"
+        }
+      },
+      "battery": {
+        "title": "Battery Storage",
+        "data": {
+          "battery_enabled": "Enable raw battery fallback",
+          "battery_mode": "Mode",
+          "battery_net_sensor": "Net battery power sensor (signed)",
+          "battery_charge_sensor": "Battery charge power sensor"
+        }
+      },
+      "tuning": {
+        "title": "PV Tuning & Dampening",
+        "data": {
+          "auto_tuning": "Auto PV tuning",
+          "auto_dampening": "Auto dampening",
+          "cloud_threshold": "Cloud threshold (%)",
+          "cloud_max_include": "Max cloud cover to include (%)",
+          "clipping_threshold": "Clipping threshold (fraction of capacity)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Site & System",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "System capacity (kW DC)",
+          "tilt": "Panel tilt (°)",
+          "azimuth": "Panel azimuth (°)",
+          "pv_actual_sensor": "PV Power 30min Average sensor",
+          "pv_export_sensor": "PV Export 30min Average sensor",
+          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)"
+        }
+      },
+      "database": {
+        "title": "MySQL Database",
+        "data": {
+          "db_enabled": "Enable MySQL",
+          "db_host": "Host",
+          "db_port": "Port",
+          "db_user": "Username",
+          "db_password": "Password",
+          "db_name": "Database name",
+          "db_readonly": "Read-only mode"
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Enable OpenWeatherMap",
+          "owm_api_key": "API key"
+        }
+      },
+      "battery": {
+        "title": "Battery Storage",
+        "data": {
+          "battery_enabled": "Enable raw battery fallback",
+          "battery_mode": "Mode",
+          "battery_net_sensor": "Net battery power sensor (signed)",
+          "battery_charge_sensor": "Battery charge power sensor"
+        }
+      },
+      "tuning": {
+        "title": "PV Tuning & Dampening",
+        "data": {
+          "auto_tuning": "Auto PV tuning",
+          "auto_dampening": "Auto dampening",
+          "cloud_threshold": "Cloud threshold (%)",
+          "cloud_max_include": "Max cloud cover to include (%)",
+          "clipping_threshold": "Clipping threshold (fraction of capacity)"
+        }
+      }
+    }
+  }
+}
