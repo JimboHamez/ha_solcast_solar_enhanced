@@ -192,14 +192,13 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
-        return SolcastEnhancedOptionsFlow(config_entry)
+        return SolcastEnhancedOptionsFlow()
 
 
 class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
     """Options flow — reconfigures all settings."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        super().__init__(config_entry)
+    def __init__(self) -> None:
         self._opts: dict[str, Any] = {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
