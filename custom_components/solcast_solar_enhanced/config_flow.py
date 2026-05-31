@@ -195,7 +195,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return SolcastEnhancedOptionsFlow()
 
 
-class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
+class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
     """Options flow — reconfigures all settings."""
 
     def __init__(self) -> None:
