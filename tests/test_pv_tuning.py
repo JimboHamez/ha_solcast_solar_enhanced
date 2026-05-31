@@ -22,10 +22,11 @@ def test_solar_above_horizon_at_melbourne_midday():
     assert zen < 90.0, f"Expected sun above horizon, got zenith={zen:.1f}°"
 
 
-def test_solar_below_horizon_at_midnight():
-    """Sun is below horizon at UTC midnight for any mid-latitude site."""
-    epoch = 1734739200  # 2024-12-21 00:00 UTC
-    az, zen = solar_position(epoch, -37.9, 145.0)
+def test_solar_below_horizon_at_utc_midnight():
+    """Sun is below horizon at 00:00 UTC for a site on the Greenwich meridian."""
+    # 2024-06-21 00:00 UTC = midnight for lon=0; sun is well below horizon at London
+    epoch = 1718928000
+    az, zen = solar_position(epoch, 51.5, 0.0)
     assert zen >= 90.0, f"Expected sun below horizon, got zenith={zen:.1f}°"
 
 

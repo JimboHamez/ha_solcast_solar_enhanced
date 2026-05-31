@@ -46,17 +46,21 @@ async def test_connect_returns_false_without_aiomysql(db):
 
 
 async def test_connect_returns_false_on_exception(db):
-    with patch("custom_components.solcast_solar_enhanced.db_manager.DB_AVAILABLE", True):
-        with patch("aiomysql.create_pool", side_effect=Exception("connection refused")):
-            result = await db.async_connect()
+    mock_aiomysql = MagicMock()
+    mock_aiomysql.create_pool = AsyncMock(side_effect=Exception("connection refused"))
+    with (
+        patch("custom_components.solcast_solar_enhanced.db_manager.DB_AVAILABLE", True),
+        patch("custom_components.solcast_solar_enhanced.db_manager.aiomysql", mock_aiomysql, create=True),
+    ):
+        result = await db.async_connect()
     assert result is False
 
 
 async def test_connect_success(db):
-    mock_pool = AsyncMock()
     mock_cursor = AsyncMock()
     mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
     mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_cursor.execute = AsyncMock()
     mock_cursor.fetchone = AsyncMock(return_value=(1,))
 
     mock_conn = AsyncMock()
@@ -64,11 +68,17 @@ async def test_connect_success(db):
     mock_conn.__aexit__ = AsyncMock(return_value=False)
     mock_conn.cursor = MagicMock(return_value=mock_cursor)
 
+    mock_pool = MagicMock()
     mock_pool.acquire = MagicMock(return_value=mock_conn)
 
-    with patch("custom_components.solcast_solar_enhanced.db_manager.DB_AVAILABLE", True):
-        with patch("aiomysql.create_pool", AsyncMock(return_value=mock_pool)):
-            result = await db.async_connect()
+    mock_aiomysql = MagicMock()
+    mock_aiomysql.create_pool = AsyncMock(return_value=mock_pool)
+
+    with (
+        patch("custom_components.solcast_solar_enhanced.db_manager.DB_AVAILABLE", True),
+        patch("custom_components.solcast_solar_enhanced.db_manager.aiomysql", mock_aiomysql, create=True),
+    ):
+        result = await db.async_connect()
 
     assert result is True
     assert db.available is True

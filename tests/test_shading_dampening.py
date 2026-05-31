@@ -65,10 +65,10 @@ def test_geometry_weight_far_azimuth():
 
 
 def test_geometry_weight_azimuth_wrap():
-    """Azimuth wraps correctly: 350° vs 10° is a 20° difference."""
-    w_wrapped = _geometry_weight(45.0, 10.0, 45.0, 350.0)
-    w_direct = _geometry_weight(45.0, 10.0, 45.0, 30.0)
-    assert w_wrapped > w_direct  # 20° difference < 20° difference means similar, but > far
+    """rec=355°, target=5° wraps to a 10° difference, giving a much higher weight than 40°."""
+    w_wrapped = _geometry_weight(45.0, 355.0, 45.0, 5.0)   # wrapped diff = 10°
+    w_far = _geometry_weight(45.0, 45.0, 45.0, 5.0)        # actual diff  = 40°
+    assert w_wrapped > w_far
 
 
 def test_geometry_weight_range():

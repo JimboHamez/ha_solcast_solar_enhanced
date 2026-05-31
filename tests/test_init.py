@@ -13,7 +13,6 @@ from custom_components.solcast_solar_enhanced import async_setup_entry, async_un
 async def test_setup_raises_when_base_missing(hass, mock_config_entry):
     """async_setup_entry raises ConfigEntryNotReady when solcast_solar is absent."""
     mock_config_entry.add_to_hass(hass)
-    # Ensure BASE_DOMAIN is not in hass.data and has no config entries
     hass.data.pop(BASE_DOMAIN, None)
 
     with pytest.raises(ConfigEntryNotReady):
@@ -33,12 +32,11 @@ async def test_setup_succeeds_with_base_present(hass, mock_config_entry, mock_ba
             "custom_components.solcast_solar_enhanced.SolcastEnhancedCoordinator",
             return_value=mock_coordinator,
         ),
-        patch(
-            "custom_components.solcast_solar_enhanced.hass.config_entries.async_forward_entry_setups",
-            return_value=True,
-            create=True,
+        patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            new=AsyncMock(return_value=None),
         ),
-        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
     ):
         result = await async_setup_entry(hass, mock_config_entry)
 
@@ -62,7 +60,11 @@ async def test_services_registered_after_setup(hass, mock_config_entry, mock_bas
             "custom_components.solcast_solar_enhanced.SolcastEnhancedCoordinator",
             return_value=mock_coordinator,
         ),
-        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+        patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         await async_setup_entry(hass, mock_config_entry)
 

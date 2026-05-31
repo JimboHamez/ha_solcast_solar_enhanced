@@ -138,7 +138,8 @@ def test_db_records_returns_count():
 
 
 def test_db_records_defaults_zero():
-    coord = _make_coordinator({})
+    # Non-empty dict (so the `if not data` guard passes) but no db_records key
+    coord = _make_coordinator({"pv_actual": 0.0})
     s = _make_sensor(DbRecordsSensor, coord)
     assert s.native_value == 0
 
