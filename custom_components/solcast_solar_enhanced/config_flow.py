@@ -97,10 +97,10 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema({
             vol.Required(CONF_LATITUDE, default=DEFAULT_LATITUDE): NumberSelector(
-                NumberSelectorConfig(min=-90, max=90, step=0.0001)
+                NumberSelectorConfig(min=-90, max=90, step=0.001)
             ),
             vol.Required(CONF_LONGITUDE, default=DEFAULT_LONGITUDE): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.0001)
+                NumberSelectorConfig(min=-180, max=180, step=0.001)
             ),
             vol.Required(CONF_CAPACITY_KW, default=DEFAULT_CAPACITY_KW): NumberSelector(
                 NumberSelectorConfig(min=0.1, max=1000, step=0.1)
@@ -212,10 +212,10 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema({
             vol.Required(CONF_LATITUDE, default=current.get(CONF_LATITUDE, DEFAULT_LATITUDE)): NumberSelector(
-                NumberSelectorConfig(min=-90, max=90, step=0.0001)
+                NumberSelectorConfig(min=-90, max=90, step=0.001)
             ),
             vol.Required(CONF_LONGITUDE, default=current.get(CONF_LONGITUDE, DEFAULT_LONGITUDE)): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.0001)
+                NumberSelectorConfig(min=-180, max=180, step=0.001)
             ),
             vol.Required(CONF_CAPACITY_KW, default=current.get(CONF_CAPACITY_KW, DEFAULT_CAPACITY_KW)): NumberSelector(
                 NumberSelectorConfig(min=0.1, max=1000, step=0.1)
