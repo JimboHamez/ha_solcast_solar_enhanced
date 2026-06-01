@@ -101,6 +101,7 @@ def run_tuning(
     export_clip_kw = export_limit_kw * clipping_threshold if export_limit_kw > 0 else 0.0
 
     filtered = []
+    export_limited_excluded = 0
     for r in records:
         pv_actual = float(r.get("pv_actual", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
@@ -116,6 +117,7 @@ def run_tuning(
         if total_pv >= clip_kw and pv_est >= clip_kw:
             continue
         if export_clip_kw > 0 and pv_export >= export_clip_kw:
+            export_limited_excluded += 1
             continue
         if pv_est <= 0 or zenith >= 90:
             continue
@@ -163,4 +165,5 @@ def run_tuning(
         "azimuth": float(result.x[1]),
         "rmse_kw": float(result.fun),
         "n_records": len(filtered),
+        "export_limited_excluded": export_limited_excluded,
     }

@@ -438,6 +438,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         return self._tuning_result["rmse_kw"] if self._tuning_result else None
 
     @property
+    def tuning_export_excluded(self) -> int:
+        return self._tuning_result.get("export_limited_excluded", 0) if self._tuning_result else 0
+
+    @property
     def tuning_extra(self) -> dict[str, Any]:
         if not self._tuning_result:
             return {}
@@ -445,6 +449,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "azimuth": self._tuning_result.get("azimuth"),
             "rmse_kw": self._tuning_result.get("rmse_kw"),
             "n_records": self._tuning_result.get("n_records"),
+            "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
         }
 
     @property

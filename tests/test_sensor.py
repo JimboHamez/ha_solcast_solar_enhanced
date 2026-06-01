@@ -15,6 +15,7 @@ from custom_components.solcast_solar_enhanced.sensor import (
     PvActualSensor,
     PvExportSensor,
     TuningAzimuthSensor,
+    TuningExportExcludedSensor,
     TuningRmseSensor,
     TuningTiltSensor,
     WeatherCloudsSensor,
@@ -125,6 +126,18 @@ def test_tuning_rmse_returns_value():
     coord = _make_coordinator({}, tuning_rmse=0.08)
     s = _make_sensor(TuningRmseSensor, coord)
     assert s.native_value == pytest.approx(0.08)
+
+
+def test_tuning_export_excluded_returns_count():
+    coord = _make_coordinator({}, tuning_export_excluded=17)
+    s = _make_sensor(TuningExportExcludedSensor, coord)
+    assert s.native_value == 17
+
+
+def test_tuning_export_excluded_returns_zero_before_first_run():
+    coord = _make_coordinator({}, tuning_export_excluded=0)
+    s = _make_sensor(TuningExportExcludedSensor, coord)
+    assert s.native_value == 0
 
 
 # ---------------------------------------------------------------------------

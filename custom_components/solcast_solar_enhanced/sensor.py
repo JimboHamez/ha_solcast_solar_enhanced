@@ -28,6 +28,7 @@ from .const import (
     SENSOR_PV_ACTUAL,
     SENSOR_PV_EXPORT,
     SENSOR_TUNING_AZIMUTH,
+    SENSOR_TUNING_EXPORT_EXCLUDED,
     SENSOR_TUNING_RMSE,
     SENSOR_TUNING_TILT,
     SENSOR_WEATHER_CLOUDS,
@@ -50,6 +51,7 @@ async def async_setup_entry(
         TuningTiltSensor(coordinator, entry),
         TuningAzimuthSensor(coordinator, entry),
         TuningRmseSensor(coordinator, entry),
+        TuningExportExcludedSensor(coordinator, entry),
         DbRecordsSensor(coordinator, entry),
         DampeningSensor(coordinator, entry),
         WeatherTempSensor(coordinator, entry),
@@ -169,6 +171,19 @@ class TuningRmseSensor(_EnhancedSensorBase):
     @property
     def native_value(self) -> float | None:
         return self.coordinator.tuning_rmse
+
+
+class TuningExportExcludedSensor(_EnhancedSensorBase):
+    _attr_name = "Tuning Export Limited Excluded"
+    _attr_icon = "mdi:transmission-tower-off"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_TUNING_EXPORT_EXCLUDED)
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.tuning_export_excluded
 
 
 class DbRecordsSensor(_EnhancedSensorBase):
