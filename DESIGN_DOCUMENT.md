@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **Prepared for collaboration with BJReplay/ha-solcast-solar**
-**Version 1.3 — May 2026**
+**Version 1.4 — June 2026**
 
 ---
 
@@ -121,10 +121,11 @@ is imported at module level: `BooleanSelector`, `NumberSelector`,
 `try/except` import with `TextSelector` fallback to prevent the config
 flow from failing if `EntitySelector` is unavailable or its API changes.
 
-**`OptionsFlowWithReload` pattern** — confirmed working on HA 2026.5.4:
-subclasses `OptionsFlowWithReload`, `__init__` accepts `config_entry` and
-calls `super().__init__(config_entry)`, `async_get_options_flow` passes
-`config_entry` to the constructor.
+**`OptionsFlow` pattern** — `OptionsFlowWithReload` was removed in HA 2024.4+.
+The options flow subclasses `config_entries.OptionsFlow` directly. `__init__`
+takes no arguments; `async_get_options_flow` returns `SolcastEnhancedOptionsFlow()`
+with no `config_entry` argument. Current options are read from
+`self.config_entry.data` and `self.config_entry.options` at the start of each step.
 
 ### Confirmed working selector configuration
 
@@ -307,17 +308,24 @@ directly comparable to `pv_estimate`. Used in:
 - Clipping detection: `total_pv >= capacity × clipping_threshold`
 - PV tuning RMSE: `total_pv` vs geometrically-scaled estimate
 
-### battery_charge column — schema migration
+### Schema initialisation and migration
 
-Added via idempotent `ALTER TABLE` on every startup:
+On every startup `_init_schema()` runs the following sequence:
+
+1. Queries `information_schema.TABLES` to check whether `solcast_data` already exists
+2. Issues `CREATE TABLE` **only if the table does not exist** — skips it entirely otherwise
+3. Runs two idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements for `battery_charge` and `pv_export`
+
+This means switching from `db_readonly = True` to `False` on an existing database does not fail if the MySQL user lacks `CREATE TABLE` privilege. The `SELECT` required for `information_schema` is available to any connected user.
 
 ```sql
 ALTER TABLE solcast_data
   ADD COLUMN IF NOT EXISTS battery_charge DECIMAL(10,4) NOT NULL DEFAULT 0.0000;
+ALTER TABLE solcast_data
+  ADD COLUMN IF NOT EXISTS pv_export DECIMAL(10,4) NOT NULL DEFAULT 0.0000;
 ```
 
-Existing databases are upgraded automatically. The column's presence is
-detected via `information_schema` on startup (`has_battery_col` flag).
+The `battery_charge` column's presence is detected via `information_schema` on startup (`has_battery_col` flag) and SQL queries substitute `0.0 AS battery_charge` when absent.
 
 ### Battery charge safety layers
 
@@ -367,13 +375,15 @@ Optimises panel tilt and azimuth to minimise RMSE between measured
 2. Filter: clear-sky only (`clouds < cloud_threshold`)
 3. Exclude: clipped records (`total_pv >= capacity × clipping_threshold`
    AND `pv_estimate >= capacity × clipping_threshold`)
-4. For each candidate (tilt, azimuth) compute cosine of incidence angle
+4. Exclude: export-limited records (`pv_export >= export_limit_kw × clipping_threshold`,
+   when `export_limit_kw > 0`) — see **Export limit filtering** below
+5. For each candidate (tilt, azimuth) compute cosine of incidence angle
    relative to nominal geometry (20° tilt, 0° azimuth)
-5. Scale Solcast estimates by the incidence angle ratio
-6. Minimise RMSE via `scipy.optimize.minimize` (L-BFGS-B, bounds
+6. Scale Solcast estimates by the incidence angle ratio
+7. Minimise RMSE via `scipy.optimize.minimize` (L-BFGS-B, bounds
    0–90° tilt, -180–180° azimuth, max 300 iterations)
-7. Run in `hass.async_add_executor_job` to avoid blocking the event loop
-8. Requires ≥10 qualifying records; runs daily
+8. Run in `hass.async_add_executor_job` to avoid blocking the event loop
+9. Requires ≥10 qualifying records; runs daily
 
 ### Solar position calculation
 
@@ -386,16 +396,34 @@ Uses solar declination, equation of time and hour angle to compute
 
 ```
 is_clipped = (
-    total_pv   >= capacity × clipping_threshold   AND
-    pv_estimate >= capacity × clipping_threshold   AND
-    clouds      <  cloud_threshold
+    total_pv    >= capacity × clipping_threshold   AND
+    pv_estimate >= capacity × clipping_threshold
 )
 ```
 
-Excludes inverter AC clipping and grid export curtailment from the
-tuning dataset. The `battery_full + export_capped` double-curtailment
-case (low total_pv despite high irradiance) is a known limitation
-documented in the README.
+Excludes inverter AC clipping from the tuning dataset. The
+`battery_full + export_capped` double-curtailment case (low `total_pv`
+despite high irradiance) is a known limitation.
+
+### Export limit filtering
+
+Sites with a grid export limit (e.g. 5 kW export cap on a 10 kW system)
+produce artificially low `total_pv` when export is being curtailed —
+`pv_actual` stays flat while `pv_export` is pegged at the limit. These
+records would otherwise pull the optimiser toward a shallower tilt or
+more northerly azimuth than reality.
+
+```
+is_export_limited = (
+    export_limit_kw > 0   AND
+    pv_export >= export_limit_kw × clipping_threshold
+)
+```
+
+The same `clipping_threshold` fraction is reused so that only records
+clearly at or near the ceiling are excluded — marginal export values are
+retained. `export_limit_kw = 0` (the default) disables the filter
+entirely.
 
 ### Results
 
@@ -735,6 +763,7 @@ Raw battery sensor fallback for sites without a Battery Statistics sensor:
 | Cloud threshold | 20% | 10–50% | Clear-sky cutoff |
 | Max cloud include | 60% | 20–100% | Hard exclusion ceiling |
 | Clipping threshold | 0.95 | 0.5–1.0 | Fraction of capacity |
+| Grid export limit (kW) | 0.0 | 0–100 | Exclude export-curtailed records from tuning; 0 = disabled |
 
 ### Full options reference
 
@@ -766,6 +795,7 @@ Raw battery sensor fallback for sites without a Battery Statistics sensor:
 | `CONF_CLOUD_THRESHOLD` | cloud\_threshold | 20 |
 | `CONF_CLOUD_MAX_INCLUDE` | cloud\_max\_include | 60 |
 | `CONF_CLIPPING_THRESHOLD` | clipping\_threshold | 0.95 |
+| `CONF_EXPORT_LIMIT_KW` | export\_limit\_kw | 0.0 |
 
 ---
 
@@ -909,6 +939,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.1 | May 2026 | Added pv\_actual and pv\_export sensor configuration; corrected DB storage to use real sensor readings; added PvActualSensor and PvExportSensor |
 | 1.2 | May 2026 | Replaced instantaneous sensor reads with HA Statistics integration (mean\_linear, 30-min, 1800 samples); added entity selector for all three sensors; added pv\_actual vs pv\_power naming question |
 | 1.3 | May 2026 | Full document completion: added code quality section with HA 2026.5.4 lint results and all fixes; documented confirmed working selector set; completed Feature 3 dampening section with full convergence tables, seasonal window, clipping exclusion details; completed Feature 4 short-range correction design; completed sensors table with all class names and units; completed configuration reference table; added Questions 8–10 for BJReplay |
+| 1.4 | Jun 2026 | Added export limit filtering to PV tuning (CONF\_EXPORT\_LIMIT\_KW, default 0 = disabled); updated DB schema init to check information\_schema before CREATE TABLE; corrected OptionsFlowWithReload reference to OptionsFlow |
 
 ---
 

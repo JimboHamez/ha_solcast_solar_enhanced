@@ -26,6 +26,7 @@ from .const import (
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
+    CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
     CONF_DB_HOST,
     CONF_DB_NAME,
@@ -44,6 +45,7 @@ from .const import (
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
+    DEFAULT_EXPORT_LIMIT_KW,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
 )
@@ -218,6 +220,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             float(opts.get(CONF_CAPACITY_KW, 5.0)),
             int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)),
             float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)),
+            float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW)),
             float(opts.get(CONF_TILT, 20.0)),
             float(opts.get(CONF_AZIMUTH, 0.0)),
         )

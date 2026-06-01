@@ -163,6 +163,7 @@ Raw sensor fallback for sites without a Battery Statistics sensor:
 | Cloud threshold % | 20 | Records below this are treated as clear-sky |
 | Max cloud % to include | 60 | Records above this are excluded entirely |
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
+| Grid export limit (kW) | 0 | Exclude records where export is at or near this ceiling; 0 = disabled |
 
 ---
 
@@ -213,6 +214,11 @@ Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to t
 ### PV tuning
 
 Uses `scipy.optimize.minimize` (L-BFGS-B) to find the panel tilt and azimuth that minimise RMSE between measured `total_pv` and the geometrically-scaled Solcast estimate. Runs daily in a thread executor. Requires ≥10 clear-sky, non-clipped records.
+
+Records are excluded from the tuning dataset if:
+- Cloud cover ≥ cloud threshold (cloudy periods distort the geometry signal)
+- Both `total_pv` and `pv_estimate` exceed the clipping threshold (inverter AC clipping)
+- `pv_export` is at or near the configured grid export limit (curtailed output would pull the optimiser toward a lower tilt/azimuth than reality)
 
 ---
 
@@ -280,7 +286,7 @@ CREATE TABLE solcast_data (
 );
 ```
 
-The schema is created automatically. Existing databases are migrated with idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements on every startup.
+The schema is created automatically on first run. On subsequent startups the integration checks `information_schema.TABLES` before issuing `CREATE TABLE`, so switching from read-only to read-write mode on an existing database does not require `CREATE` privilege. Columns added in later versions are migrated with idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements.
 
 ---
 

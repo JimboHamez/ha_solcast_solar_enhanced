@@ -36,6 +36,7 @@ from .const import (
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
+    CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
     CONF_DB_HOST,
     CONF_DB_NAME,
@@ -60,6 +61,7 @@ from .const import (
     DEFAULT_DB_HOST,
     DEFAULT_DB_NAME,
     DEFAULT_DB_PORT,
+    DEFAULT_EXPORT_LIMIT_KW,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
     DEFAULT_TILT,
@@ -186,6 +188,9 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_CLIPPING_THRESHOLD, default=DEFAULT_CLIPPING_THRESHOLD): NumberSelector(
                 NumberSelectorConfig(min=0.5, max=1.0, step=0.01)
             ),
+            vol.Required(CONF_EXPORT_LIMIT_KW, default=DEFAULT_EXPORT_LIMIT_KW): NumberSelector(
+                NumberSelectorConfig(min=0.0, max=100.0, step=0.1)
+            ),
         })
         return self.async_show_form(step_id="tuning", data_schema=schema)
 
@@ -300,6 +305,9 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             ),
             vol.Required(CONF_CLIPPING_THRESHOLD, default=current.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)): NumberSelector(
                 NumberSelectorConfig(min=0.5, max=1.0, step=0.01)
+            ),
+            vol.Required(CONF_EXPORT_LIMIT_KW, default=current.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW)): NumberSelector(
+                NumberSelectorConfig(min=0.0, max=100.0, step=0.1)
             ),
         })
         return self.async_show_form(step_id="tuning", data_schema=schema)

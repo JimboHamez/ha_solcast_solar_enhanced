@@ -124,12 +124,36 @@ def test_run_tuning_returns_result_with_clear_records():
 def test_run_tuning_excludes_clipped_records():
     """Records where both total_pv and pv_estimate exceed clip threshold are excluded."""
     capacity_kw = 5.0
-    clip = 0.95 * capacity_kw  # 4.75 kW
     records = [
         {"pv_actual": 4.8, "pv_export": 0.0, "battery_charge": 0.0,
          "pv_estimate": 4.9, "clouds": 5, "zenith": 30.0, "azimuth": 180.0}
         for _ in range(20)
     ]
-    # All records are clipped — should return None (< 10 filtered records)
     result = run_tuning(records, capacity_kw, 20, 0.95)
     assert result is None
+
+
+def test_run_tuning_excludes_export_limited_records():
+    """Records where pv_export >= export_limit * clipping_threshold are excluded."""
+    records = [
+        {"pv_actual": 2.0, "pv_export": 2.9, "battery_charge": 0.0,
+         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0, "azimuth": 180.0}
+        for _ in range(20)
+    ]
+    # pv_export 2.9 >= 3.0 * 0.95 = 2.85 → all records excluded → None
+    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=3.0)
+    assert result is None
+
+
+def test_run_tuning_zero_export_limit_disables_filter():
+    """export_limit_kw=0 (default) does not exclude any records based on export."""
+    records = [
+        {"pv_actual": 2.0, "pv_export": 2.9, "battery_charge": 0.0,
+         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0 + i * 0.1, "azimuth": 180.0 + i * 0.1}
+        for i in range(20)
+    ]
+    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=0.0,
+                        initial_tilt=20.0, initial_azimuth=0.0)
+    if result is None:
+        pytest.skip("scipy not available")
+    assert result["n_records"] == 20

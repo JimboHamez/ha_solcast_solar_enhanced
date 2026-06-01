@@ -88,6 +88,7 @@ def run_tuning(
     capacity_kw: float,
     cloud_threshold: int,
     clipping_threshold: float,
+    export_limit_kw: float = 0.0,
     initial_tilt: float = 20.0,
     initial_azimuth: float = 0.0,
 ) -> dict[str, Any] | None:
@@ -97,6 +98,7 @@ def run_tuning(
         return None
 
     clip_kw = capacity_kw * clipping_threshold
+    export_clip_kw = export_limit_kw * clipping_threshold if export_limit_kw > 0 else 0.0
 
     filtered = []
     for r in records:
@@ -112,6 +114,8 @@ def run_tuning(
         if clouds >= cloud_threshold:
             continue
         if total_pv >= clip_kw and pv_est >= clip_kw:
+            continue
+        if export_clip_kw > 0 and pv_export >= export_clip_kw:
             continue
         if pv_est <= 0 or zenith >= 90:
             continue
