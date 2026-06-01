@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **Prepared for collaboration with BJReplay/ha-solcast-solar**
-**Version 1.5 — June 2026**
+**Version 1.6 — June 2026**
 
 ---
 
@@ -295,14 +295,19 @@ CREATE TABLE solcast_data (
 
 ### Total PV energy balance
 
-Throughout the codebase total PV output is always computed as:
+Throughout the codebase total PV output is:
 
 ```
-total_pv = pv_actual + pv_export + battery_charge
+total_pv = pv_actual
 ```
 
-All three values are 30-minute linear averages from Statistics sensors,
-directly comparable to `pv_estimate`. Used in:
+`pv_actual` is the inverter's total AC output — it already includes
+self-consumption, grid export, and battery charging. Adding `pv_export`
+or `battery_charge` would double-count flows that are already measured
+by the generation meter. Both sensors are still stored in the DB for
+diagnostics and reference, but are not summed into `total_pv`.
+
+`total_pv` is used in:
 
 - Dampening ratio: `total_pv / pv_estimate`
 - Clipping detection: `total_pv >= capacity × clipping_threshold`
@@ -340,17 +345,11 @@ The `battery_charge` column's presence is detected via `information_schema` on s
 
 ### Sensor mapping guidance
 
-```
-Total PV Output = pv_actual + pv_export + battery_charge
-```
-
-| Scenario | pv_actual source | pv_export source |
-|---|---|---|
-| Generation meter (total inverter AC) | Generation meter | Grid export meter |
-| Self-consumption meter only | Self-consumption meter | Grid export meter |
-
-The sum `pv_actual + pv_export + battery_charge` must equal total panel
-generation (minus conversion losses) for dampening ratios to be correct.
+`pv_actual` must be configured to read from the **inverter generation meter**
+(total AC output). It already includes self-consumption, grid export, and
+battery charging — so `pv_export` and `battery_charge` must **not** be
+added to it. Configure `pv_actual` to a self-consumption-only meter will
+produce systematically low dampening factors and poor tuning results.
 
 ### Read-only mode
 
@@ -942,6 +941,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.3 | May 2026 | Full document completion: added code quality section with HA 2026.5.4 lint results and all fixes; documented confirmed working selector set; completed Feature 3 dampening section with full convergence tables, seasonal window, clipping exclusion details; completed Feature 4 short-range correction design; completed sensors table with all class names and units; completed configuration reference table; added Questions 8–10 for BJReplay |
 | 1.4 | Jun 2026 | Added export limit filtering to PV tuning (CONF\_EXPORT\_LIMIT\_KW, default 0 = disabled); updated DB schema init to check information\_schema before CREATE TABLE; corrected OptionsFlowWithReload reference to OptionsFlow |
 | 1.5 | Jun 2026 | Added TuningExportExcludedSensor — exposes count of records dropped by export limit filter from last tuning run; sensor count updated to 14 |
+| 1.6 | Jun 2026 | Fixed total_pv calculation in pv_tuning and shading_dampening — pv_actual is inverter AC output and already includes export and battery; removed double-counting |
 
 ---
 

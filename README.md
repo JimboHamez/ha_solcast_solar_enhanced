@@ -172,10 +172,10 @@ Raw sensor fallback for sites without a Battery Statistics sensor:
 ### Energy balance
 
 ```
-total_pv = pv_actual + pv_export + battery_charge
+total_pv = pv_actual
 ```
 
-All three values are 30-minute linear averages. Their sum equals total panel generation (minus conversion losses) and is directly comparable to Solcast's `pv_estimate`.
+`pv_actual` is the inverter's total AC output — it already includes the self-consumption, grid export, and battery charging portions. `pv_export` and `battery_charge` are recorded in the DB for diagnostics but are not added to `total_pv`. The 30-minute linear average from the inverter generation meter is directly comparable to Solcast's `pv_estimate`.
 
 ### Adaptive dampening
 
@@ -294,15 +294,10 @@ The schema is created automatically on first run. On subsequent startups the int
 ## Sensor mapping guidance
 
 ```
-Total PV Output = pv_actual + pv_export + battery_charge
+total_pv = pv_actual   (inverter AC output — includes all loads, export, and battery)
 ```
 
-| Scenario | pv_actual source | pv_export source |
-|---|---|---|
-| Generation meter (total inverter AC output) | Generation meter | Grid export meter |
-| Self-consumption meter only | Self-consumption meter | Grid export meter |
-
-The sum must equal total panel generation (minus conversion losses) for dampening ratios to be meaningful.
+`pv_export` and `battery_charge` sensors are recorded in the DB for reference and diagnostics but are not used in the `total_pv` calculation. Configure `pv_actual` to read from the inverter's generation meter (total AC output), not a self-consumption-only meter.
 
 ---
 

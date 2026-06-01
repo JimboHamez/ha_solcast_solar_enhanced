@@ -105,8 +105,7 @@ def run_tuning(
     for r in records:
         pv_actual = float(r.get("pv_actual", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
-        battery = float(r.get("battery_charge", 0) or 0)
-        total_pv = pv_actual + pv_export + battery
+        total_pv = pv_actual  # inverter AC output already includes export and battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
         clouds = int(r.get("clouds", 100) or 100)
         zenith = float(r.get("zenith", 90) or 90)
