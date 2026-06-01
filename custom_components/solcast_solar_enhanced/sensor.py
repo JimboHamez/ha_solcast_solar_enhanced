@@ -174,7 +174,7 @@ class TuningRmseSensor(_EnhancedSensorBase):
 
 
 class TuningExportExcludedSensor(_EnhancedSensorBase):
-    _attr_name = "Tuning Export Limited Excluded"
+    _attr_translation_key = "tuning_export_excluded"
     _attr_icon = "mdi:transmission-tower-off"
     _attr_state_class = SensorStateClass.MEASUREMENT
 

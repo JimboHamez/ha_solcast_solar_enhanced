@@ -110,5 +110,12 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Tuning Export Limited Excluded"
+      }
+    }
   }
 }

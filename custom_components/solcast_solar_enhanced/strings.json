@@ -105,8 +105,16 @@
           "auto_dampening": "Auto dampening",
           "cloud_threshold": "Cloud threshold (%)",
           "cloud_max_include": "Max cloud cover to include (%)",
-          "clipping_threshold": "Clipping threshold (fraction of capacity)"
+          "clipping_threshold": "Clipping threshold (fraction of capacity)",
+          "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Tuning Export Limited Excluded"
       }
     }
   }
