@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **Prepared for collaboration with BJReplay/ha-solcast-solar**
-**Version 1.4 — June 2026**
+**Version 1.5 — June 2026**
 
 ---
 
@@ -647,7 +647,7 @@ range 1–12). Will be added to the tuning step of the setup wizard.
 
 ---
 
-## Sensors (13 total)
+## Sensors (14 total)
 
 | Sensor class | `_attr_name` | Unit | Description |
 |---|---|---|---|
@@ -656,6 +656,7 @@ range 1–12). Will be added to the tuning step of the setup wizard.
 | `TuningTiltSensor` | Tuned Panel Tilt | ° | Optimised tilt |
 | `TuningAzimuthSensor` | Tuned Panel Azimuth | ° | Optimised azimuth |
 | `TuningRmseSensor` | Tuning RMSE | kW | Goodness of fit |
+| `TuningExportExcludedSensor` | Tuning Export Limited Excluded | — | Records dropped by export limit filter in last tuning run |
 | `DbRecordsSensor` | Database Records | — | Total DB record count |
 | `DampeningSensor` | Dampening Hours with DB Data | — | Hours with DB-derived factors |
 | `WeatherTempSensor` | Weather Temperature | °C | OWM current temperature |
@@ -940,6 +941,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.2 | May 2026 | Replaced instantaneous sensor reads with HA Statistics integration (mean\_linear, 30-min, 1800 samples); added entity selector for all three sensors; added pv\_actual vs pv\_power naming question |
 | 1.3 | May 2026 | Full document completion: added code quality section with HA 2026.5.4 lint results and all fixes; documented confirmed working selector set; completed Feature 3 dampening section with full convergence tables, seasonal window, clipping exclusion details; completed Feature 4 short-range correction design; completed sensors table with all class names and units; completed configuration reference table; added Questions 8–10 for BJReplay |
 | 1.4 | Jun 2026 | Added export limit filtering to PV tuning (CONF\_EXPORT\_LIMIT\_KW, default 0 = disabled); updated DB schema init to check information\_schema before CREATE TABLE; corrected OptionsFlowWithReload reference to OptionsFlow |
+| 1.5 | Jun 2026 | Added TuningExportExcludedSensor — exposes count of records dropped by export limit filter from last tuning run; sensor count updated to 14 |
 
 ---
 

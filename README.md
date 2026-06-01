@@ -222,7 +222,7 @@ Records are excluded from the tuning dataset if:
 
 ---
 
-## Sensors (13 total)
+## Sensors (14 total)
 
 | Sensor | Unit | Description |
 |---|---|---|
@@ -231,6 +231,7 @@ Records are excluded from the tuning dataset if:
 | Tuned Panel Tilt | ° | Optimised tilt from PV tuning |
 | Tuned Panel Azimuth | ° | Optimised azimuth from PV tuning |
 | Tuning RMSE | kW | Goodness of fit for tuned geometry |
+| Tuning Export Limited Excluded | — | Records dropped from last tuning run due to export limit filter |
 | Database Records | — | Total records in the DB |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active |
 | Weather Temperature | °C | OWM current temperature |
