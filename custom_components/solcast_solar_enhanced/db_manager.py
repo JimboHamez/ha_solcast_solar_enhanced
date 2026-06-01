@@ -94,7 +94,14 @@ class DbManager:
     async def _init_schema(self) -> None:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(CREATE_TABLE_SQL)
+                await cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.TABLES "
+                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'solcast_data'",
+                    (self._db,),
+                )
+                row = await cur.fetchone()
+                if not (row and row[0] > 0):
+                    await cur.execute(CREATE_TABLE_SQL)
                 try:
                     await cur.execute(ADD_BATTERY_COL_SQL)
                 except Exception:  # noqa: BLE001
