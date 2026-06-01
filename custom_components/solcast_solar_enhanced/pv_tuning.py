@@ -17,9 +17,24 @@ except ImportError:
     _LOGGER.info("scipy/numpy not installed — PV tuning disabled")
 
 
+def normalize_epoch(epoch: float) -> int:
+    """Coerce a Unix epoch to seconds.
+
+    Accepts seconds, milliseconds, or microseconds and scales them down to
+    seconds. A real seconds epoch stays below 1e11 until the year ~5138, so any
+    larger value is treated as a finer-grained unit and divided down. This guards
+    ``datetime.fromtimestamp`` against the "year NNNNN is out of range" error that
+    a millisecond timestamp would otherwise trigger.
+    """
+    value = float(epoch)
+    while value >= 1e11:
+        value /= 1000.0
+    return int(value)
+
+
 def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float, float]:
     """Return (azimuth_deg, zenith_deg) for a Unix epoch. Accurate to ±1°."""
-    dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+    dt = datetime.fromtimestamp(normalize_epoch(epoch), tz=timezone.utc)
     doy = dt.timetuple().tm_yday
     hour_utc = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
 

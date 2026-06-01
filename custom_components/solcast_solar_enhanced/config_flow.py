@@ -115,7 +115,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_PV_EXPORT_SENSOR): _entity_selector(),
             vol.Optional(CONF_BATTERY_STAT_SENSOR): _entity_selector(),
         })
-        return self.async_show_form(step_id="site", data_schema=schema)
+        return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
         """Step 2 — MySQL Database (optional)."""
@@ -278,8 +278,8 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, "net")): SelectSelector(
                 SelectSelectorConfig(options=["net", "separate"], mode="dropdown")
             ),
-            vol.Optional(CONF_BATTERY_NET_SENSOR, default=current.get(CONF_BATTERY_NET_SENSOR, "")): _entity_selector(),
-            vol.Optional(CONF_BATTERY_CHARGE_SENSOR, default=current.get(CONF_BATTERY_CHARGE_SENSOR, "")): _entity_selector(),
+            vol.Optional(CONF_BATTERY_NET_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_NET_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_BATTERY_CHARGE_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_CHARGE_SENSOR)}): _entity_selector(),
         })
         return self.async_show_form(step_id="battery", data_schema=schema)
 

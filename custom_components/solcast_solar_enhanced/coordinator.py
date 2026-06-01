@@ -48,7 +48,7 @@ from .const import (
     UPDATE_INTERVAL_MINUTES,
 )
 from .db_manager import DbManager
-from .pv_tuning import run_tuning, solar_position
+from .pv_tuning import normalize_epoch, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OWMClient
 
@@ -125,7 +125,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     async def _do_update(self) -> dict[str, Any]:
         opts = self._opts = {**self._entry.data, **self._entry.options}
-        now_epoch = int(time.time())
+        now_epoch = normalize_epoch(time.time())
 
         # Detect base integration
         base_coord = self._get_base_coordinator()
@@ -311,7 +311,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     async def async_force_dampening_update(self) -> None:
         opts = {**self._entry.data, **self._entry.options}
-        now_epoch = int(time.time())
+        now_epoch = normalize_epoch(time.time())
         lat = float(opts.get(CONF_LATITUDE, -37.9))
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
         await self._run_dampening(opts, now_epoch, lat, lon)
