@@ -13,12 +13,17 @@ except ImportError:
     DB_AVAILABLE = False
     _LOGGER.info("aiomysql not installed — database features disabled")
 
+# Default site identifier for single-site / aggregate rows (and back-fill of
+# pre-multi-site data). Kept in sync with const.DEFAULT_SITE_ID.
+DEFAULT_SITE = "_total"
+
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS solcast_data (
   `index`          INT AUTO_INCREMENT PRIMARY KEY,
   period_end       TEXT NOT NULL,
   period_end_epoch BIGINT NOT NULL,
   period_start     TEXT NOT NULL,
+  site             VARCHAR(64) NOT NULL DEFAULT '_total',
   pv_actual        DECIMAL(10,4) NOT NULL,
   pv_export        DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
   pv_estimate      DECIMAL(10,4) NOT NULL,
@@ -30,7 +35,7 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   clouds           INT NOT NULL,
   description      TEXT NOT NULL,
   battery_charge   DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
-  UNIQUE KEY uq_epoch (period_end_epoch),
+  UNIQUE KEY uq_epoch_site (period_end_epoch, site),
   INDEX idx_period_end ((CAST(period_end AS CHAR(25))))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 """
@@ -43,6 +48,11 @@ ALTER TABLE solcast_data
 ADD_PV_EXPORT_COL_SQL = """
 ALTER TABLE solcast_data
   ADD COLUMN IF NOT EXISTS pv_export DECIMAL(10,4) NOT NULL DEFAULT 0.0000;
+"""
+
+ADD_SITE_COL_SQL = """
+ALTER TABLE solcast_data
+  ADD COLUMN IF NOT EXISTS site VARCHAR(64) NOT NULL DEFAULT '_total';
 """
 
 
@@ -66,6 +76,7 @@ class DbManager:
         self._readonly = readonly
         self._pool: Any = None
         self.has_battery_col = True
+        self.has_site_col = True
 
     async def async_connect(self) -> bool:
         """Create pool and initialise schema. Returns True on success."""
@@ -110,6 +121,45 @@ class DbManager:
                     await cur.execute(ADD_PV_EXPORT_COL_SQL)
                 except Exception:  # noqa: BLE001
                     pass
+                try:
+                    await cur.execute(ADD_SITE_COL_SQL)
+                except Exception:  # noqa: BLE001
+                    pass
+                await self._migrate_unique_key(cur)
+
+    async def _migrate_unique_key(self, cur: Any) -> None:
+        """Replace the legacy single-column unique key with (period_end_epoch, site).
+
+        MySQL has no ``DROP INDEX IF EXISTS``, so existence is checked first.
+        Back-filled rows all carry site '_total', so the composite key stays
+        unique and the swap is safe on existing data.
+        """
+        try:
+            await cur.execute(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'solcast_data' "
+                "AND INDEX_NAME = 'uq_epoch_site'",
+                (self._db,),
+            )
+            row = await cur.fetchone()
+            if row and row[0] > 0:
+                return  # already migrated
+            # Add the new composite unique key, then drop the legacy one.
+            await cur.execute(
+                "ALTER TABLE solcast_data "
+                "ADD UNIQUE KEY uq_epoch_site (period_end_epoch, site)"
+            )
+            await cur.execute(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'solcast_data' "
+                "AND INDEX_NAME = 'uq_epoch'",
+                (self._db,),
+            )
+            row = await cur.fetchone()
+            if row and row[0] > 0:
+                await cur.execute("ALTER TABLE solcast_data DROP INDEX uq_epoch")
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Unique-key migration skipped: %s", exc)
 
     async def _detect_columns(self) -> None:
         try:
@@ -123,39 +173,79 @@ class DbManager:
                     )
                     row = await cur.fetchone()
                     self.has_battery_col = bool(row and row[0] > 0)
+                    await cur.execute(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'solcast_data' "
+                        "AND COLUMN_NAME = 'site'",
+                        (self._db,),
+                    )
+                    row = await cur.fetchone()
+                    self.has_site_col = bool(row and row[0] > 0)
         except Exception:  # noqa: BLE001
             self.has_battery_col = False
+            self.has_site_col = False
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:
-        """Insert a single record. Ignores duplicate epoch. Returns True on success."""
+        """Insert a single record. Ignores duplicate (epoch, site). Returns True on success."""
         if not self._pool or self._readonly:
             return False
         battery = record.get("battery_charge", 0.0) or 0.0
+        site = record.get("site", DEFAULT_SITE) or DEFAULT_SITE
+        # When the site column hasn't been migrated yet, fall back to the legacy
+        # column set so inserts still succeed.
+        if self.has_site_col:
+            columns = (
+                "(period_end, period_end_epoch, period_start, site, "
+                " pv_actual, pv_export, pv_estimate, pv_estimate10, pv_estimate90, "
+                " azimuth, zenith, temp, clouds, description, battery_charge)"
+            )
+            placeholders = "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            values: tuple[Any, ...] = (
+                record["period_end"],
+                record["period_end_epoch"],
+                record["period_start"],
+                site,
+                record["pv_actual"],
+                record.get("pv_export", 0.0) or 0.0,
+                record["pv_estimate"],
+                record["pv_estimate10"],
+                record["pv_estimate90"],
+                record["azimuth"],
+                record["zenith"],
+                record["temp"],
+                record["clouds"],
+                record["description"],
+                battery,
+            )
+        else:
+            columns = (
+                "(period_end, period_end_epoch, period_start, "
+                " pv_actual, pv_export, pv_estimate, pv_estimate10, pv_estimate90, "
+                " azimuth, zenith, temp, clouds, description, battery_charge)"
+            )
+            placeholders = "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            values = (
+                record["period_end"],
+                record["period_end_epoch"],
+                record["period_start"],
+                record["pv_actual"],
+                record.get("pv_export", 0.0) or 0.0,
+                record["pv_estimate"],
+                record["pv_estimate10"],
+                record["pv_estimate90"],
+                record["azimuth"],
+                record["zenith"],
+                record["temp"],
+                record["clouds"],
+                record["description"],
+                battery,
+            )
         try:
             async with self._pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "INSERT IGNORE INTO solcast_data "
-                        "(period_end, period_end_epoch, period_start, "
-                        " pv_actual, pv_export, pv_estimate, pv_estimate10, pv_estimate90, "
-                        " azimuth, zenith, temp, clouds, description, battery_charge) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (
-                            record["period_end"],
-                            record["period_end_epoch"],
-                            record["period_start"],
-                            record["pv_actual"],
-                            record.get("pv_export", 0.0) or 0.0,
-                            record["pv_estimate"],
-                            record["pv_estimate10"],
-                            record["pv_estimate90"],
-                            record["azimuth"],
-                            record["zenith"],
-                            record["temp"],
-                            record["clouds"],
-                            record["description"],
-                            battery,
-                        ),
+                        f"INSERT IGNORE INTO solcast_data {columns} {placeholders}",
+                        values,
                     )
             return True
         except Exception as exc:  # noqa: BLE001
@@ -175,12 +265,27 @@ class DbManager:
         except Exception:  # noqa: BLE001
             return 0
 
+    def _site_filter(self, site: str | None) -> tuple[str, tuple[Any, ...]]:
+        """Build an optional ``AND site = %s`` clause.
+
+        Returns ``("", ())`` when no site is requested or the column is absent,
+        preserving the pre-multi-site aggregate behaviour.
+        """
+        if site is None or not self.has_site_col:
+            return "", ()
+        return " AND site = %s", (site,)
+
     async def async_get_records_for_dampening(
         self,
         slot_doy: int,
         window_days: int = 14,
+        site: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch records within ±window_days calendar day-of-year across all years."""
+        """Fetch records within ±window_days calendar day-of-year across all years.
+
+        When ``site`` is given, restrict to that site; otherwise aggregate across
+        all rows (legacy behaviour).
+        """
         if not self._pool:
             return []
         battery_col = (
@@ -188,6 +293,7 @@ class DbManager:
             if self.has_battery_col
             else "0.0 AS battery_charge"
         )
+        site_clause, site_params = self._site_filter(site)
         try:
             async with self._pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
@@ -196,16 +302,36 @@ class DbManager:
                         f"pv_estimate90, azimuth, zenith, clouds, {battery_col} "
                         f"FROM solcast_data "
                         f"WHERE pv_actual > 0 AND pv_estimate > 0 "
-                        f"AND ABS(DAYOFYEAR(CONVERT_TZ(FROM_UNIXTIME(period_end_epoch), '+00:00', '+00:00')) - %s) <= %s",
-                        (slot_doy, window_days),
+                        f"AND ABS(DAYOFYEAR(CONVERT_TZ(FROM_UNIXTIME(period_end_epoch), '+00:00', '+00:00')) - %s) <= %s"
+                        f"{site_clause}",
+                        (slot_doy, window_days, *site_params),
                     )
                     return await cur.fetchall()
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("DB dampening query failed: %s", exc)
             return []
 
-    async def async_get_records_for_tuning(self, limit: int = 2000) -> list[dict[str, Any]]:
-        """Fetch recent records for PV tuning."""
+    async def async_get_sites(self) -> list[str]:
+        """Return the distinct site identifiers present in the table."""
+        if not self._pool or not self.has_site_col:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT DISTINCT site FROM solcast_data")
+                    rows = await cur.fetchall()
+                    return [r[0] for r in rows if r and r[0] is not None]
+        except Exception:  # noqa: BLE001
+            return []
+
+    async def async_get_records_for_tuning(
+        self, limit: int = 2000, site: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Fetch recent records for PV tuning.
+
+        When ``site`` is given, restrict to that site; otherwise aggregate across
+        all rows (legacy behaviour).
+        """
         if not self._pool:
             return []
         battery_col = (
@@ -213,6 +339,7 @@ class DbManager:
             if self.has_battery_col
             else "0.0 AS battery_charge"
         )
+        site_clause, site_params = self._site_filter(site)
         try:
             async with self._pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
@@ -220,8 +347,9 @@ class DbManager:
                         f"SELECT pv_actual, pv_export, pv_estimate, azimuth, zenith, clouds, "
                         f"{battery_col} "
                         f"FROM solcast_data "
-                        f"WHERE pv_actual > 0 ORDER BY period_end_epoch DESC LIMIT %s",
-                        (limit,),
+                        f"WHERE pv_actual > 0{site_clause} "
+                        f"ORDER BY period_end_epoch DESC LIMIT %s",
+                        (*site_params, limit),
                     )
                     return await cur.fetchall()
         except Exception as exc:  # noqa: BLE001

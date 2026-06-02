@@ -13,7 +13,9 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 1. **MySQL database storage** of PV power averages, forecasts, solar position, weather and battery data
 2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via scipy (L-BFGS-B)
 3. **Adaptive Shading Dampening** — quality-weighted dampening that blends with and progressively replaces the base integration's manual dampening as historical data accumulates
-4. **Short-range Forecast Correction** — planned, not yet implemented
+4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
+5. **Flexible PV input** — read either an averaged-power sensor (kW) or a cumulative energy counter (Wh/kWh), with auto-detection
+6. **Short-range Forecast Correction** — planned, not yet implemented
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
 
@@ -65,7 +67,9 @@ sensor:
     sampling_size: 1800
 ```
 
-> Source sensors must report **power in kW** (not energy in kWh). The `mean_linear` characteristic computes a true time-weighted average over the 30-minute window, directly comparable to Solcast's period estimates.
+> The `mean_linear` characteristic computes a true time-weighted average over the 30-minute window, directly comparable to Solcast's period estimates.
+>
+> **Statistics sensors are no longer mandatory.** You can instead point the integration directly at a **cumulative energy counter** (Wh/kWh, `state_class: total_increasing`) and it will derive average kW from the energy delta over each interval — see [PV sensor input modes](#pv-sensor-input-modes). This avoids a race where a 30-minute averaging window can be cleared before the integration reads it. Choose whichever you have; auto-detection picks the right method.
 
 ### 3. MySQL database (optional)
 
@@ -111,7 +115,7 @@ Both dependencies use lazy imports — if not installed, the relevant features a
 
 Go to **Settings → Devices & Services → Add Integration → Solcast Solar Enhanced**.
 
-The setup wizard has 5 steps:
+The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automatically only when more than one Solcast site is detected):
 
 ### Step 1 — Site & System
 
@@ -121,9 +125,11 @@ The setup wizard has 5 steps:
 | System capacity (kW DC) | Total panel DC capacity |
 | Panel tilt | 0° = flat, 90° = vertical |
 | Panel azimuth | 0° = North, 90° = East, −90° = West |
-| PV Power 30min Average sensor | Statistics sensor for generation |
-| PV Export 30min Average sensor | Statistics sensor for grid export |
-| Battery Charge 30min Average sensor | Statistics sensor for battery charge (optional) |
+| PV Power / Generation sensor | Averaged-power sensor **or** cumulative energy counter for generation |
+| PV sensor type | `Auto-detect` (default), `Power (kW/W)`, or `Energy counter (kWh/Wh/MWh)` |
+| PV Export sensor | Averaged-power sensor **or** cumulative export energy counter |
+| PV Export sensor type | As above, for the export sensor |
+| Battery Charge sensor | Statistics sensor for battery charge (optional) |
 
 ### Step 2 — MySQL Database
 
@@ -163,11 +169,38 @@ Raw sensor fallback for sites without a Battery Statistics sensor:
 | Cloud threshold % | 20 | Records below this are treated as clear-sky |
 | Max cloud % to include | 60 | Records above this are excluded entirely |
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
-| Grid export limit (kW) | 0 | Exclude records where export is at or near this ceiling; 0 = disabled |
+| Grid export limit (kW) | 0 | Exclude records where export is at or near this ceiling; 0 = disabled. If the base integration has a `site_export_limit` set, it is used automatically and this field is the fallback |
+
+### Step 6 — Per-site sensor mapping (multi-site only)
+
+Shown automatically when more than one Solcast site is detected. Sites are auto-discovered from the base integration's rooftop sensors (orientation and capacity are read from Solcast, so per-site tuning is seeded automatically). For each site you provide:
+
+| Field | Description |
+|---|---|
+| `<site>` — generation sensor | The sensor that measures this array's output. Several arrays may share one inverter AC sensor |
+| `<site>` — DC/MPPT sensor (optional) | The per-string DC sensor, when arrays share an AC output and the inverter exposes per-MPPT DC (e.g. Fronius) |
+| `<site>` — sensor type | Auto-detect / power / energy counter |
+
+How the mapping is interpreted:
+
+- **One array → its own sensor** (e.g. Enphase per-array AC): tuned and dampened individually.
+- **Several arrays → one AC sensor + per-MPPT DC**: the measured AC is split between arrays by each string's share of DC (`ac × dcᵢ / Σ dc`), giving per-array generation in the AC domain. Each array is then tuned/dampened individually.
+- **Several arrays → one AC sensor, no DC**: cannot be separated, so those sites are left unmapped (per-array output isn't observable).
+
+Leave a site blank to skip it. With no mapping (or a single site), the integration behaves exactly as a single-site install.
 
 ---
 
 ## How it works
+
+### PV sensor input modes
+
+Each PV sensor (generation and export) can be read in one of two ways, chosen per sensor (default `Auto-detect`):
+
+- **Power** (`kW`/`W`) — the instantaneous/averaged reading is used directly (converted to kW). This is the classic Statistics-sensor path.
+- **Energy counter** (`kWh`/`Wh`/`MWh`, `state_class: total_increasing`) — the average power for the interval is derived from the energy delta over the *actual* elapsed time: `avg_kW = ΔkWh / hours`. Using the real elapsed time (not a hard-coded 30 min) makes it robust to polling drift. Counter resets/rollovers (negative delta), the first reading after a restart, and abnormally long gaps are detected and excluded. Baselines are persisted across restarts.
+
+`Auto-detect` inspects the sensor's `state_class` and `unit_of_measurement` to choose. Energy-counter mode avoids the race where an external 30-minute averaging sensor can be cleared before the integration reads it.
 
 ### Energy balance
 
@@ -201,7 +234,7 @@ final = (1 − α) × base_factor + α × db_factor
 
 When α < 0.5, the result is clamped to ±15% of the base factor to prevent early instability.
 
-Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to the base integration via `solcast_solar.set_dampening_factor`.
+Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to the base integration via the `solcast_solar.set_dampening` service (`damp_factor` as a comma-separated string). In multi-site mode a dampening set is pushed **per site** (`set_dampening` with the site's `resource_id`), which overrides the base's global dampening for that site.
 
 **Convergence time by climate:**
 
@@ -219,6 +252,12 @@ Records are excluded from the tuning dataset if:
 - Cloud cover ≥ cloud threshold (cloudy periods distort the geometry signal)
 - Both `total_pv` and `pv_estimate` exceed the clipping threshold (inverter AC clipping)
 - `pv_export` is at or near the configured grid export limit (curtailed output would pull the optimiser toward a lower tilt/azimuth than reality)
+
+In **multi-site** mode each individually-measured site is tuned separately against its own rows, seeded from that array's Solcast tilt/azimuth. The property-wide export limit still applies to every site's exclusion (one export meter for the whole property). Per-site results appear as a `per_site` attribute on the **Tuned Panel Tilt** sensor.
+
+### Multi-site
+
+When the base integration has more than one rooftop site, the enhanced integration discovers them automatically and stores one row per site (keyed by Solcast `resource_id`) alongside the property-wide aggregate (`_total`). Aggregate tuning/dampening continue to use the `_total` rows, so single-site behaviour is unchanged; per-site tuning and dampening are layered on top. See [Step 6](#step-6--per-site-sensor-mapping-multi-site-only) for how generation is mapped to sites.
 
 ---
 
@@ -252,6 +291,8 @@ hour_14_avg_quality:      0.81     # mean combined weight of contributing record
 overall_source:           blended
 ```
 
+In multi-site mode the **Tuned Panel Tilt** sensor additionally carries a `per_site` attribute — a list of `{name, resource_id, tilt, azimuth, rmse_kw, n_records}` for each individually-tuned array.
+
 ---
 
 ## Services
@@ -272,6 +313,7 @@ CREATE TABLE solcast_data (
   period_end       TEXT NOT NULL,
   period_end_epoch BIGINT NOT NULL,
   period_start     TEXT NOT NULL,
+  site             VARCHAR(64) NOT NULL DEFAULT '_total',  -- Solcast resource_id, or '_total' aggregate
   pv_actual        DECIMAL(10,4) NOT NULL,        -- 30-min avg generation (kW)
   pv_export        DECIMAL(10,4) NOT NULL,        -- 30-min avg export (kW)
   pv_estimate      DECIMAL(10,4) NOT NULL,        -- Solcast p50 estimate
@@ -283,11 +325,13 @@ CREATE TABLE solcast_data (
   clouds           INT NOT NULL,                  -- OWM cloud cover (0–100)
   description      TEXT NOT NULL,                 -- OWM weather description
   battery_charge   DECIMAL(10,4) NOT NULL,        -- 30-min avg battery charge (kW)
-  UNIQUE KEY uq_epoch (period_end_epoch)
+  UNIQUE KEY uq_epoch_site (period_end_epoch, site)
 );
 ```
 
 The schema is created automatically on first run. On subsequent startups the integration checks `information_schema.TABLES` before issuing `CREATE TABLE`, so switching from read-only to read-write mode on an existing database does not require `CREATE` privilege. Columns added in later versions are migrated with idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements.
+
+When upgrading from a single-site schema, the `site` column is added (back-filling existing rows to `_total`) and the unique key is migrated from `(period_end_epoch)` to `(period_end_epoch, site)` — checked against `information_schema` so it runs at most once and is safe to re-run.
 
 ---
 
@@ -298,6 +342,29 @@ total_pv = pv_actual   (inverter AC output — includes all loads, export, and b
 ```
 
 `pv_export` and `battery_charge` sensors are recorded in the DB for reference and diagnostics but are not used in the `total_pv` calculation. Configure `pv_actual` to read from the inverter's generation meter (total AC output), not a self-consumption-only meter.
+
+---
+
+## Standalone tuning tool
+
+`tools/standalone_tuning.py` runs the **same** tilt/azimuth optimisation outside Home Assistant, against the MySQL history or a CSV export — handy for experimenting with parameters or validating a site without waiting for the daily run. It imports the integration's tuning functions, so results match the running integration.
+
+```bash
+# Whole-property tuning from MySQL
+python tools/standalone_tuning.py --db solcast --user solcast --password secret --capacity 6.6
+
+# One site, seeded with that array's orientation
+python tools/standalone_tuning.py --db solcast --user solcast --password secret \
+    --site b68d-c05a --capacity 5 --tilt 30 --azimuth 67.5
+
+# Every site in the table
+python tools/standalone_tuning.py --db solcast --user solcast --password secret --all-sites
+
+# No database — tune a CSV with the same columns
+python tools/standalone_tuning.py --csv history.csv --capacity 5
+```
+
+Requires `numpy` + `scipy`, and for DB mode one of `pymysql` or `mysql-connector-python` (CSV mode needs neither). Run `--help` for all options.
 
 ---
 

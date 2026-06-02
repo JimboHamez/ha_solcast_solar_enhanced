@@ -9,9 +9,17 @@
           "capacity_kw": "System capacity (kW DC)",
           "tilt": "Panel tilt (°)",
           "azimuth": "Panel azimuth (°)",
-          "pv_actual_sensor": "PV Power 30min Average sensor",
-          "pv_export_sensor": "PV Export 30min Average sensor",
-          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)"
+          "pv_actual_sensor": "PV Power / Generation sensor",
+          "pv_export_sensor": "PV Export sensor",
+          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
+          "pv_actual_input_mode": "PV sensor type",
+          "pv_export_input_mode": "PV Export sensor type"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Averaged-power sensor (e.g. 30-min avg kW) or a cumulative energy counter (Wh/kWh).",
+          "pv_export_sensor": "Averaged-power sensor or a cumulative export energy counter (Wh/kWh).",
+          "pv_actual_input_mode": "How to read the sensor. 'auto' detects power vs energy counter from the entity.",
+          "pv_export_input_mode": "How to read the export sensor. 'auto' detects power vs energy counter."
         }
       },
       "database": {
@@ -52,6 +60,10 @@
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         }
+      },
+      "sites": {
+        "title": "Per-site sensor mapping",
+        "description": "{count} Solcast sites detected. For each array, choose the sensor that measures its generation. If several arrays share one inverter AC output, give each its DC/MPPT sensor too so output can be apportioned. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
       }
     }
   },
@@ -65,9 +77,17 @@
           "capacity_kw": "System capacity (kW DC)",
           "tilt": "Panel tilt (°)",
           "azimuth": "Panel azimuth (°)",
-          "pv_actual_sensor": "PV Power 30min Average sensor",
-          "pv_export_sensor": "PV Export 30min Average sensor",
-          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)"
+          "pv_actual_sensor": "PV Power / Generation sensor",
+          "pv_export_sensor": "PV Export sensor",
+          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
+          "pv_actual_input_mode": "PV sensor type",
+          "pv_export_input_mode": "PV Export sensor type"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Averaged-power sensor (e.g. 30-min avg kW) or a cumulative energy counter (Wh/kWh).",
+          "pv_export_sensor": "Averaged-power sensor or a cumulative export energy counter (Wh/kWh).",
+          "pv_actual_input_mode": "How to read the sensor. 'auto' detects power vs energy counter from the entity.",
+          "pv_export_input_mode": "How to read the export sensor. 'auto' detects power vs energy counter."
         }
       },
       "database": {
@@ -108,6 +128,10 @@
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         }
+      },
+      "sites": {
+        "title": "Per-site sensor mapping",
+        "description": "{count} Solcast sites detected. For each array, choose the sensor that measures its generation. If several arrays share one inverter AC output, give each its DC/MPPT sensor too so output can be apportioned. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
       }
     }
   },
@@ -115,6 +139,18 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Tuning Export Limited Excluded"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Auto-detect",
+        "power_kw": "Power (kW)",
+        "power_w": "Power (W)",
+        "energy_kwh": "Energy counter (kWh)",
+        "energy_wh": "Energy counter (Wh)",
+        "energy_mwh": "Energy counter (MWh)"
       }
     }
   }
