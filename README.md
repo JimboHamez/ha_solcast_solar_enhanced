@@ -220,6 +220,8 @@ When α < 0.5, the result is clamped to ±15% of the base factor to prevent earl
 
 Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to the base integration via the `solcast_solar.set_dampening` service (`damp_factor` as a comma-separated string). In multi-site mode a dampening set is pushed **per site** (`set_dampening` with the site's `resource_id`), which overrides the base's global dampening for that site.
 
+> **Important:** the base integration's own **automatic dampening** must be **disabled** (Solcast PV Forecast → Configure). While it is on, the base rejects all manual `set_dampening` calls, so this integration cannot apply its factors — it detects this, skips the push, and logs a one-time warning.
+
 **Convergence time by climate:**
 
 | Climate | Threshold | Time to full confidence |

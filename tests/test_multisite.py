@@ -276,3 +276,28 @@ def test_derive_groups_shared_ac_no_dc_omitted():
 
 def test_derive_groups_blank_assignment_ignored():
     assert _derive_groups({"A": {"ac": None, "dc": None, "mode": "auto"}}) == []
+
+
+# ---------------------------------------------------------------------------
+# base auto_dampen guard
+# ---------------------------------------------------------------------------
+
+async def test_read_base_auto_dampen_false_when_absent(hass, coordinator):
+    assert coordinator._read_base_auto_dampen() is False
+
+
+async def test_run_dampening_skips_push_when_base_auto_dampen(hass, coordinator, monkeypatch):
+    """When the base has auto_dampen on, no set_dampening call is made."""
+    monkeypatch.setattr(coordinator, "_read_base_auto_dampen", lambda: True)
+
+    async def _fake_slots(*a, **k):
+        return [{"factor": 1.0} for _ in range(48)]
+
+    monkeypatch.setattr(coordinator, "_compute_dampening_slots", _fake_slots)
+    pushed = []
+    monkeypatch.setattr(coordinator, "_push_dampening",
+                        lambda *a, **k: pushed.append((a, k)))
+
+    await coordinator._run_dampening({}, 1_000_000, -37.9, 145.0)
+    assert pushed == []  # push skipped
+    assert coordinator._auto_dampen_warned is True
