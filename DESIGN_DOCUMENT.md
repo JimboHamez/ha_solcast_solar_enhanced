@@ -61,15 +61,16 @@ base solcast_solar coordinator
         ▼
 solcast_solar_enhanced coordinator
         │
-        ├── read pv_power      from HA Statistics sensor (30-min linear avg)
-        ├── read pv_export     from HA Statistics sensor (30-min linear avg)
-        ├── read battery       from HA Statistics sensor (30-min linear avg)
+        ├── read pv_actual     inverter sensor → avg kW (energy counter or power)
+        ├── read pv_export     inverter/grid sensor → avg kW
+        ├── read battery       battery sensor (energy counter or power)
         │                      └─ falls back to raw battery sensor if not configured
+        ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
         ├── fetch OWM weather  (temp °C, clouds 0–100, description text)
-        ├── persist record     to MySQL
-        ├── run PV tuning      scipy L-BFGS-B (daily, executor thread)
+        ├── persist records    to MySQL ('_total' + one row per site)
+        ├── run PV tuning      scipy L-BFGS-B (daily, executor thread; per-site)
         ├── compute dampening  quality-weighted blend of DB + base integration
-        └── push dampening     → base integration set_dampening_factor service
+        └── push dampening     → base integration set_dampening service (per-site)
 ```
 
 ### API quota impact
@@ -152,45 +153,39 @@ except Exception:
 
 ---
 
-## HA Statistics Sensor Prerequisite
+## PV Sensor Input
 
-### Why Statistics sensors are used
+### Requirement
 
-`pv_actual`, `pv_export` and `battery_charge` must represent the
-**true 30-minute average power** over each period, not an instantaneous
-reading. This is critical because Solcast's `pv_estimate` is itself a
-30-minute average. The dampening ratio `total_pv / pv_estimate` is only
-meaningful when both values represent the same time-averaged quantity.
+`pv_actual`, `pv_export` and `battery_charge` must represent the **average
+power over each 30-minute period**, not a raw instantaneous reading, because
+Solcast's `pv_estimate` is itself a half-hourly average. The dampening ratio
+`total_pv / pv_estimate` is only meaningful when both sides are the same
+time-averaged quantity.
 
-Rather than implementing custom sampling and averaging code, this
-integration uses **Home Assistant's built-in Statistics integration**
-with the `mean_linear` characteristic. HA handles sample collection
-(up to 1800 samples per period), period alignment, linear averaging and
-sensor lifecycle — we simply read the resulting sensor state at the
-30-minute write interval.
+The integration reads the inverter's sensors **directly** — no helper sensors
+are required. `_read_pv_value` (see [Feature 5](#feature-5--pv-sensor-input-modes-power-vs-energy-counter))
+supports two input families, with `auto` detection from `state_class` and
+`unit_of_measurement`:
 
-### What mean_linear provides
+- **Cumulative energy counter (recommended)** — `Wh`/`kWh`/`MWh`,
+  `state_class: total_increasing` (e.g. an inverter generation total and a grid
+  export total). The period's average power is the energy delta over the actual
+  elapsed time (`ΔkWh / hours`). This is the energy-equivalent average that
+  matches Solcast, is robust to polling drift, and avoids the reset race that an
+  external averaging window introduces.
+- **Power sensor** — `W`/`kW`, instantaneous or already-averaged; used directly.
 
-The `mean_linear` characteristic computes a **time-weighted linear
-average** (trapezoidal integration) over the configured window:
+### Legacy: HA Statistics sensor (mean_linear)
 
-```
-average = Σ(value_i × duration_i) / total_duration
-```
+Earlier versions required a HA **Statistics** sensor per signal, using the
+`mean_linear` characteristic — a time-weighted linear average
+(`Σ(valueᵢ × durationᵢ) / total_duration`) over a 30-minute `max_age` window.
+This still works (sensor type **Power**, or Auto-detect), but is **no longer
+recommended**: a cumulative energy counter gives the same energy-equivalent
+average more simply and without the window-reset race. Example, if you still
+prefer it:
 
-This correctly weights a reading of 5.2 kW that lasted 8 seconds more
-than one that lasted 2 seconds, giving a true energy-equivalent average
-power over the period that is directly comparable to Solcast's 30-minute
-period estimates.
-
-### Required Statistics sensor configuration
-
-Three Statistics sensors must be created in HA before configuring this
-integration. This can be done via the HA UI
-(**Settings → Devices & Services → Add Integration → Statistics**) or
-via YAML:
-
-**PV Power (generation):**
 ```yaml
 sensor:
   - platform: statistics
@@ -202,40 +197,8 @@ sensor:
     sampling_size: 1800
 ```
 
-**PV Export:**
-```yaml
-sensor:
-  - platform: statistics
-    name: "PV Export 30min Average"
-    entity_id: sensor.YOUR_GRID_EXPORT_POWER_SENSOR
-    state_characteristic: mean_linear
-    max_age:
-      minutes: 30
-    sampling_size: 1800
-```
-
-**Battery Charge (optional):**
-```yaml
-sensor:
-  - platform: statistics
-    name: "Battery Charge 30min Average"
-    entity_id: sensor.YOUR_BATTERY_CHARGE_POWER_SENSOR
-    state_characteristic: mean_linear
-    max_age:
-      minutes: 30
-    sampling_size: 1800
-```
-
-**Important notes:**
-
-- Source sensors must report **power in kW** (not energy in kWh)
-- For battery net sensors (signed), the Statistics sensor correctly
-  averages signed values; the integration takes `max(0, value)` to
-  extract charge-only periods
-- `sampling_size: 1800` supports one sample per second; actual buffer
-  usage depends on source sensor update frequency
-- `max_age: minutes: 30` ensures the average always covers the last
-  30-minute period, aligning with Solcast period boundaries
+(Repeat for export and, optionally, battery charge. Source sensors must report
+power in kW; `max_age: 30 min` aligns the average with Solcast period boundaries.)
 
 ### pv_actual vs pv_power naming
 
@@ -796,9 +759,9 @@ behaviour is identical and per-site logic is inert.
 | `DampeningSensor` | Dampening Hours with DB Data | — | Hours with DB-derived factors |
 | `WeatherTempSensor` | Weather Temperature | °C | OWM current temperature |
 | `WeatherCloudsSensor` | Cloud Cover | % | OWM cloud cover |
-| `BatteryChargeSensor` | Battery Charge 30min Average | kW | Stats sensor value |
-| `PvActualSensor` | PV Power 30min Average | kW | Stats sensor value |
-| `PvExportSensor` | PV Export 30min Average | kW | Stats sensor value |
+| `BatteryChargeSensor` | Battery Charge 30min Average | kW | Configured battery sensor value |
+| `PvActualSensor` | PV Power 30min Average | kW | Period-average generation (kW) |
+| `PvExportSensor` | PV Export 30min Average | kW | Period-average export (kW) |
 | `BaseIntegrationSensor` | Base Integration Status | — | connected / not_detected |
 
 All sensors implement `_attr_has_entity_name = True`, `_attr_should_poll = False`,
@@ -822,19 +785,13 @@ and unique IDs derived from `f"{DOMAIN}_{entry_id}_{key}"`.
 
 ### Prerequisites
 
-Before configuring this integration, create three Statistics sensors in
-HA (Settings → Devices & Services → Add Integration → Statistics):
+No helper sensors are required — map the inverter's sensors directly in the
+wizard. Each may be a **cumulative energy counter** (`Wh`/`kWh`/`MWh`,
+`total_increasing`; recommended) or a **power sensor** (`W`/`kW`); `Auto-detect`
+chooses. See [PV Sensor Input](#pv-sensor-input). (A legacy HA Statistics
+`mean_linear` sensor still works if you prefer it.)
 
-| Statistics sensor | Source sensor | Characteristic | max\_age | sampling\_size |
-|---|---|---|---|---|
-| PV Power 30min Average | Inverter AC power (kW) | mean\_linear | 30 min | 1800 |
-| PV Export 30min Average | Grid export power (kW) | mean\_linear | 30 min | 1800 |
-| Battery Charge 30min Average | Battery charge power (kW) | mean\_linear | 30 min | 1800 |
-
-Battery and export Statistics sensors are optional — only configure if
-the relevant hardware is present and the DB feature is enabled.
-
-### Setup wizard (5 steps)
+### Setup wizard (5 steps, + per-site step when multi-site)
 
 **Step 1 — Site & System:**
 
@@ -845,9 +802,14 @@ the relevant hardware is present and the DB feature is enabled.
 | Capacity (kW) | Number | System DC capacity |
 | Tilt | Number | Panel tilt 0° (flat) to 90° (vertical) |
 | Azimuth | Number | 0°=North, 90°=East, -90°=West |
-| PV Power sensor | Entity selector* | Statistics sensor: 30-min avg generation |
-| PV Export sensor | Entity selector* | Statistics sensor: 30-min avg export |
-| Battery sensor | Entity selector* | Statistics sensor: 30-min avg battery charge |
+| PV Power / Generation sensor | Entity selector* | Energy counter or power sensor for generation |
+| PV sensor type | Select | Auto-detect / power / energy counter |
+| PV Export sensor | Entity selector* | Energy counter or power sensor for export |
+| PV Export sensor type | Select | Auto-detect / power / energy counter |
+| Battery sensor | Entity selector* | Energy counter or power sensor for battery charge |
+
+A final **Per-site sensor mapping** step appears automatically when more than
+one Solcast site is detected (see [Feature 6](#feature-6--multi-site-support)).
 
 *Falls back to text input if EntitySelector is unavailable in the
 running HA version.
@@ -881,7 +843,7 @@ Parses: `main.temp` (°C), `clouds.all` (0–100 int),
 
 **Step 4 — Battery Storage (optional)**
 
-Raw battery sensor fallback for sites without a Battery Statistics sensor:
+Raw battery sensor fallback for systems without a dedicated battery sensor mapped in Step 1:
 
 | Field | Description |
 |---|---|
