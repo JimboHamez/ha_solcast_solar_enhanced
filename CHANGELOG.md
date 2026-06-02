@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-02
+
+### Fixed
+- Skip the dampening push (logging a single clear warning) when the base
+  integration's **automatic dampening** (`auto_dampen`) is enabled — it rejects
+  every manual `set_dampening` call with a `ServiceValidationError`, which
+  previously spammed Home Assistant's core error log every 6 hours. The push is
+  now also issued with `blocking=True` so any base-side service error is handled
+  by the integration instead of leaking into the core log.
+
 ## [1.1.0] - 2026-06-02
 
 ### Added
@@ -72,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.0.0

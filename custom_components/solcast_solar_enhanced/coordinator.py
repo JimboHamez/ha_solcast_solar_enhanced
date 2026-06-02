@@ -131,6 +131,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._last_tuning_ts: float = 0.0
         self._db_record_count: int = 0
         self._base_status: str = "not_detected"
+        self._auto_dampen_warned: bool = False
 
         # Discovered Solcast sites (multiple arrays on one property), each:
         # {resource_id, name, capacity, capacity_dc, tilt, azimuth, entity_id}.
@@ -455,6 +456,22 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             opts, now_epoch, lat, lon, DEFAULT_SITE_ID
         )
 
+        # The base integration rejects manual set_dampening while its own
+        # automatic dampening is enabled (ServiceValidationError). Skip the push
+        # in that case — this integration can't drive dampening until the base's
+        # auto-dampening is turned off.
+        if self._read_base_auto_dampen():
+            if not self._auto_dampen_warned:
+                _LOGGER.warning(
+                    "Base integration has automatic dampening enabled — skipping "
+                    "dampening push. Turn off 'automatic dampening' in the Solcast "
+                    "PV Forecast integration to let Solcast Solar Enhanced apply its "
+                    "factors (or disable auto dampening here)."
+                )
+                self._auto_dampen_warned = True
+            return
+        self._auto_dampen_warned = False
+
         site_ids = self._configured_site_ids(opts.get(CONF_SITE_GROUPS) or [])
         if site_ids:
             # Multi-site: push a dampening set per site (which overrides the base's
@@ -543,8 +560,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             data: dict[str, Any] = {"damp_factor": damp_factor}
             if site:
                 data["site"] = site
+            # blocking=True so a base-side ServiceValidationError surfaces here
+            # and is handled, rather than leaking into Home Assistant's core log.
             await self.hass.services.async_call(
-                BASE_DOMAIN, "set_dampening", data, blocking=False
+                BASE_DOMAIN, "set_dampening", data, blocking=True
             )
             _LOGGER.debug(
                 "Pushed %d dampening factors%s",
@@ -696,6 +715,20 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 return 0.0
 
         return _f("pv_estimate"), _f("pv_estimate10"), _f("pv_estimate90")
+
+    def _read_base_auto_dampen(self) -> bool:
+        """True if the base integration's automatic dampening is enabled.
+
+        While on, the base rejects manual `set_dampening` calls, so the enhanced
+        integration must not push.
+        """
+        try:
+            for entry in self.hass.config_entries.async_entries(BASE_DOMAIN):
+                if entry.options.get("auto_dampen"):
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        return False
 
     def _read_base_export_limit(self) -> float | None:
         """Property-wide export limit in kW from the base config entry, or None.
