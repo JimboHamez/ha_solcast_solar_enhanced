@@ -160,3 +160,57 @@ def test_available_false_without_pool(db):
 def test_available_true_with_pool(db):
     db._pool = MagicMock()
     assert db.available is True
+
+
+# ---------------------------------------------------------------------------
+# site column / filter (multi-site)
+# ---------------------------------------------------------------------------
+
+def test_site_filter_none_is_aggregate(db):
+    db.has_site_col = True
+    assert db._site_filter(None) == ("", ())
+
+
+def test_site_filter_targets_site(db):
+    db.has_site_col = True
+    clause, params = db._site_filter("b68d-c05a")
+    assert "site = %s" in clause and params == ("b68d-c05a",)
+
+
+def test_site_filter_skipped_without_column(db):
+    db.has_site_col = False
+    assert db._site_filter("b68d-c05a") == ("", ())
+
+
+def _mock_pool_with_cursor():
+    mock_cursor = AsyncMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+    mock_conn = AsyncMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.cursor = MagicMock(return_value=mock_cursor)
+    mock_pool = MagicMock()
+    mock_pool.acquire = MagicMock(return_value=mock_conn)
+    return mock_pool, mock_cursor
+
+
+async def test_insert_includes_site_when_column_present(db):
+    mock_pool, mock_cursor = _mock_pool_with_cursor()
+    db._pool = mock_pool
+    db.has_site_col = True
+    record = {**SAMPLE_RECORD, "site": "b68d-c05a"}
+    assert await db.async_insert_record(record) is True
+    sql, params = mock_cursor.execute.await_args.args
+    assert "site" in sql
+    assert "b68d-c05a" in params
+
+
+async def test_insert_legacy_when_no_site_column(db):
+    mock_pool, mock_cursor = _mock_pool_with_cursor()
+    db._pool = mock_pool
+    db.has_site_col = False
+    assert await db.async_insert_record(SAMPLE_RECORD) is True
+    sql, params = mock_cursor.execute.await_args.args
+    assert " site" not in sql.replace("INSERT", "")  # column not referenced
+    assert "b68d-c05a" not in params

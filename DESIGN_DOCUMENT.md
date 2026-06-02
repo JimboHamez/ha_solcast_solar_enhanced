@@ -646,6 +646,142 @@ range 1–12). Will be added to the tuning step of the setup wizard.
 
 ---
 
+## Feature 5 — PV sensor input modes (power vs energy counter)
+
+### Purpose
+
+The original design required HA Statistics sensors producing a 30-minute
+`mean_linear` average in kW. That introduces a **race**: the external averaging
+window can be reset/cleared on its own schedule, unsynchronised with the
+integration's 30-minute poll, so a read can catch a half-reset or stale value.
+It also assumes a perfectly-spaced 30-minute cadence.
+
+### Design
+
+`_read_pv_value(entity_id, mode, key, now_epoch)` resolves each PV sensor in one
+of two families (mode `auto` detects from `state_class` + `unit_of_measurement`):
+
+- **Power** (`power_kw`, `power_w`) — the reading is converted to kW and used
+  directly (the classic Statistics-sensor path).
+- **Energy counter** (`energy_kwh`, `energy_wh`, `energy_mwh`;
+  `state_class: total_increasing`) — the interval's average power is derived from
+  the energy delta over the **actual** elapsed time:
+
+  ```
+  avg_kW = (counter_now − counter_prev) / ((epoch_now − epoch_prev) / 3600)
+  ```
+
+  Dividing by the real elapsed time (not a hard-coded 1800 s) makes the value
+  robust to polling drift. The reading returns `0.0` (excluded by the
+  `pv_actual > 0` filters) when: it is the first read after setup/restart
+  (no baseline yet), the delta is negative (counter reset / rollover / inverter
+  reboot), or the elapsed time is outside `[0.5×, 2×]` the expected interval
+  (restart gap / missed cycle). Baselines `{value, epoch}` are persisted across
+  restarts via HA's `Store` (`{DOMAIN}_{entry_id}_energy_baseline`).
+
+This keeps `pv_actual` in the same unit as Solcast's `pv_estimate` (average kW
+over the period), so tuning/dampening maths is unchanged.
+
+---
+
+## Feature 6 — Multi-site support
+
+### Purpose
+
+Solcast lets a user define multiple rooftop **sites** — in practice, multiple
+arrays on one property, each at a different orientation. Tuning a single
+tilt/azimuth across differently-oriented arrays is meaningless, and shading
+dampening differs per array. This feature stores, tunes and dampens each site
+independently where the hardware allows.
+
+### Governing constraint
+
+**Tuning/dampening granularity is capped by measurement granularity** — a site
+can only be tuned/dampened individually if its generation can be measured
+separately:
+
+| Measurement | Per-array tuning |
+|---|---|
+| Dedicated AC sensor per array (e.g. Enphase) | ✅ direct |
+| Shared inverter AC + per-MPPT DC (e.g. Fronius) | ✅ via DC-ratio apportionment |
+| Shared AC, no per-MPPT DC | ❌ not observable |
+
+### DC-ratio apportionment
+
+For a string inverter exposing one AC total plus per-MPPT DC, the measured AC is
+split across arrays by each string's share of total DC:
+
+```
+ac_arrayᵢ = ac_total × (dcᵢ / Σ dc)
+```
+
+Since `ac_total ≈ η × Σ dc` (η = inverter efficiency, ~constant), this yields
+each array's production **in the AC domain** (matching Solcast's estimate), sums
+back exactly to the metered AC total, and handles clipping correctly (the capped
+AC is apportioned proportionally; clipped windows are excluded by the clipping
+filter anyway). Guarded against `Σ dc ≈ 0`.
+
+### Site discovery
+
+`discover_sites(hass)` (shared by the coordinator and config flow) enumerates the
+base integration's per-site RooftopSensors, reading `resource_id`, `name`,
+`capacity`, `capacity_dc`, `tilt`, `azimuth` and `compass_degrees`. Orientation
+seeds per-site tuning; `resource_id` keys storage and targets `set_dampening`.
+
+### Configuration model
+
+`CONF_SITE_GROUPS` is a list of measurement groups:
+
+```python
+{
+  "ac_sensor": "sensor.inverter_ac", "ac_mode": "auto",
+  "site": "<resource_id>",                       # single-site group
+  "strings": [                                    # OR: DC-apportioned group
+    {"site": "<rid>", "dc_sensor": "sensor.mppt1"},
+    {"site": "<rid>", "dc_sensor": "sensor.mppt2"},
+  ],
+}
+```
+
+The config-flow `sites` step collects, per discovered site, a generation sensor,
+an optional DC/MPPT sensor and a mode; `_derive_groups()` then groups sites that
+share an AC sensor (shared → DC-apportioned; alone → single-site; shared-without-DC
+→ omitted). `_groups_to_assignments()` reverses this for options-flow prefill.
+
+### Storage and the aggregate guard
+
+The `site` column (default `'_total'`) and composite unique key
+`(period_end_epoch, site)` let each site own its rows. Each cycle writes the
+property-wide `_total` row (unchanged from single-site) **plus** one row per
+configured site. Property-wide `pv_export` is replicated onto site rows (for each
+site's export-clip exclusion) but `battery_charge` is kept on `_total` only.
+
+To avoid double-counting, aggregate tuning/dampening pass `site='_total'`; per-site
+runs pass the `resource_id`. In single-site installs everything is `_total`, so
+behaviour is identical and per-site logic is inert.
+
+### Per-site tuning and dampening
+
+- **Tuning** (`_run_site_tuning`): each configured site is tuned against its own
+  rows, seeded from its Solcast orientation. The azimuth seed is converted to the
+  tuner's frame (0=N/90=E) from `compass_degrees`. Results surface as a `per_site`
+  attribute on the Tuned Panel Tilt sensor.
+- **Dampening** (`_compute_dampening_slots` per site): pushed via
+  `solcast_solar.set_dampening` with the site's `resource_id`, which overrides the
+  base's global dampening for that site (the conflicting global push is skipped).
+
+> **Service note:** the base integration's service is `set_dampening`
+> (`damp_factor` CSV + optional `site`), not `set_dampening_factor`. The earlier
+> code called the latter; this was corrected as part of multi-site work.
+
+### Standalone tuning tool
+
+`tools/standalone_tuning.py` runs the same optimisation (importing
+`pv_tuning.run_tuning`) outside HA against MySQL or a CSV, with `--site` /
+`--all-sites`, for offline validation.
+
+---
+
 ## Sensors (14 total)
 
 | Sensor class | `_attr_name` | Unit | Description |
