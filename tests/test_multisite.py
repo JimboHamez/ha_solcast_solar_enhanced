@@ -301,3 +301,43 @@ async def test_run_dampening_skips_push_when_base_auto_dampen(hass, coordinator,
     await coordinator._run_dampening({}, 1_000_000, -37.9, 145.0)
     assert pushed == []  # push skipped
     assert coordinator._auto_dampen_warned is True
+
+
+# ---------------------------------------------------------------------------
+# _resolve_input_mode — unit-first auto-detection
+# ---------------------------------------------------------------------------
+
+async def test_energy_counter_without_state_class_detected_as_energy(hass, coordinator):
+    """A kWh counter missing state_class must take the energy (delta) path, not be
+    misread as instantaneous kW."""
+    coordinator._energy_baselines["pv"] = {"value": 10.0, "epoch": 1_000_000}
+    hass.states.async_set("sensor.e", "11.0", {"unit_of_measurement": "kWh"})  # no state_class
+    val, start = coordinator._read_pv_value("sensor.e", "auto", "pv", 1_000_000 + 1800)
+    assert val == pytest.approx(2.0)   # 1 kWh / 0.5 h → 2 kW via delta, not raw 11.0
+    assert start == 1_000_000
+
+
+async def test_mwh_counter_without_state_class_detected_as_energy(hass, coordinator):
+    coordinator._energy_baselines["pv"] = {"value": 10.0, "epoch": 1_000_000}  # kWh baseline
+    hass.states.async_set("sensor.e", "0.011", {"unit_of_measurement": "MWh"})  # 11 kWh
+    val, _ = coordinator._read_pv_value("sensor.e", "auto", "pv", 1_000_000 + 1800)
+    assert val == pytest.approx(2.0)
+
+
+def test_resolve_input_mode_unit_first():
+    """Unit decides energy vs power; state_class is only a fallback."""
+    def _state(unit, state_class=None):
+        attrs = {"unit_of_measurement": unit}
+        if state_class:
+            attrs["state_class"] = state_class
+        return type("S", (), {"attributes": attrs})()
+
+    rm = SolcastEnhancedCoordinator._resolve_input_mode
+    assert rm(_state("kWh"), "auto") == "energy_kwh"          # no state_class → still energy
+    assert rm(_state("Wh"), "auto") == "energy_wh"
+    assert rm(_state("MWh"), "auto") == "energy_mwh"
+    assert rm(_state("W"), "auto") == "power_w"
+    assert rm(_state("kW"), "auto") == "power_kw"
+    assert rm(_state("", "total_increasing"), "auto") == "energy_kwh"  # unit missing → state_class
+    assert rm(_state(""), "auto") == "power_kw"                        # nothing → power default
+    assert rm(_state("kWh"), "energy_wh") == "energy_wh"               # explicit override wins

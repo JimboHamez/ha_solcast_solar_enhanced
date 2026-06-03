@@ -779,20 +779,33 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @staticmethod
     def _resolve_input_mode(state: Any, configured: str) -> str:
-        """Resolve an explicit input mode, or auto-detect from the sensor."""
+        """Resolve an explicit input mode, or auto-detect it from the sensor.
+
+        Detection is **unit-first**: a ``Wh``/``kWh``/``MWh`` unit is a cumulative
+        energy counter (read as a delta over the interval — the recommended input),
+        and a ``W``/``kW`` unit is an averaged-power reading (a rolling
+        ``mean_linear`` helper, read directly). The unit is authoritative because a
+        counter that omits ``state_class`` must not be mistaken for instantaneous
+        power — that was the previous behaviour and it silently read a lifetime
+        ``kWh`` total as a giant ``kW`` value. ``state_class`` is only consulted as a
+        fallback when the unit is missing or unrecognised.
+        """
         if configured and configured != "auto":
             return configured
         attrs = state.attributes
-        state_class = attrs.get("state_class")
         unit = str(attrs.get("unit_of_measurement") or "").strip().lower()
-        if state_class in ("total", "total_increasing"):
+        if unit.endswith("wh"):  # wh / kwh / mwh → cumulative energy counter
             if unit == "wh":
                 return "energy_wh"
             if unit == "mwh":
                 return "energy_mwh"
             return "energy_kwh"
-        if unit == "w":
-            return "power_w"
+        if unit.endswith("w"):  # w / kw → averaged power (rolling mean_linear)
+            return "power_w" if unit == "w" else "power_kw"
+        # Unit missing/unrecognised — fall back to the state_class hint.
+        state_class = attrs.get("state_class")
+        if state_class in ("total", "total_increasing"):
+            return "energy_kwh"
         return "power_kw"
 
     @staticmethod
@@ -818,11 +831,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     ) -> tuple[float, int | None]:
         """Read a PV sensor as average kW.
 
-        Returns ``(value_kw, interval_start_epoch)``. For power-mode sensors the
-        instantaneous reading is converted to kW and the start epoch is ``None``.
-        For energy-counter sensors the value is the average power over the *actual*
+        Returns ``(value_kw, interval_start_epoch)``. Power-mode sensors are
+        expected to be **pre-averaged** (a rolling ``mean_linear`` statistics
+        helper, not a raw instantaneous reading); the value is converted to kW and
+        read directly, with start epoch ``None``. For energy-counter sensors —
+        the recommended input — the value is the average power over the *actual*
         elapsed interval (``delta_kWh / hours``), making it robust to polling
-        drift; the start epoch is the previous sample time. The first reading
+        drift and to the :00/:30 reset race of boundary-windowed helpers; the
+        start epoch is the previous sample time. The first reading
         after setup/restart, a counter reset, or an out-of-band interval yields
         ``0.0`` so it is naturally excluded from tuning/dampening (which filter
         ``pv_actual > 0``).

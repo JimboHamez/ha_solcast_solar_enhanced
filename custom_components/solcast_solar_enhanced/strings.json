@@ -16,10 +16,10 @@
           "pv_export_input_mode": "PV Export sensor type"
         },
         "data_description": {
-          "pv_actual_sensor": "Averaged-power sensor (e.g. 30-min avg kW) or a cumulative energy counter (Wh/kWh).",
-          "pv_export_sensor": "Averaged-power sensor or a cumulative export energy counter (Wh/kWh).",
-          "pv_actual_input_mode": "How to read the sensor. 'auto' detects power vs energy counter from the entity.",
-          "pv_export_input_mode": "How to read the export sensor. 'auto' detects power vs energy counter."
+          "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
+          "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
+          "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
+          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended."
         }
       },
       "database": {
@@ -84,10 +84,10 @@
           "pv_export_input_mode": "PV Export sensor type"
         },
         "data_description": {
-          "pv_actual_sensor": "Averaged-power sensor (e.g. 30-min avg kW) or a cumulative energy counter (Wh/kWh).",
-          "pv_export_sensor": "Averaged-power sensor or a cumulative export energy counter (Wh/kWh).",
-          "pv_actual_input_mode": "How to read the sensor. 'auto' detects power vs energy counter from the entity.",
-          "pv_export_input_mode": "How to read the export sensor. 'auto' detects power vs energy counter."
+          "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
+          "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
+          "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
+          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended."
         }
       },
       "database": {
@@ -145,12 +145,12 @@
   "selector": {
     "pv_input_mode": {
       "options": {
-        "auto": "Auto-detect",
-        "power_kw": "Power (kW)",
-        "power_w": "Power (W)",
-        "energy_kwh": "Energy counter (kWh)",
-        "energy_wh": "Energy counter (Wh)",
-        "energy_mwh": "Energy counter (MWh)"
+        "auto": "Auto-detect (recommended)",
+        "power_kw": "Averaged power — kW (mean_linear helper)",
+        "power_w": "Averaged power — W (mean_linear helper)",
+        "energy_kwh": "Energy counter — kWh (recommended)",
+        "energy_wh": "Energy counter — Wh (recommended)",
+        "energy_mwh": "Energy counter — MWh (recommended)"
       }
     }
   }

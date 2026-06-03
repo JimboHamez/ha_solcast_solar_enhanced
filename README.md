@@ -14,7 +14,7 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via scipy (L-BFGS-B)
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
-5. **Flexible PV input** — read either an averaged-power sensor (kW) or a cumulative energy counter (Wh/kWh), with auto-detection
+5. **Energy-counter PV input** — reads cumulative energy counters (Wh/kWh/MWh) as the recommended input, deriving average kW from the energy delta over each interval (race-free); a rolling `mean_linear` power helper is supported as a fallback, with unit-first auto-detection
 6. **Short-range Forecast Correction** — *planned* (design documented below): a transient, cloud-driven nudge to the next 1–6 hours of forecast, orthogonal to dampening — see [Short-range forecast correction](#short-range-forecast-correction-planned)
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
@@ -37,30 +37,32 @@ _Previously, in v1.2.0:_ Adaptive Shading Dampening became computed purely from 
 
 ### 2. Generation / export sensors
 
-Point the integration at your inverter's sensors directly — **no helper Statistics sensors are required.** Two input styles are supported per sensor, and `Auto-detect` (the default) picks the right one (see [PV sensor input modes](#pv-sensor-input-modes)):
+Point the integration at your inverter's sensors directly. `Auto-detect` (the default) picks the read mode from the sensor's **unit** (see [PV sensor input modes](#pv-sensor-input-modes)):
 
-- **Recommended — cumulative energy counter** (`Wh`/`kWh`/`MWh`, `state_class: total_increasing`), e.g. your inverter's lifetime/daily generation total and your grid-export total. The integration derives the period's average kW from the energy delta over each interval. This is robust to polling drift and avoids the race a 30-minute averaging sensor introduces.
-- **Power sensor** (`W`/`kW`) — an instantaneous or already-averaged generation/export power reading, used directly.
+- **Best practice — cumulative energy counter** (`Wh`/`kWh`/`MWh`, ideally `state_class: total_increasing`), e.g. your inverter's lifetime/daily generation total and your grid-export total. The integration derives the period's average kW from the **energy delta over the actual elapsed interval**. This is exact, needs no helper, and is immune to the `:00`/`:30` reset race that a boundary-windowed averaging sensor introduces.
+- **Fallback — rolling `mean_linear` power helper** (`W`/`kW`). If you can't expose an energy counter, feed a **continuous sliding-window** `mean_linear` statistics helper (below). The same applies to per-MPPT **DC** sensors when tracking multiple arrays facing different directions (Step 6), where the value is only used as a ratio.
+
+> ⚠️ **Don't point this at a raw, instantaneous power sensor.** A single spot reading at the poll instant is not the half-hour average and will bias dampening and tuning. Use an energy counter, or wrap the power sensor in the rolling helper below.
 
 You map these in the setup wizard (Step 1); battery is optional. For multi-site systems each array is mapped in Step 6.
 
 <details>
-<summary>Optional: legacy 30-minute Statistics-sensor approach</summary>
+<summary>Rolling mean_linear power helper (only if you have no energy counter)</summary>
 
-Earlier versions required HA Statistics sensors producing a 30-minute `mean_linear` average in kW. This still works (select sensor type **Power** or leave on Auto-detect), but is **no longer recommended** — a cumulative energy counter is simpler and avoids the window-reset race. If you prefer it:
+A **continuous sliding-window** statistics sensor — it recomputes on every source update and never resets at the half-hour boundary, so it has no reset race:
 
 ```yaml
 sensor:
   - platform: statistics
-    name: "PV Power 30min Average"
+    name: "PV Power 30min Rolling Mean"
     entity_id: sensor.YOUR_INVERTER_AC_POWER_SENSOR
-    state_characteristic: mean_linear
+    state_characteristic: mean_linear   # time-weighted mean (not plain "mean")
     max_age:
       minutes: 30
-    sampling_size: 1800
+    sampling_size: 1800                  # default is tiny — raise it so samples aren't dropped
 ```
 
-(Repeat for export and, optionally, battery charge.)
+(Repeat for export and per-MPPT DC as needed.) Accuracy depends on how often the source sensor updates. The old **boundary-resetting** 30-minute Statistics approach is no longer recommended — it can be read mid-reset at the `:00`/`:30` border.
 </details>
 
 ### 3. MySQL database (optional)
@@ -117,9 +119,9 @@ The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automa
 | System capacity (kW DC) | Total panel DC capacity |
 | Panel tilt | 0° = flat, 90° = vertical |
 | Panel azimuth | 0° = North, 90° = East, −90° = West |
-| PV Power / Generation sensor | Averaged-power sensor **or** cumulative energy counter for generation |
-| PV sensor type | `Auto-detect` (default), `Power (kW/W)`, or `Energy counter (kWh/Wh/MWh)` |
-| PV Export sensor | Averaged-power sensor **or** cumulative export energy counter |
+| PV Generation sensor | Cumulative energy counter (Wh/kWh/MWh) — recommended; or a rolling `mean_linear` power helper (kW) |
+| PV sensor type | `Auto-detect` (default, by unit), `Energy counter (kWh/Wh/MWh)`, or `Averaged power (kW/W)` |
+| PV Export sensor | Cumulative export energy counter (Wh/kWh) — recommended; or a rolling `mean_linear` helper |
 | PV Export sensor type | As above, for the export sensor |
 | Battery Charge sensor | Generation/power or energy-counter sensor for battery charge (optional) |
 
@@ -187,12 +189,12 @@ Leave a site blank to skip it. With no mapping (or a single site), the integrati
 
 ### PV sensor input modes
 
-Each PV sensor (generation and export) can be read in one of two ways, chosen per sensor (default `Auto-detect`):
+Each PV sensor (generation and export) is read in one of two ways, chosen per sensor (default `Auto-detect`):
 
-- **Power** (`kW`/`W`) — the instantaneous/averaged reading is used directly (converted to kW). This is the classic Statistics-sensor path.
-- **Energy counter** (`kWh`/`Wh`/`MWh`, `state_class: total_increasing`) — the average power for the interval is derived from the energy delta over the *actual* elapsed time: `avg_kW = ΔkWh / hours`. Using the real elapsed time (not a hard-coded 30 min) makes it robust to polling drift. Counter resets/rollovers (negative delta), the first reading after a restart, and abnormally long gaps are detected and excluded. Baselines are persisted across restarts.
+- **Energy counter** (`kWh`/`Wh`/`MWh`) — **recommended.** The average power for the interval is derived from the energy delta over the *actual* elapsed time: `avg_kW = ΔkWh / hours`. Using the real elapsed time (not a hard-coded 30 min) makes it robust to polling drift, and it never depends on a value being correct at the `:00`/`:30` boundary. Counter resets/rollovers (negative delta), the first reading after a restart, and abnormally long gaps are detected and excluded. Baselines are persisted across restarts.
+- **Averaged power** (`kW`/`W`) — the value is used directly (converted to kW). Intended for a **rolling `mean_linear` statistics helper**, *not* a raw instantaneous sensor (a single spot read isn't the half-hour average). Also used for per-MPPT DC sensors in multi-array setups, where the value only feeds a `dcᵢ/Σdc` ratio.
 
-`Auto-detect` inspects the sensor's `state_class` and `unit_of_measurement` to choose. Energy-counter mode avoids the race where an external 30-minute averaging sensor can be cleared before the integration reads it.
+`Auto-detect` is **unit-first**: a `Wh`/`kWh`/`MWh` unit is treated as an energy counter and a `W`/`kW` unit as averaged power — `state_class` is only a fallback when the unit is missing. (Previously the energy-vs-power decision keyed on `state_class`, so a counter that omitted it was silently read as instantaneous power — a lifetime `kWh` total interpreted as a huge `kW` value.)
 
 ### Energy balance
 
