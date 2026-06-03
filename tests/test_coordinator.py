@@ -155,3 +155,27 @@ def test_snap_two_polls_in_same_slot_collapse():
         SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 3 * 60)
         == SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 11 * 60)
     )
+
+
+# ---------------------------------------------------------------------------
+# _compute_dampening_slots — local-time slot grid
+# ---------------------------------------------------------------------------
+
+async def test_dampening_slots_built_on_local_time_grid(hass, coordinator):
+    """Slot index must map to LOCAL half-hour, not UTC.
+
+    The base integration applies damp_factor[i] to the i-th local half-hour, so
+    for a UTC+10/+11 site slot 0 must be local midnight (night) and slot 24 local
+    noon (daytime). A UTC grid would invert this.
+    """
+    await hass.config.async_set_time_zone("Australia/Melbourne")
+    coordinator._db = None  # no DB → day slots resolve to source "no_data"
+
+    now_epoch = 1718452800  # 2024-06-15T12:00:00Z = Melbourne 22:00 (winter)
+    slots = await coordinator._compute_dampening_slots(
+        {}, now_epoch, -37.81, 144.96, "_total"
+    )
+
+    assert len(slots) == 48
+    assert slots[0]["source"] == "night"       # local 00:00
+    assert slots[24]["source"] != "night"      # local 12:00 — sun is up
