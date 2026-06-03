@@ -501,7 +501,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
 
-        base_factors = self._read_base_dampening_factors()
         slot_results: list[dict[str, Any]] = []
 
         for slot in range(48):
@@ -529,16 +528,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     slot_doy, site=site
                 )
 
-            hour_idx = slot // 2
-            base_val = base_factors[hour_idx] if hour_idx < len(base_factors) else 1.0
-
             slot_result = compute_dampening(
                 records=records,
                 capacity_kw=capacity_kw,
                 cloud_threshold=cloud_threshold,
                 cloud_max_include=cloud_max_include,
                 clipping_threshold=clipping_threshold,
-                base_factors=[base_val],
                 target_zenith=zen_slot,
                 target_azimuth=az_slot,
             )
@@ -919,33 +914,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         except (ValueError, TypeError):
             return 0.0
 
-    def _read_base_dampening_factors(self) -> list[float]:
-        """Read 24 hourly dampening factors from base integration."""
-        # Try config entry options first
-        try:
-            for entry in self.hass.config_entries.async_entries(BASE_DOMAIN):
-                dampening = entry.options.get("dampening", {})
-                if dampening:
-                    return [float(dampening.get(str(h), 1.0)) for h in range(24)]
-        except Exception:  # noqa: BLE001
-            pass
-
-        # Try sensor states
-        factors = []
-        for h in range(24):
-            found = False
-            for state in self.hass.states.async_all():
-                if "solcast" in state.entity_id and "dampening" in state.entity_id and f"hour_{h:02d}" in state.entity_id:
-                    try:
-                        factors.append(float(state.state))
-                        found = True
-                        break
-                    except (ValueError, TypeError):
-                        pass
-            if not found:
-                factors.append(1.0)
-        return factors
-
     # ------------------------------------------------------------------
     # Properties for sensors
     # ------------------------------------------------------------------
@@ -999,7 +967,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def dampening_hours_with_db(self) -> int:
-        return sum(1 for s in self._dampening_table if s.get("source") not in ("base_fallback", "night"))
+        return sum(1 for s in self._dampening_table if s.get("source") not in ("no_data", "night"))
 
     @property
     def dampening_attributes(self) -> dict[str, Any]:
@@ -1027,5 +995,5 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if sources:
             from collections import Counter
             most_common = Counter(sources).most_common(1)
-            attrs["overall_source"] = most_common[0][0] if most_common else "base_fallback"
+            attrs["overall_source"] = most_common[0][0] if most_common else "no_data"
         return attrs

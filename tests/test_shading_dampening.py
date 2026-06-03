@@ -81,10 +81,10 @@ def test_geometry_weight_range():
 # compute_dampening
 # ---------------------------------------------------------------------------
 
-def test_compute_dampening_empty_records_returns_base_fallback():
-    result = compute_dampening([], 5.0, 20, 60, 0.95, [0.85], 45.0, 180.0)
-    assert result["source"] == "base_fallback"
-    assert result["factor"] == pytest.approx(0.85)
+def test_compute_dampening_empty_records_returns_no_data():
+    result = compute_dampening([], 5.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
+    assert result["factor"] == pytest.approx(1.0)
     assert result["alpha"] == 0.0
     assert result["quality_records"] == 0.0
 
@@ -92,22 +92,22 @@ def test_compute_dampening_empty_records_returns_base_fallback():
 def test_compute_dampening_excludes_zero_estimate():
     records = [{"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
                 "pv_estimate": 0.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}]
-    result = compute_dampening(records, 5.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
-    assert result["source"] == "base_fallback"
+    result = compute_dampening(records, 5.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
 
 
 def test_compute_dampening_excludes_high_cloud():
     records = [{"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
                 "pv_estimate": 4.0, "clouds": 80, "zenith": 45.0, "azimuth": 180.0}]
-    result = compute_dampening(records, 5.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
-    assert result["source"] == "base_fallback"
+    result = compute_dampening(records, 5.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
 
 
 def test_compute_dampening_alpha_increases_with_more_records():
     base_record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
                    "pv_estimate": 5.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
-    result_few = compute_dampening([base_record] * 5, 10.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
-    result_many = compute_dampening([base_record] * 100, 10.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
+    result_few = compute_dampening([base_record] * 5, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    result_many = compute_dampening([base_record] * 100, 10.0, 20, 60, 0.95, 45.0, 180.0)
     assert result_many["alpha"] > result_few["alpha"]
 
 
@@ -115,7 +115,7 @@ def test_compute_dampening_factor_is_ratio_at_high_confidence():
     """At high alpha, factor should be close to total_pv / pv_estimate."""
     record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
               "pv_estimate": 5.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
-    result = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
+    result = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 45.0, 180.0)
     # With 200 identical records at same zenith/azimuth, alpha should be high
     if result["alpha"] > 0.9:
         assert abs(result["factor"] - 0.8) < 0.05  # 4.0/5.0 = 0.8
@@ -126,27 +126,27 @@ def test_compute_dampening_clipping_excluded_counted():
     clip = 0.95 * capacity_kw  # 4.75
     clipped = {"pv_actual": 4.8, "pv_export": 0.0, "battery_charge": 0.0,
                "pv_estimate": 4.9, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
-    result = compute_dampening([clipped] * 10, capacity_kw, 20, 60, 0.95, [1.0], 45.0, 180.0)
+    result = compute_dampening([clipped] * 10, capacity_kw, 20, 60, 0.95, 45.0, 180.0)
     assert result["clipped_excluded"] == 10
 
 
 def test_compute_dampening_early_clamp_applies_below_half_alpha():
-    """When alpha < 0.5, factor is clamped to within 15% of base."""
-    base_factor = 1.0
+    """When alpha < 0.5, factor is clamped to within 15% of the neutral 1.0 anchor."""
+    neutral = 1.0
     record = {"pv_actual": 0.1, "pv_export": 0.0, "battery_charge": 0.0,
               "pv_estimate": 5.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
     # 1 record → very low alpha → early clamp kicks in
-    result = compute_dampening([record], 10.0, 20, 60, 0.95, [base_factor], 45.0, 180.0)
+    result = compute_dampening([record], 10.0, 20, 60, 0.95, 45.0, 180.0)
     if result["alpha"] < 0.5:
-        assert result["factor"] >= base_factor * 0.85
-        assert result["factor"] <= base_factor * 1.15
+        assert result["factor"] >= neutral * 0.85
+        assert result["factor"] <= neutral * 1.15
 
 
 def test_compute_dampening_source_labels():
     record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
               "pv_estimate": 5.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
-    result_few = compute_dampening([record] * 3, 10.0, 20, 60, 0.95, [1.0], 45.0, 180.0)
-    assert result_few["source"] in ("base_fallback", "blended", "db_history", "night")
+    result_few = compute_dampening([record] * 3, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result_few["source"] in ("no_data", "db_blended", "db_history", "night")
 
 
 # ---------------------------------------------------------------------------

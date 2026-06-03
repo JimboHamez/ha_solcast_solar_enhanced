@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds MySQL-backed historical storage, automatic rooftop PV tilt/azimuth optimisation (scipy L-BFGS-B), and adaptive shading dampening that progressively replaces the base integration's manual dampening as data accumulates.
+A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds MySQL-backed historical storage, automatic rooftop PV tilt/azimuth optimisation (scipy L-BFGS-B), and adaptive shading dampening computed purely from DB-collected actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates.
 
 Development happens by installing the component into a running Home Assistant instance. There are no build steps. A `pytest` test suite lives in `tests/` (run `pytest` from the repo root; deps in `requirements_test.txt`, uses `pytest-homeassistant-custom-component`). A standalone PV-tuning CLI for running the optimiser against the DB/CSV outside HA lives in `tools/standalone_tuning.py`.
 
@@ -46,7 +46,7 @@ Both use lazy imports — the integration runs without them, disabling only the 
 
 **Battery reading priority**: Statistics sensor (`CONF_BATTERY_STAT_SENSOR`) takes precedence; raw fallback (`CONF_BATTERY_ENABLED` with `net`/`separate` modes) is used only when the stat sensor reads zero.
 
-**Dampening confidence blend**: `final = (1−α) × base_factor + α × db_factor`. α is a sigmoid over quality-weighted record count; clamped to ±15% of base when α < 0.5. Sources tagged as `night`, `base_fallback`, `blended`, or `db_history`.
+**Dampening confidence blend**: `final = (1−α) × 1.0 + α × db_factor`, where `db_factor` is the quality-weighted actual/forecast ratio from DB records. The anchor is a neutral `1.0` (NOT the base integration's factors — those are never read into the calculation). α is a sigmoid over quality-weighted record count; clamped to ±15% of 1.0 when α < 0.5. Sources tagged as `night`, `no_data`, `db_blended`, or `db_history`.
 
 **DB schema migration**: `_init_schema()` runs `CREATE TABLE IF NOT EXISTS`, then `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for `battery_charge`, `pv_export` and `site`, then `_migrate_unique_key()` swaps the legacy `uq_epoch (period_end_epoch)` for `uq_epoch_site (period_end_epoch, site)` (guarded by `information_schema` checks since MySQL lacks `DROP INDEX IF EXISTS`). All safe to re-run.
 
@@ -62,8 +62,7 @@ Both use lazy imports — the integration runs without them, disabling only the 
 - Forecast data: read from `hass.data["solcast_solar"].data` (keys: `forecast_now`, `forecast_today`, `pv_estimate`, `pv_estimate10`, `pv_estimate90`). Falls back to reading named sensor states.
 - Per-site forecast: `sensor.solcast_pv_forecast_forecast_today` attribute `detailedForecast-<resource_id>` (underscore variant fallback) — list of `{period_start, pv_estimate, pv_estimate10, pv_estimate90}`; `pv_estimate` is **average kW over the half-hour** (matches `pv_actual`).
 - Site discovery + per-site export limit: per-site orientation/capacity from RooftopSensor attributes (`resource_id`, `capacity`, `capacity_dc`, `tilt`, `azimuth`, `compass_degrees`); property-wide export limit read from the base config entry `entry.options["site_export_limit"]` (Watts → kW), preferred over the manual option.
-- Dampening push: `hass.services.async_call("solcast_solar", "set_dampening", {"damp_factor": "<csv>", "site": "<resource_id>"})` — `damp_factor` is a comma-separated string of 24 (hourly) or 48 (half-hourly) floats; `site` is optional and targets a single Solcast site (omit for global).
-- Base dampening factors (read-back): inspects `entry.options["dampening"]` from the base config entry; falls back to scanning all state entities for `"solcast"` + `"dampening"` + `"hour_XX"` in the entity ID.
+- Dampening push: `hass.services.async_call("solcast_solar", "set_dampening", {"damp_factor": "<csv>", "site": "<resource_id>"})` — `damp_factor` is a comma-separated string of 24 (hourly) or 48 (half-hourly) floats; `site` is optional and targets a single Solcast site (omit for global). The pushed factors are computed solely from DB-collected history; the base integration's own dampening factors are never read back into the calculation. The push is still gated by `_read_base_auto_dampen()` (skipped while the base's automatic dampening is on, since it rejects manual `set_dampening`).
 
 ## Adding a new sensor
 

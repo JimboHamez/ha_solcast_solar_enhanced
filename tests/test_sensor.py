@@ -164,10 +164,10 @@ def test_db_records_defaults_zero():
 def test_dampening_sensor_returns_count():
     coord = _make_coordinator({},
                               dampening_hours_with_db=8,
-                              dampening_attributes={"hour_10_factor": 0.85, "overall_source": "blended"})
+                              dampening_attributes={"hour_10_factor": 0.85, "overall_source": "db_blended"})
     s = _make_sensor(DampeningSensor, coord)
     assert s.native_value == 8
-    assert s.extra_state_attributes["overall_source"] == "blended"
+    assert s.extra_state_attributes["overall_source"] == "db_blended"
 
 
 # ---------------------------------------------------------------------------
