@@ -36,7 +36,7 @@ Both use lazy imports — the integration runs without them, disabling only the 
 ## Key architecture patterns
 
 **Data flow per 30-min update cycle** (`coordinator._do_update`):
-1. Read `pv_actual` / `pv_export` via `_read_pv_value` (power **or** cumulative energy counter → avg kW over the actual interval) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups)
+1. Read `pv_actual` / `pv_export` via `_read_pv_value` (cumulative energy counter → avg kW over the actual interval, or averaged-power kW/W) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups)
 2. Fetch OWM weather (if enabled)
 3. Compute solar position (pure Python, no external lib)
 4. Read forecast data from base integration coordinator (`hass.data["solcast_solar"]`); per-site forecast via `_site_forecast_for_period` (`detailedForecast-<resource_id>`)
@@ -52,7 +52,7 @@ Both use lazy imports — the integration runs without them, disabling only the 
 
 **Multi-site**: sites are auto-discovered from the base integration's RooftopSensors via `discover_sites(hass)` (module-level, shared with the config flow). The `CONF_SITE_GROUPS` config model maps a generation sensor (+ optional per-MPPT DC sensors) to one or more sites; the config-flow `sites` step authors it via per-site fields and derives the structure (`_derive_groups`). Each site is stored/tuned/dampened by its Solcast `resource_id`; the property-wide aggregate uses `site='_total'`, so aggregate queries pass `site=DEFAULT_SITE_ID` to avoid summing the additive per-site rows. Per-site `pv_actual` for shared-AC groups is apportioned by DC share (`ac × dcᵢ/Σdc`).
 
-**Energy-counter reads**: `_read_pv_value` supports power sensors (kW/W) and cumulative energy counters (kWh/Wh/MWh, `state_class: total_increasing`), with `auto` detection. Energy mode computes avg kW from the energy delta over the *actual* elapsed time and guards resets/rollovers, first-read, and out-of-band intervals; baselines persist via HA `Store` (`{DOMAIN}_{entry_id}_energy_baseline`).
+**Energy-counter reads**: `_read_pv_value` supports cumulative energy counters (kWh/Wh/MWh — the recommended input) and averaged-power readings (kW/W, intended for a rolling `mean_linear` helper, *not* a raw instantaneous sensor). Energy mode computes avg kW from the energy delta over the *actual* elapsed time and guards resets/rollovers, first-read, and out-of-band intervals; baselines persist via HA `Store` (`{DOMAIN}_{entry_id}_energy_baseline`). `_resolve_input_mode` auto-detection is **unit-first**: a `…wh` unit → energy counter, a `…w` unit → averaged power; `state_class` is only a fallback when the unit is absent (this prevents a counter that omits `state_class` from being read as instantaneous power). Power mode stays available for per-MPPT DC sensors, which feed only a `dcᵢ/Σdc` ratio.
 
 **Optional deps pattern**: `pv_tuning.py` and `db_manager.py` each guard their imports with `try/except ImportError` and set a `*_AVAILABLE` flag. Feature code checks this flag before executing.
 
