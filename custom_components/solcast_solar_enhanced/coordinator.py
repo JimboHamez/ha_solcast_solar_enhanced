@@ -242,10 +242,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._owm:
             self._weather = await self._owm.async_fetch()
 
-        # Solar position
+        # Solar position at the interval *midpoint* (period_end − 15 min), the
+        # representative sun position for a value averaged across the half-hour —
+        # matched geometrically against the dampening slots, which also use their
+        # midpoint.
         lat = float(opts.get(CONF_LATITUDE, -37.9))
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
-        az, zen = solar_position(period_epoch, lat, lon)
+        az, zen = solar_position(period_epoch - 900, lat, lon)
 
         # Forecast data from base integration
         forecast_now, forecast_today, pv_estimate, pv_est10, pv_est90 = (
@@ -528,7 +531,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             slot_epoch = int(slot_local.timestamp())
             slot_doy = slot_local.timetuple().tm_yday
 
-            az_slot, zen_slot = solar_position(slot_epoch, lat, lon)
+            # Sun position at the slot midpoint (+15 min), matching the stored
+            # records' midpoint convention for geometric weighting.
+            az_slot, zen_slot = solar_position(slot_epoch + 900, lat, lon)
 
             # Night slots — factor = 1.0
             if zen_slot >= 90:

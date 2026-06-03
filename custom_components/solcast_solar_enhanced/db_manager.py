@@ -93,6 +93,10 @@ class DbManager:
                 autocommit=True,
                 minsize=1,
                 maxsize=5,
+                # Pin each connection's session to UTC so FROM_UNIXTIME() renders
+                # deterministically regardless of the server's local time zone
+                # (the day-of-year window query relies on this).
+                init_command="SET time_zone = '+00:00'",
             )
             if not self._readonly:
                 await self._init_schema()
@@ -302,7 +306,9 @@ class DbManager:
                         f"pv_estimate90, azimuth, zenith, clouds, {battery_col} "
                         f"FROM solcast_data "
                         f"WHERE pv_actual > 0 AND pv_estimate > 0 "
-                        f"AND ABS(DAYOFYEAR(CONVERT_TZ(FROM_UNIXTIME(period_end_epoch), '+00:00', '+00:00')) - %s) <= %s"
+                        # Session tz is pinned to UTC (see async_connect), so
+                        # FROM_UNIXTIME renders in UTC — no CONVERT_TZ needed.
+                        f"AND ABS(DAYOFYEAR(FROM_UNIXTIME(period_end_epoch)) - %s) <= %s"
                         f"{site_clause}",
                         (slot_doy, window_days, *site_params),
                     )
