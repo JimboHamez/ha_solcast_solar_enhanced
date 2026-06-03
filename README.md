@@ -15,7 +15,7 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
 5. **Flexible PV input** — read either an averaged-power sensor (kW) or a cumulative energy counter (Wh/kWh), with auto-detection
-6. **Short-range Forecast Correction** — planned, not yet implemented
+6. **Short-range Forecast Correction** — *planned* (design documented below): a transient, cloud-driven nudge to the next 1–6 hours of forecast, orthogonal to dampening — see [Short-range forecast correction](#short-range-forecast-correction-planned)
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
 
@@ -207,13 +207,13 @@ Dampening is computed at 48 half-hour slots per day. For each slot:
 1. Historical records within ±14 calendar days (across all years) are fetched from the DB
 2. Each record is weighted by **cloud quality** (three-band: 1.0 / 0.6 / 0.3) and **geometric proximity** (Gaussian on zenith and azimuth distance)
 3. The quality-weighted average `total_pv / pv_estimate` ratio becomes the DB-derived dampening factor
-4. A **confidence blend** mixes this with the base integration's existing factor:
+4. A **confidence blend** mixes this with a neutral `1.0` anchor (the base integration's own dampening factors are **never** read into the calculation):
 
 ```
-final = (1 − α) × base_factor + α × db_factor
+final = (1 − α) × 1.0 + α × db_factor
 ```
 
-α grows as more quality-weighted records accumulate:
+α grows as more quality-weighted records accumulate, so with little data the factor sits near a no-op `1.0` and ramps toward the DB-measured ratio as confidence builds:
 
 | Quality-weighted records | α (20% threshold) |
 |---|---|
@@ -222,7 +222,7 @@ final = (1 − α) × base_factor + α × db_factor
 | 60 | 0.80 |
 | 100 | 0.92 |
 
-When α < 0.5, the result is clamped to ±15% of the base factor to prevent early instability.
+When α < 0.5, the result is clamped to ±15% of `1.0` (i.e. 0.85–1.15) to prevent early instability. A slot with no usable DB data stays at a neutral `1.0`.
 
 Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to the base integration via the `solcast_solar.set_dampening` service (`damp_factor` as a comma-separated string). In multi-site mode a dampening set is pushed **per site** (`set_dampening` with the site's `resource_id`), which overrides the base's global dampening for that site.
 
@@ -235,6 +235,47 @@ Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to t
 | Clear (Perth, inland QLD) | 20% | 4–6 weeks |
 | Mixed (Melbourne, Sydney) | 20–25% | 8–12 weeks |
 | Overcast (Hobart, coastal) | 30–35% | 6–10 weeks |
+
+### Short-range forecast correction (planned)
+
+> **Status: planned, not yet implemented.** This section documents the intended design; no correction is applied today.
+
+**Purpose:** adjust the next 1–6 hours of forecast from the live `pv_actual` / `pv_export` readings and current OWM cloud cover, correcting for the satellite-image-processing lag in Solcast's near-term predictions. This is **transient (cloud-driven)** correction, kept orthogonal to dampening, which handles **structural (geometric shading)** correction.
+
+**Activation conditions** (all must hold, to avoid double-correcting what dampening already handles):
+
+- OWM is enabled — cloud data is required to tell cloud attenuation apart from shading
+- `pv_actual` and `pv_export` sensors are configured
+- ≥2 consecutive recent periods deviate from the estimate in the **same direction** (a single outlier must not trigger a correction)
+- `clouds > cloud_threshold` — clear-sky deviations are geometric shading and are already handled by dampening
+
+**Correction formula** — an exponentially-decaying nudge applied per future period:
+
+```
+recent_ratio   = mean(total_pv / pv_estimate) over the last 2–3 periods
+correction(n)  = 1.0 + (recent_ratio − 1.0) × exp(−n / τ)
+```
+
+where `n` = periods ahead (integer) and `τ` = time constant (default 3 periods = 90 min, configurable). The nudge decays toward 1.0 as the forecast horizon lengthens:
+
+| Period ahead | Correction retained |
+|---|---|
+| +1 (30 min) | 72% |
+| +3 (90 min) | 37% |
+| +6 (3 hours) | 14% |
+| +12 (6 hours) | 2% — effectively zero |
+
+**Stacking with dampening** (the two effects are orthogonal and multiply):
+
+```
+final_forecast(period) = solcast_estimate(period)
+                       × dampening_factor(hour)        ← structural shading
+                       × short_range_correction(period) ← transient cloud
+```
+
+Because `pv_actual` is a period-average (kW averaged over each ~30-minute interval — whether from a power sensor or an energy-counter delta), `recent_ratio` is already a stable period-average signal rather than a noisy instantaneous reading, which reduces false-positive corrections.
+
+**Planned configuration:** `correction_tau` (default 3 periods, range 1–12), to be added to the PV Tuning step of the setup wizard.
 
 ### PV tuning
 
