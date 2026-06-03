@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     BASE_DOMAIN,
@@ -501,18 +502,31 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         lon: float,
         site: str,
     ) -> list[dict[str, Any]]:
-        """Compute the 48 half-hour dampening slots for one site (or '_total')."""
+        """Compute the 48 half-hour dampening slots for one site (or '_total').
+
+        The slot grid is built on **local** time-of-day so slot index ``i`` maps to
+        the local half-hour the base integration applies ``damp_factor[i]`` to (its
+        ``dampen.py`` converts each forecast period to the site timezone before
+        indexing). Each local slot time is converted to its UTC instant for
+        ``solar_position``. Building the array on UTC instead would shift the whole
+        dampening curve by the site's UTC offset for non-UTC users.
+        """
         capacity_kw = float(opts.get(CONF_CAPACITY_KW, 5.0))
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
 
+        tz = dt_util.get_time_zone(self.hass.config.time_zone) or timezone.utc
+        now_local = datetime.fromtimestamp(now_epoch, tz=tz)
         slot_results: list[dict[str, Any]] = []
 
         for slot in range(48):
-            slot_epoch = now_epoch - (now_epoch % 86400) + slot * 1800
-            slot_dt = datetime.fromtimestamp(slot_epoch, tz=timezone.utc)
-            slot_doy = slot_dt.timetuple().tm_yday
+            hour, minute = divmod(slot * 30, 60)
+            slot_local = now_local.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            slot_epoch = int(slot_local.timestamp())
+            slot_doy = slot_local.timetuple().tm_yday
 
             az_slot, zen_slot = solar_position(slot_epoch, lat, lon)
 
