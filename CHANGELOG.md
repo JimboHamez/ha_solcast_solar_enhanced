@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-03
+
+### Changed
+- **Stored database timestamps now snap to the half-hour grid.** The 30-minute
+  poll is free-running (anchored to setup/restart, not the wall clock), so
+  `period_end_epoch` previously drifted off the `:00`/`:30` boundaries and the
+  `(period_end_epoch, site)` unique key only coalesced exact-second collisions.
+  Each stored `period_end` / `period_end_epoch` / derived `period_start` (for
+  both the aggregate `_total` row and per-site rows) is now rounded to the
+  nearest half-hour, aligning rows to Solcast's 48-slot UTC grid — the same grid
+  the dampening calculation walks — so the unique key enforces one row per slot
+  per site. The real wall-clock time still drives the energy-counter delta
+  averaging and the tuning interval timer, so the average-kW math is unchanged.
+  Side effect: two restarts within the same half-hour now collapse to one row
+  (the second `INSERT IGNORE` is a no-op) rather than producing a near-duplicate.
+
+### Documentation
+- Documented the planned **Short-range Forecast Correction** design (purpose,
+  activation conditions, `correction(n) = 1.0 + (recent_ratio − 1.0) × exp(−n/τ)`
+  decay, stacking with dampening, planned `correction_tau` config). Still
+  not implemented.
+- Corrected the README "Adaptive dampening" section, which still described the
+  pre-1.2.0 base-factor blend, to match the DB-only neutral-`1.0` calculation.
+
 ## [1.2.0] - 2026-06-03
 
 ### Changed
