@@ -21,11 +21,11 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.3.0
+## 🆕 What's new in v1.4.0
 
-**Stored database rows now snap to the half-hour grid.** Each `period_end` is rounded to the nearest `:00`/`:30` boundary, so history aligns to Solcast's 48-slot UTC grid (the same grid dampening uses) and the `(period_end_epoch, site)` key enforces one row per slot — no more drift or near-duplicate rows after restarts. The energy-counter averaging and tuning timers still use real wall-clock time, so measurements are unaffected. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.3.0) and [CHANGELOG](CHANGELOG.md).
+**Two correctness fixes for non-UTC sites and energy-counter users.** Dampening factors are now aligned to **local time** — they were built on a UTC slot grid while the base integration applies them by local half-hour, which shifted the whole curve by the UTC offset (for a UTC+10/+11 site, daytime periods got the night factor, effectively disabling dampening during daylight). And PV input **auto-detection is now unit-first** (`Wh`/`kWh`/`MWh` → energy counter, `W`/`kW` → averaged power), so a `kWh` counter that omits `state_class` can no longer be misread as instantaneous power. The integration now **standardises on cumulative energy counters**, with a rolling `mean_linear` helper as the power fallback. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.4.0) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.2.0:_ Adaptive Shading Dampening became computed purely from your database-collected history (it no longer reads the base integration's dampening factors).
+_Previously, in v1.3.0:_ stored database rows snap to the half-hour grid, enforcing one row per slot.
 
 ---
 
