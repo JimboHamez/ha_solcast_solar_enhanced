@@ -15,7 +15,6 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
 5. **Energy-counter PV input** — reads cumulative energy counters (Wh/kWh/MWh) as the recommended input, deriving average kW from the energy delta over each interval (race-free); a rolling `mean_linear` power helper is supported as a fallback, with unit-first auto-detection
-6. **Short-range Forecast Correction** — *planned* (design documented below): a transient, cloud-driven nudge to the next 1–6 hours of forecast, orthogonal to dampening — see [Short-range forecast correction](#short-range-forecast-correction-planned)
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
 
@@ -240,46 +239,14 @@ Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to t
 | Mixed (Melbourne, Sydney) | 20–25% | 8–12 weeks |
 | Overcast (Hobart, coastal) | 30–35% | 6–10 weeks |
 
-### Short-range forecast correction (planned)
+### Short-range forecast correction (considered and dropped)
 
-> **Status: planned, not yet implemented.** This section documents the intended design; no correction is applied today.
+An earlier roadmap item proposed nudging the next 1–6 hours of forecast from the recent `pv_actual / pv_estimate` ratio (an exponentially-decaying, cloud-driven correction). **It was evaluated and dropped** — recorded here so the reasoning isn't lost:
 
-**Purpose:** adjust the next 1–6 hours of forecast from the live `pv_actual` / `pv_export` readings and current OWM cloud cover, correcting for the satellite-image-processing lag in Solcast's near-term predictions. This is **transient (cloud-driven)** correction, kept orthogonal to dampening, which handles **structural (geometric shading)** correction.
-
-**Activation conditions** (all must hold, to avoid double-correcting what dampening already handles):
-
-- OWM is enabled — cloud data is required to tell cloud attenuation apart from shading
-- `pv_actual` and `pv_export` sensors are configured
-- ≥2 consecutive recent periods deviate from the estimate in the **same direction** (a single outlier must not trigger a correction)
-- `clouds > cloud_threshold` — clear-sky deviations are geometric shading and are already handled by dampening
-
-**Correction formula** — an exponentially-decaying nudge applied per future period:
-
-```
-recent_ratio   = mean(total_pv / pv_estimate) over the last 2–3 periods
-correction(n)  = 1.0 + (recent_ratio − 1.0) × exp(−n / τ)
-```
-
-where `n` = periods ahead (integer) and `τ` = time constant (default 3 periods = 90 min, configurable). The nudge decays toward 1.0 as the forecast horizon lengthens:
-
-| Period ahead | Correction retained |
-|---|---|
-| +1 (30 min) | 72% |
-| +3 (90 min) | 37% |
-| +6 (3 hours) | 14% |
-| +12 (6 hours) | 2% — effectively zero |
-
-**Stacking with dampening** (the two effects are orthogonal and multiply):
-
-```
-final_forecast(period) = solcast_estimate(period)
-                       × dampening_factor(hour)        ← structural shading
-                       × short_range_correction(period) ← transient cloud
-```
-
-Because `pv_actual` is a period-average (kW averaged over each ~30-minute interval — whether from a power sensor or an energy-counter delta), `recent_ratio` is already a stable period-average signal rather than a noisy instantaneous reading, which reduces false-positive corrections.
-
-**Planned configuration:** `correction_tau` (default 3 periods, range 1–12), to be added to the PV Tuning step of the setup wizard.
+- **The signal decays too fast to be worth it.** Near-term deviation is cloud-driven, where persistence has very short skill: actual at `t` strongly predicts `t+1`, but that correlation falls off within an hour or two. So the nudge would do something only for the very next period and approach a no-op by +3 — exactly where forecast error is largest.
+- **It would second-guess Solcast with a cruder model.** Solcast's near-term product already incorporates recent imagery; a single-inverter ratio plus coarse OWM cloud cover is a blunt instrument against it.
+- **It would fork the forecast.** A now-relative, decaying, per-horizon correction can't go through `set_dampening` (that array is indexed by local time-of-day and applied every day), so it would have to be exposed as separate "corrected" sensors — forcing users to rewire automations and live with two forecasts that disagree.
+- **The durable, predictable part is already captured** by the DB-driven [dampening](#adaptive-dampening), whose ±14-day seasonal window also covers individual missing slots — so there's little residual left for a short-range term to chase.
 
 ### PV tuning
 
