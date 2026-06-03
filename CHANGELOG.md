@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-03
+
+### Changed
+- **Shading dampening is now computed purely from database-collected history**
+  and no longer consumes any dampening factors from the base `solcast_solar`
+  integration. The confidence blend is anchored on a neutral `1.0`
+  (`final = (1−α) × 1.0 + α × db_factor`) instead of the base factor, so the
+  result ramps from a no-op toward the DB-measured actual/forecast ratio as
+  data accumulates. When no usable DB data exists for a slot the factor stays
+  at a neutral `1.0` rather than falling back to the base integration's values.
+  Slot source labels changed accordingly: `base_fallback` → `no_data`,
+  `blended` → `db_blended` (`db_history`, `night` unchanged). The
+  `set_dampening` push and its skip-while-base-auto-dampening guard are
+  unchanged.
+
+### Fixed
+- Corrected an unsatisfiable test dependency pin
+  (`pytest-homeassistant-custom-component>=1.3`, which has no 1.x release) to
+  `>=0.13,<0.14`.
+
 ## [1.1.1] - 2026-06-02
 
 ### Fixed
