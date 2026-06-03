@@ -12,12 +12,18 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 1. **MySQL database storage** of PV power averages, forecasts, solar position, weather and battery data
 2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via scipy (L-BFGS-B)
-3. **Adaptive Shading Dampening** — quality-weighted dampening that blends with and progressively replaces the base integration's manual dampening as historical data accumulates
+3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
 5. **Flexible PV input** — read either an averaged-power sensor (kW) or a cumulative energy counter (Wh/kWh), with auto-detection
 6. **Short-range Forecast Correction** — planned, not yet implemented
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
+
+---
+
+## 🆕 What's new in v1.2.0
+
+**Adaptive Shading Dampening is now computed purely from your database-collected history.** It no longer reads or blends in the base `solcast_solar` integration's own dampening factors — the correction ramps from a neutral `1.0` toward your measured actual-vs-forecast ratio as confidence grows. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.2.0) and [CHANGELOG](CHANGELOG.md) for details.
 
 ---
 
