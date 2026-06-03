@@ -120,3 +120,38 @@ async def test_read_forecast_from_base_none(hass, coordinator):
     now, today, est, est10, est90 = coordinator._read_forecast_from_base(None)
     assert now == pytest.approx(4.0)
     assert est == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _snap_to_half_hour
+# ---------------------------------------------------------------------------
+
+# 2024-09-10 — :00 and :30 boundaries in UTC epoch seconds.
+_T_1400 = 1725976800  # 2024-09-10T14:00:00+00:00
+_T_1430 = _T_1400 + 1800
+_T_1500 = _T_1400 + 3600
+
+
+def test_snap_exact_boundary_unchanged():
+    assert SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400) == _T_1400
+    assert SolcastEnhancedCoordinator._snap_to_half_hour(_T_1430) == _T_1430
+
+
+def test_snap_rounds_down_within_first_half():
+    # 14:07 → 14:00
+    assert SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 7 * 60) == _T_1400
+
+
+def test_snap_rounds_up_past_quarter():
+    # 14:20 → 14:30, 14:50 → 15:00
+    assert SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 20 * 60) == _T_1430
+    assert SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 50 * 60) == _T_1500
+
+
+def test_snap_two_polls_in_same_slot_collapse():
+    # A scheduled poll and a post-restart poll within the same half-hour snap to
+    # the same boundary, so the (period_end_epoch, site) key dedups them.
+    assert (
+        SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 3 * 60)
+        == SolcastEnhancedCoordinator._snap_to_half_hour(_T_1400 + 11 * 60)
+    )

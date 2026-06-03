@@ -201,6 +201,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     async def _do_update(self) -> dict[str, Any]:
         opts = self._opts = {**self._entry.data, **self._entry.options}
         now_epoch = normalize_epoch(time.time())
+        # Slot timestamp for the stored row, snapped to the nearest :00/:30
+        # boundary so rows align to Solcast's half-hour grid and the
+        # (period_end_epoch, site) unique key coalesces repeated writes within one
+        # slot. Real wall-clock ``now_epoch`` is still used for energy-counter
+        # delta timing and the tuning/dampening interval timers.
+        period_epoch = self._snap_to_half_hour(now_epoch)
 
         # Detect base integration
         base_coord = self._get_base_coordinator()
@@ -238,7 +244,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # Solar position
         lat = float(opts.get(CONF_LATITUDE, -37.9))
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
-        az, zen = solar_position(now_epoch, lat, lon)
+        az, zen = solar_position(period_epoch, lat, lon)
 
         # Forecast data from base integration
         forecast_now, forecast_today, pv_estimate, pv_est10, pv_est90 = (
@@ -247,14 +253,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         # Persist to DB
         if self._db and opts.get(CONF_DB_ENABLED):
-            period_end = datetime.fromtimestamp(now_epoch, tz=timezone.utc).isoformat()
-            start_epoch = pv_actual_start if pv_actual_start else now_epoch - 1800
+            period_end = datetime.fromtimestamp(period_epoch, tz=timezone.utc).isoformat()
+            start_epoch = pv_actual_start if pv_actual_start else period_epoch - 1800
             period_start = datetime.fromtimestamp(
                 start_epoch, tz=timezone.utc
             ).isoformat()
             record = {
                 "period_end": period_end,
-                "period_end_epoch": now_epoch,
+                "period_end_epoch": period_epoch,
                 "period_start": period_start,
                 # Phase 1: still one aggregate row per cycle, tagged with the
                 # default site. Per-site rows arrive once per-site measurement +
@@ -280,13 +286,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # summed), so the property-wide export is replicated here to drive each
             # site's export-limit clip exclusion. battery stays on '_total' only.
             for site_id, (site_kw, site_start) in site_actuals.items():
-                s_start = site_start if site_start else now_epoch - 1800
+                s_start = site_start if site_start else period_epoch - 1800
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(
                     site_id, s_start
                 )
                 await self._db.async_insert_record({
                     "period_end": period_end,
-                    "period_end_epoch": now_epoch,
+                    "period_end_epoch": period_epoch,
                     "period_start": datetime.fromtimestamp(
                         s_start, tz=timezone.utc
                     ).isoformat(),
@@ -596,6 +602,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     def _get_base_coordinator(self) -> Any | None:
         return self.hass.data.get(BASE_DOMAIN)
+
+    @staticmethod
+    def _snap_to_half_hour(epoch: int) -> int:
+        """Round a Unix epoch (UTC) to the nearest :00/:30 half-hour boundary.
+
+        Solcast forecasts are bucketed on half-hour boundaries (in UTC), so
+        snapping the stored ``period_end`` aligns each row to a clean slot and
+        lets the ``(period_end_epoch, site)`` unique key coalesce repeated writes
+        that fall in the same slot (e.g. a poll shortly after a restart).
+        """
+        return ((int(epoch) + 900) // 1800) * 1800
 
     def _discover_sites(self) -> list[dict[str, Any]]:
         """Discover Solcast sites from the base integration's RooftopSensors."""
