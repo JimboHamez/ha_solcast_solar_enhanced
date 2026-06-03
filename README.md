@@ -21,9 +21,11 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.2.0
+## 🆕 What's new in v1.3.0
 
-**Adaptive Shading Dampening is now computed purely from your database-collected history.** It no longer reads or blends in the base `solcast_solar` integration's own dampening factors — the correction ramps from a neutral `1.0` toward your measured actual-vs-forecast ratio as confidence grows. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.2.0) and [CHANGELOG](CHANGELOG.md) for details.
+**Stored database rows now snap to the half-hour grid.** Each `period_end` is rounded to the nearest `:00`/`:30` boundary, so history aligns to Solcast's 48-slot UTC grid (the same grid dampening uses) and the `(period_end_epoch, site)` key enforces one row per slot — no more drift or near-duplicate rows after restarts. The energy-counter averaging and tuning timers still use real wall-clock time, so measurements are unaffected. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.3.0) and [CHANGELOG](CHANGELOG.md).
+
+_Previously, in v1.2.0:_ Adaptive Shading Dampening became computed purely from your database-collected history (it no longer reads the base integration's dampening factors).
 
 ---
 
