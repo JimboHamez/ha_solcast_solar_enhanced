@@ -9,6 +9,11 @@ _LOGGER = logging.getLogger(__name__)
 
 BASE_MIDPOINT = 30.0
 EARLY_CLAMP_PCT = 0.15  # ±15% clamp when α < 0.5
+# Neutral anchor for the confidence blend. The dampening factor is derived purely
+# from database-collected records; with little data it sits near this no-op value
+# and ramps toward the DB-measured ratio as confidence grows. We deliberately do
+# NOT seed this from the base solcast_solar integration's dampening factors.
+NEUTRAL_FACTOR = 1.0
 
 
 def _cloud_weight(clouds: int, threshold: int, max_include: int) -> float:
@@ -46,12 +51,15 @@ def compute_dampening(
     cloud_threshold: int,
     cloud_max_include: int,
     clipping_threshold: float,
-    base_factors: list[float],
     target_zenith: float,
     target_azimuth: float,
 ) -> dict[str, Any]:
     """
-    Compute a single half-hour slot's blended dampening.
+    Compute a single half-hour slot's dampening from database-collected records only.
+
+    The factor is the confidence-weighted blend of a neutral 1.0 anchor and the
+    DB-measured actual/estimate ratio; no values from the base solcast_solar
+    integration are consulted.
 
     Returns dict with: factor, alpha, source, quality_records, avg_quality, clipped_excluded
     """
@@ -93,12 +101,12 @@ def compute_dampening(
         n_records += 1
 
     if total_weight < 1e-6 or n_records == 0:
-        # No usable data — fall back to base
-        base_val = sum(base_factors) / len(base_factors) if base_factors else 1.0
+        # No usable DB data — stay neutral (no dampening). We do not consult the
+        # base integration's factors.
         return {
-            "factor": base_val,
+            "factor": NEUTRAL_FACTOR,
             "alpha": 0.0,
-            "source": "base_fallback",
+            "source": "no_data",
             "quality_records": 0.0,
             "avg_quality": 0.0,
             "clipped_excluded": clipped_excluded,
@@ -113,17 +121,17 @@ def compute_dampening(
     alpha = (x * x) / (x * x + midpoint * midpoint)
     alpha = max(0.0, min(1.0, alpha))
 
-    base_val = sum(base_factors) / len(base_factors) if base_factors else 1.0
-    blended = (1.0 - alpha) * base_val + alpha * db_factor
+    # Blend the DB-measured ratio toward a neutral 1.0 anchor by confidence.
+    blended = (1.0 - alpha) * NEUTRAL_FACTOR + alpha * db_factor
 
     # Early stability clamp when α < 0.5
     if alpha < 0.5:
-        lo = base_val * (1.0 - EARLY_CLAMP_PCT)
-        hi = base_val * (1.0 + EARLY_CLAMP_PCT)
+        lo = NEUTRAL_FACTOR * (1.0 - EARLY_CLAMP_PCT)
+        hi = NEUTRAL_FACTOR * (1.0 + EARLY_CLAMP_PCT)
         blended = max(lo, min(hi, blended))
-        source = "blended"
+        source = "db_blended"
     else:
-        source = "db_history" if alpha > 0.95 else "blended"
+        source = "db_history" if alpha > 0.95 else "db_blended"
 
     return {
         "factor": round(blended, 4),
