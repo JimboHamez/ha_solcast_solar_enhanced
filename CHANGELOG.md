@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-03
+
+### Fixed
+- **Dampening factors are now aligned to local time.** The 48-slot dampening
+  array was built on UTC time-of-day, but the base `solcast_solar` integration
+  applies `damp_factor[i]` to the i-th **local** half-hour. For non-UTC sites
+  this shifted the whole curve by the UTC offset — e.g. for a UTC+10/+11 site,
+  daytime periods received the night factor (~1.0), effectively disabling
+  dampening during daylight. The slot grid is now built on local wall-clock time
+  (each local slot converted to its UTC instant for the solar-position lookup).
+- **Energy counters can no longer be misread as instantaneous power.** PV input
+  auto-detection now decides energy vs power by the sensor's **unit**
+  (`Wh`/`kWh`/`MWh` → energy counter; `W`/`kW` → averaged power), with
+  `state_class` only as a fallback. Previously the decision keyed on
+  `state_class`, so a `kWh` counter that omitted it was read as instantaneous
+  power — a lifetime total interpreted as a huge `kW` value.
+
+### Changed
+- Standardised on **cumulative energy counters** as the recommended PV input.
+  The power path remains for a rolling `mean_linear` statistics helper (a
+  continuous sliding window with no `:00`/`:30` reset race) and for per-MPPT DC
+  ratio sensors; the config-flow mode selector and docs were relabelled
+  accordingly, replacing the legacy boundary-resetting Statistics-helper guidance.
+- The dampening day-of-year window query now renders timestamps in UTC
+  deterministically (DB session pinned to UTC), and solar position for stored
+  rows and dampening slots is taken at the interval **midpoint** rather than the
+  boundary.
+
 ## [1.3.0] - 2026-06-03
 
 ### Changed
