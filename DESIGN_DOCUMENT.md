@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **Prepared for collaboration with BJReplay/ha-solcast-solar**
-**Version 1.6 — June 2026**
+**Version 1.7 — June 2026**
 
 ---
 
@@ -9,23 +9,29 @@
 
 This document describes a proposed enhancement to the
 [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar)
-Home Assistant integration. The enhancement adds four capabilities:
+Home Assistant integration. The enhancement adds three capabilities:
 
-1. **MySQL database storage** of PV power averages, forecasts, solar
-   position, weather and battery data
+1. **Built-in SQLite database storage** of PV power averages, forecasts,
+   solar position, weather and battery data — a single zero-config file
+   using the Python standard-library `sqlite3` module (no server, no
+   credentials, no extra dependency)
 2. **Automatic Rooftop PV Tuning** — tilt and azimuth optimisation via
    scipy, based on Solcast SDK notebook 3.4
-3. **Adaptive Shading Dampening** — DB-derived quality-weighted dampening
-   that blends with and progressively replaces the existing dampening
-   system as historical data accumulates, based on Solcast SDK notebook 3.4b
-4. **Short-range Forecast Correction** — live cloud/output adjustment of
-   the next 1–6 hours of forecast (planned, not yet implemented)
+3. **Adaptive Shading Dampening** — quality-weighted dampening computed
+   purely from DB-collected actual-vs-forecast history (it never consumes
+   the base integration's own dampening factors), ramping from a neutral
+   no-op toward the measured ratio as data accumulates, based on Solcast
+   SDK notebook 3.4b
+
+A fourth capability — **Short-range Forecast Correction** — was designed but
+**evaluated and dropped**; see [Feature 4](#feature-4--short-range-forecast-correction-dropped)
+for the reasoning.
 
 The current working prototype runs as a standalone companion integration
 (`solcast_solar_enhanced`) that reads all Solcast data from the base
 integration's coordinator — making **zero additional Solcast API calls** —
-and pushes improved dampening values back via the existing
-`set_dampening_factor` service.
+and pushes improved dampening values back via the base integration's
+`set_dampening` service.
 
 The goal is to merge this enhancement into the main repository so all
 users benefit from a single, unified integration.
@@ -43,7 +49,7 @@ solcast_solar_enhanced/
 ├── config_flow.py           5-step setup wizard + options flow
 ├── const.py                 All constants
 ├── coordinator.py           DataUpdateCoordinator — orchestrates everything
-├── db_manager.py            Async MySQL pool, schema, migrations
+├── sqlite_store.py          Built-in stdlib sqlite3 store (executor jobs, WAL)
 ├── pv_tuning.py             Tilt/azimuth optimisation (scipy)
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
@@ -67,9 +73,9 @@ solcast_solar_enhanced coordinator
         │                      └─ falls back to raw battery sensor if not configured
         ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
         ├── fetch OWM weather  (temp °C, clouds 0–100, description text)
-        ├── persist records    to MySQL ('_total' + one row per site)
+        ├── persist records    to SQLite ('_total' + one row per site)
         ├── run PV tuning      scipy L-BFGS-B (daily, executor thread; per-site)
-        ├── compute dampening  quality-weighted blend of DB + base integration
+        ├── compute dampening  quality-weighted DB ratio blended toward neutral 1.0
         └── push dampening     → base integration set_dampening service (per-site)
 ```
 
@@ -225,36 +231,56 @@ Battery sensor priority:
 
 ---
 
-## Feature 1 — MySQL Database Storage
+## Feature 1 — Built-in SQLite Database Storage
 
 ### Purpose
 
 Persists historical PV data alongside solar position, weather and battery
-state for use by the shading dampening and PV tuning calculations.
+state for use by the shading dampening and PV tuning calculations. Storage is
+**zero-config** and enabled by default: a single file
+(`config/solcast_solar_enhanced.db`) using the Python standard-library
+`sqlite3` module — no server, no credentials and no extra dependency.
+
+> **Storage history.** v1.0.0 shipped a MySQL backend (`aiomysql`). v1.5.0
+> removed MySQL entirely; the integration is now SQLite-only. To carry forward
+> an existing MySQL history, export it to CSV before upgrading — otherwise the
+> built-in store starts fresh and rebuilds as data accumulates.
+
+### Implementation
+
+`SqliteStore` (`sqlite_store.py`) wraps stdlib `sqlite3`: every call runs via
+`async_add_executor_job` and is serialised by a lock, the connection uses WAL
+mode (`synchronous=NORMAL`), and the complete schema is created on first run —
+so there are **no migrations** (the `site` and `battery_charge` columns are
+always present). Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`.
+The store logs its file path and row count at startup.
 
 ### Database schema
 
 ```sql
 CREATE TABLE solcast_data (
-  `index`          INT AUTO_INCREMENT PRIMARY KEY,
+  "index"          INTEGER PRIMARY KEY AUTOINCREMENT,
   period_end       TEXT NOT NULL,
-  period_end_epoch BIGINT NOT NULL,
+  period_end_epoch INTEGER NOT NULL,
   period_start     TEXT NOT NULL,
-  pv_actual        DECIMAL(10,4) NOT NULL,        -- 30-min linear avg (kW)
-  pv_export        DECIMAL(10,4) NOT NULL DEFAULT 0.0000,  -- 30-min linear avg (kW)
-  pv_estimate      DECIMAL(10,4) NOT NULL,        -- from Solcast via base integration
-  pv_estimate10    DECIMAL(10,4) NOT NULL,
-  pv_estimate90    DECIMAL(10,4) NOT NULL,
-  azimuth          DECIMAL(10,5) NOT NULL,        -- solar azimuth at period end (°)
-  zenith           DECIMAL(10,5) NOT NULL,        -- solar zenith at period end (°)
-  temp             DECIMAL(10,2) NOT NULL,        -- OWM temperature (°C)
-  clouds           INT NOT NULL,                  -- OWM cloud cover (0–100)
-  description      TEXT NOT NULL,                 -- OWM weather description
-  battery_charge   DECIMAL(10,4) NOT NULL DEFAULT 0.0000,  -- 30-min linear avg (kW)
-  UNIQUE KEY uq_epoch (period_end_epoch),
-  INDEX idx_period_end ((CAST(period_end AS CHAR(25))))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  site             TEXT NOT NULL DEFAULT '_total', -- Solcast resource_id, or '_total' aggregate
+  pv_actual        REAL NOT NULL,                  -- 30-min avg generation (kW)
+  pv_export        REAL NOT NULL DEFAULT 0,        -- 30-min avg export (kW)
+  pv_estimate      REAL NOT NULL,                  -- from Solcast via base integration
+  pv_estimate10    REAL NOT NULL,                  -- Solcast p10
+  pv_estimate90    REAL NOT NULL,                  -- Solcast p90
+  azimuth          REAL NOT NULL,                  -- solar azimuth at period midpoint (°)
+  zenith           REAL NOT NULL,                  -- solar zenith at period midpoint (°)
+  temp             REAL NOT NULL,                  -- OWM temperature (°C)
+  clouds           INTEGER NOT NULL,               -- OWM cloud cover (0–100)
+  description      TEXT NOT NULL,                  -- OWM weather description
+  battery_charge   REAL NOT NULL DEFAULT 0,        -- 30-min avg battery charge (kW)
+  UNIQUE(period_end_epoch, site)
+);
 ```
+
+To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web)
+at it (WAL mode, so leave the `-wal`/`-shm` sidecar files in place).
 
 ### Total PV energy balance
 
@@ -276,24 +302,14 @@ diagnostics and reference, but are not summed into `total_pv`.
 - Clipping detection: `total_pv >= capacity × clipping_threshold`
 - PV tuning RMSE: `total_pv` vs geometrically-scaled estimate
 
-### Schema initialisation and migration
+### Schema initialisation
 
-On every startup `_init_schema()` runs the following sequence:
-
-1. Queries `information_schema.TABLES` to check whether `solcast_data` already exists
-2. Issues `CREATE TABLE` **only if the table does not exist** — skips it entirely otherwise
-3. Runs two idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements for `battery_charge` and `pv_export`
-
-This means switching from `db_readonly = True` to `False` on an existing database does not fail if the MySQL user lacks `CREATE TABLE` privilege. The `SELECT` required for `information_schema` is available to any connected user.
-
-```sql
-ALTER TABLE solcast_data
-  ADD COLUMN IF NOT EXISTS battery_charge DECIMAL(10,4) NOT NULL DEFAULT 0.0000;
-ALTER TABLE solcast_data
-  ADD COLUMN IF NOT EXISTS pv_export DECIMAL(10,4) NOT NULL DEFAULT 0.0000;
-```
-
-The `battery_charge` column's presence is detected via `information_schema` on startup (`has_battery_col` flag) and SQL queries substitute `0.0 AS battery_charge` when absent.
+On first run the store creates the complete `solcast_data` table (and its
+`UNIQUE(period_end_epoch, site)` constraint) in one `CREATE TABLE IF NOT
+EXISTS`, with WAL mode enabled. Because the full schema — including the `site`
+and `battery_charge` columns — is created up front, there are **no migrations**
+and no `ALTER TABLE`/`information_schema` probing; the `has_site_col` /
+`has_battery_col` flags are always true.
 
 ### Battery charge safety layers
 
@@ -301,25 +317,16 @@ The `battery_charge` column's presence is detected via `information_schema` on s
 |---|---|---|
 | Statistics sensor not configured | Config check | 0.0 |
 | Sensor state unavailable | `_safe_read_sensor()` | 0.0 |
-| DB column absent (read-only external DB) | SQL: `0.0 AS battery_charge` | 0.0 |
 | DB value NULL | SQL: `COALESCE(battery_charge, 0.0)` | 0.0 |
 | Calculation | `float(rec.get("battery_charge", 0) or 0)` | 0.0 |
-| Read-only DB, column always zero | Warning logged + sensor attribute | — |
 
 ### Sensor mapping guidance
 
 `pv_actual` must be configured to read from the **inverter generation meter**
 (total AC output). It already includes self-consumption, grid export, and
 battery charging — so `pv_export` and `battery_charge` must **not** be
-added to it. Configure `pv_actual` to a self-consumption-only meter will
+added to it. Configuring `pv_actual` to a self-consumption-only meter will
 produce systematically low dampening factors and poor tuning results.
-
-### Read-only mode
-
-When `db_readonly = True` the integration reads dampening/tuning history
-but never writes. Intended for databases populated by an external source.
-`battery_charge` column detection still runs — absence is handled
-transparently via SQL substitution.
 
 ---
 
@@ -471,12 +478,16 @@ in `hour_XX_clipped_excluded` sensor attributes for diagnostics.
 
 ### Confidence model (α blending)
 
-The system blends the base integration's existing dampening with the
-DB-derived factor:
+The system blends a **neutral `1.0` anchor** with the DB-derived factor — the
+base integration's own dampening factors are **never** read into the
+calculation (changed in v1.2.0; previously the anchor was the base factor):
 
 ```
-final_factor(h) = (1 - α) × base_factor(h)  +  α × db_factor(h)
+final_factor(h) = (1 - α) × 1.0  +  α × db_factor(h)
 ```
+
+So with little data the factor sits near a no-op `1.0` and ramps toward the
+DB-measured `total_pv / pv_estimate` ratio as confidence builds.
 
 **α** is a per-half-hour-slot quality-weighted sigmoid:
 
@@ -503,7 +514,7 @@ before trusting the DB factor.
 | 100 | 0.92 | 0.74 |
 
 **Early stability clamp:** when α < 0.5 the blended factor is constrained
-to within ±15% of the base factor. This prevents a single anomalous day
+to within ±15% of `1.0` (i.e. 0.85–1.15). This prevents a single anomalous day
 (sensor fault, heavy partial cloud) from distorting the dampening while
 the DB is still accumulating data.
 
@@ -513,22 +524,22 @@ For each half-hour slot where DB data is insufficient, the system falls
 back through:
 
 1. **DB data with seasonal extrapolation** — `±14-day` window queries
-   already provide extrapolation for slots with few records
-2. **Base integration config entry** — reads `entry.options["dampening"]`
-   from the base `solcast_solar` config entry; α = 0.0
-3. **Base integration sensor states** — reads
-   `sensor.*solcast*dampening*hour_XX` entities; α = 0.0
-4. **Retain existing table** — logs a warning, keeps previous values
+   already provide extrapolation for slots with few records (source
+   `db_history` / `db_blended`)
+2. **Neutral no-op** — a slot with no usable DB data stays at `1.0`
+   (source `no_data`); α = 0.0. The base integration's own factors are
+   never read back in.
 
-This ensures dampening always works from day one without a database.
+This ensures dampening always works from day one — a fresh install simply
+pushes neutral `1.0` factors until data accumulates.
 
 ### Per-slot vs hourly resolution
 
 The calculation operates at **48 half-hour slots per day** internally.
 Each slot gets its own α and quality metrics. Adjacent pairs of 30-min
-slots are averaged into 24 hourly values for the `set_dampening_factor`
-service call (which accepts hourly resolution). The full 48-slot table
-is preserved for internal diagnostics.
+slots are averaged into 24 hourly values for the `set_dampening`
+service call (which accepts hourly or half-hourly resolution). The full
+48-slot table is preserved for internal diagnostics.
 
 ### Dampening sensor attributes
 
@@ -536,13 +547,13 @@ The `Dampening Hours with DB Data` sensor (`_attr_name`) exposes
 per-hour diagnostics:
 
 ```yaml
-hour_14_factor:           0.847    # final blended value pushed to base integration
-hour_14_alpha:            0.72     # DB confidence (0 = pure base, 1 = pure DB)
-hour_14_source:           blended  # db_history | blended | base_fallback | night
-hour_14_quality_records:  31.4     # quality-weighted record count
-hour_14_avg_quality:      0.81     # mean combined_weight of contributing records
-hour_14_clipped_excluded: 2        # records excluded due to clipping (shown if > 0)
-overall_source:           blended  # summary across all hours
+hour_14_factor:           0.847      # final blended value pushed to base integration
+hour_14_alpha:            0.72       # DB confidence (0 = neutral 1.0, 1 = pure DB)
+hour_14_source:           db_blended # db_history | db_blended | no_data | night
+hour_14_quality_records:  31.4       # quality-weighted record count
+hour_14_avg_quality:      0.81       # mean combined_weight of contributing records
+hour_14_clipped_excluded: 2          # records excluded due to clipping (shown if > 0)
+overall_source:           db_blended # summary across all hours
 ```
 
 ### Recalculation schedule
@@ -552,7 +563,18 @@ manually via the `solcast_solar_enhanced.run_dampening_update` service.
 
 ---
 
-## Feature 4 — Short-range Forecast Correction (Planned)
+## Feature 4 — Short-range Forecast Correction (Dropped)
+
+> **Status: evaluated and dropped** (v1.3.0). The design below is retained for
+> the record. It was dropped because: the near-term deviation signal is
+> cloud-driven and decays within an hour or two, so the nudge approaches a no-op
+> by +3 — exactly where forecast error is largest; it would second-guess
+> Solcast's imagery-based near-term product with a cruder single-inverter ratio
+> plus coarse OWM cloud cover; a now-relative, decaying, per-horizon correction
+> can't go through `set_dampening` (indexed by local time-of-day), so it would
+> have to fork the forecast into separate "corrected" sensors; and the durable,
+> predictable part is already captured by the DB-driven dampening, whose
+> ±14-day seasonal window also covers individual missing slots.
 
 ### Purpose
 
@@ -560,7 +582,7 @@ Adjust the next 1–6 hours of forecast based on live Statistics sensor
 output and current OWM cloud cover, correcting for satellite image
 processing lag in Solcast's near-term predictions.
 
-### Design (not yet implemented)
+### Design (not implemented)
 
 **Activation conditions:**
 
@@ -605,7 +627,7 @@ already a stable period-average signal rather than a noisy instantaneous
 reading — reducing false positive corrections.
 
 **Configuration addition:** `correction_tau` (default 3 periods,
-range 1–12). Will be added to the tuning step of the setup wizard.
+range 1–12). Would have been added to the tuning step of the setup wizard.
 
 ---
 
@@ -740,8 +762,8 @@ behaviour is identical and per-site logic is inert.
 ### Standalone tuning tool
 
 `tools/standalone_tuning.py` runs the same optimisation (importing
-`pv_tuning.run_tuning`) outside HA against MySQL or a CSV, with `--site` /
-`--all-sites`, for offline validation.
+`pv_tuning.run_tuning`) outside HA against the built-in SQLite store or a CSV,
+with `--site` / `--all-sites`, for offline validation.
 
 ---
 
@@ -814,17 +836,14 @@ one Solcast site is detected (see [Feature 6](#feature-6--multi-site-support)).
 *Falls back to text input if EntitySelector is unavailable in the
 running HA version.
 
-**Step 2 — MySQL Database (optional)**
+**Step 2 — Storage**
 
 | Field | Default | Description |
 |---|---|---|
-| Enable MySQL | False | Toggle database on/off |
-| Host | localhost | MySQL host |
-| Port | 3306 | MySQL port |
-| Username | — | Credentials |
-| Password | — | Credentials |
-| Database name | solcast | Schema name |
-| Read-only | False | External DB, do not write |
+| Enable history storage | On | Toggle the built-in SQLite store on/off |
+
+The store lives at `config/solcast_solar_enhanced.db` and needs no further
+configuration — no host, port, credentials or schema name.
 
 **Step 3 — OpenWeatherMap (optional)**
 
@@ -875,13 +894,7 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 | `CONF_PV_ACTUAL_SENSOR` | pv\_actual\_sensor | "" |
 | `CONF_PV_EXPORT_SENSOR` | pv\_export\_sensor | "" |
 | `CONF_BATTERY_STAT_SENSOR` | battery\_stat\_sensor | "" |
-| `CONF_DB_ENABLED` | db\_enabled | False |
-| `CONF_DB_HOST` | db\_host | localhost |
-| `CONF_DB_PORT` | db\_port | 3306 |
-| `CONF_DB_USER` | db\_user | "" |
-| `CONF_DB_PASSWORD` | db\_password | "" |
-| `CONF_DB_NAME` | db\_name | solcast |
-| `CONF_DB_READONLY` | db\_readonly | False |
+| `CONF_DB_ENABLED` | db\_enabled | True |
 | `CONF_OWM_ENABLED` | owm\_enabled | False |
 | `CONF_OWM_API_KEY` | owm\_api\_key | "" |
 | `CONF_BATTERY_ENABLED` | battery\_enabled | False |
@@ -901,16 +914,16 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 
 ### Phase 1 — DB storage + OWM weather (low risk)
 
-- Add Statistics sensor entity selector fields to config flow step 1
-- Add optional MySQL connection to config flow options
+- Add PV sensor entity selector fields to config flow step 1
+- Add a built-in SQLite store toggle to config flow options
 - Add OWM API key to config flow options
-- Extend coordinator to read Statistics sensors and persist to DB
+- Extend coordinator to read PV sensors and persist to the store
 - Add battery charge Statistics sensor as primary, raw sensor as fallback
 - No changes to existing forecast, dampening or sensor behaviour
 
-**New dependency:** `aiomysql>=0.2.0`
+**New dependency:** none — storage uses the stdlib `sqlite3` module
 
-**Prerequisite documentation:** Statistics sensor setup guide in README
+**Prerequisite documentation:** PV sensor (energy counter) setup guide in README
 
 ### Phase 2 — Adaptive shading dampening (medium risk)
 
@@ -932,29 +945,20 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 
 **New dependencies:** `numpy>=1.21.0`, `scipy>=1.7.0`
 
-### Phase 4 — Short-range forecast correction (experimental)
+### Phase 4 — Short-range forecast correction (dropped)
 
-- Implement correction layer in coordinator update loop
-- Add `correction_tau` setting to tuning step
-- Gate on OWM enabled + Statistics sensors configured
-- Expose correction factor per period as forecast sensor attribute
-
-**New dependencies:** none beyond Phase 1
+Evaluated and **not pursued** — see [Feature 4](#feature-4--short-range-forecast-correction-dropped)
+for the reasoning. No implementation work is planned.
 
 ---
 
 ## Dependency handling
 
 ```python
-# Lazy import pattern — feature degrades gracefully if not installed
+# Storage has no optional dependency — it uses the stdlib sqlite3 module,
+# so the built-in store always works.
 
-try:
-    import aiomysql
-    DB_AVAILABLE = True
-except ImportError:
-    DB_AVAILABLE = False
-    _LOGGER.info("aiomysql not installed — database features disabled")
-
+# PV tuning is the only optional extra — lazy import, degrades gracefully:
 try:
     from scipy.optimize import minimize
     import numpy as np
@@ -964,8 +968,8 @@ except ImportError:
     _LOGGER.info("scipy/numpy not installed — PV tuning disabled")
 ```
 
-Users who do not need DB storage or PV tuning are unaffected by the
-additional dependencies.
+Storage adds no dependency at all; users who do not need PV tuning are
+unaffected by the optional scipy/numpy extras.
 
 ---
 
@@ -1040,6 +1044,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.4 | Jun 2026 | Added export limit filtering to PV tuning (CONF\_EXPORT\_LIMIT\_KW, default 0 = disabled); updated DB schema init to check information\_schema before CREATE TABLE; corrected OptionsFlowWithReload reference to OptionsFlow |
 | 1.5 | Jun 2026 | Added TuningExportExcludedSensor — exposes count of records dropped by export limit filter from last tuning run; sensor count updated to 14 |
 | 1.6 | Jun 2026 | Fixed total_pv calculation in pv_tuning and shading_dampening — pv_actual is inverter AC output and already includes export and battery; removed double-counting |
+| 1.7 | Jun 2026 | Aligned with the v1.5.0 release: Feature 1 rewritten as built-in stdlib `sqlite3` storage (MySQL/`aiomysql` removed, no migrations, `site` column, `INSERT OR IGNORE`); dampening confidence model re-anchored on a neutral `1.0` (base factors never read; source labels `db_blended`/`no_data`); Feature 4 short-range correction marked dropped; `set_dampening_factor` → `set_dampening`; config Step 2 and options reference updated for the single storage toggle |
 
 ---
 
