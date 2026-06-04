@@ -37,6 +37,7 @@ from .const import (
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
     CONF_EXPORT_LIMIT_KW,
+    CONF_DB_BACKEND,
     CONF_DB_ENABLED,
     CONF_DB_HOST,
     CONF_DB_NAME,
@@ -61,9 +62,13 @@ from .const import (
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
+    DEFAULT_DB_BACKEND,
+    DEFAULT_DB_ENABLED,
     DEFAULT_DB_HOST,
     DEFAULT_DB_NAME,
     DEFAULT_DB_PORT,
+    DB_BACKEND_BUILTIN,
+    DB_BACKEND_MYSQL,
     DEFAULT_EXPORT_LIMIT_KW,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
@@ -83,6 +88,36 @@ def _entity_selector(domain: str = "sensor") -> Any:
         except Exception:  # noqa: BLE001
             pass
     return TextSelector()
+
+
+def _backend_selector() -> Any:
+    """Dropdown for the storage backend (built-in SQLite vs legacy MySQL)."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                {"value": DB_BACKEND_BUILTIN, "label": "Built-in (recommended — no setup)"},
+                {"value": DB_BACKEND_MYSQL, "label": "External MySQL (legacy)"},
+            ],
+            mode="dropdown",
+        )
+    )
+
+
+def _mysql_schema(current: dict[str, Any] | None = None) -> vol.Schema:
+    """Shared MySQL connection form (used by setup and options sub-steps)."""
+    current = current or {}
+    return vol.Schema({
+        vol.Optional(CONF_DB_HOST, default=current.get(CONF_DB_HOST, DEFAULT_DB_HOST)): TextSelector(),
+        vol.Optional(CONF_DB_PORT, default=current.get(CONF_DB_PORT, DEFAULT_DB_PORT)): NumberSelector(
+            NumberSelectorConfig(min=1, max=65535, step=1)
+        ),
+        vol.Optional(CONF_DB_USER, default=current.get(CONF_DB_USER, "")): TextSelector(),
+        vol.Optional(CONF_DB_PASSWORD, default=current.get(CONF_DB_PASSWORD, "")): TextSelector(
+            TextSelectorConfig(type="password")
+        ),
+        vol.Optional(CONF_DB_NAME, default=current.get(CONF_DB_NAME, DEFAULT_DB_NAME)): TextSelector(),
+        vol.Required(CONF_DB_READONLY, default=current.get(CONF_DB_READONLY, False)): BooleanSelector(),
+    })
 
 
 def _input_mode_selector() -> Any:
@@ -245,25 +280,28 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
-        """Step 2 — MySQL Database (optional)."""
+        """Step 2 — Storage. Built-in needs nothing; MySQL routes to a sub-step."""
         if user_input is not None:
             self._data.update(user_input)
+            if (
+                user_input.get(CONF_DB_ENABLED)
+                and user_input.get(CONF_DB_BACKEND) == DB_BACKEND_MYSQL
+            ):
+                return await self.async_step_database_mysql()
             return await self.async_step_owm()
 
         schema = vol.Schema({
-            vol.Required(CONF_DB_ENABLED, default=False): BooleanSelector(),
-            vol.Optional(CONF_DB_HOST, default=DEFAULT_DB_HOST): TextSelector(),
-            vol.Optional(CONF_DB_PORT, default=DEFAULT_DB_PORT): NumberSelector(
-                NumberSelectorConfig(min=1, max=65535, step=1)
-            ),
-            vol.Optional(CONF_DB_USER, default=""): TextSelector(),
-            vol.Optional(CONF_DB_PASSWORD, default=""): TextSelector(
-                TextSelectorConfig(type="password")
-            ),
-            vol.Optional(CONF_DB_NAME, default=DEFAULT_DB_NAME): TextSelector(),
-            vol.Required(CONF_DB_READONLY, default=False): BooleanSelector(),
+            vol.Required(CONF_DB_ENABLED, default=DEFAULT_DB_ENABLED): BooleanSelector(),
+            vol.Required(CONF_DB_BACKEND, default=DEFAULT_DB_BACKEND): _backend_selector(),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
+
+    async def async_step_database_mysql(self, user_input: dict[str, Any] | None = None):
+        """Step 2b — Legacy MySQL connection details (only when MySQL is chosen)."""
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_owm()
+        return self.async_show_form(step_id="database_mysql", data_schema=_mysql_schema())
 
     async def async_step_owm(self, user_input: dict[str, Any] | None = None):
         """Step 3 — OpenWeatherMap (optional)."""
@@ -390,23 +428,31 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             self._opts.update(user_input)
+            if (
+                user_input.get(CONF_DB_ENABLED)
+                and user_input.get(CONF_DB_BACKEND) == DB_BACKEND_MYSQL
+            ):
+                return await self.async_step_database_mysql()
             return await self.async_step_owm()
 
         current = {**self.config_entry.data, **self.config_entry.options}
+        # Default the backend selector to whatever the entry currently resolves to,
+        # so existing MySQL users see MySQL preselected.
+        from .storage import resolve_backend
         schema = vol.Schema({
-            vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, False)): BooleanSelector(),
-            vol.Optional(CONF_DB_HOST, default=current.get(CONF_DB_HOST, DEFAULT_DB_HOST)): TextSelector(),
-            vol.Optional(CONF_DB_PORT, default=current.get(CONF_DB_PORT, DEFAULT_DB_PORT)): NumberSelector(
-                NumberSelectorConfig(min=1, max=65535, step=1)
-            ),
-            vol.Optional(CONF_DB_USER, default=current.get(CONF_DB_USER, "")): TextSelector(),
-            vol.Optional(CONF_DB_PASSWORD, default=current.get(CONF_DB_PASSWORD, "")): TextSelector(
-                TextSelectorConfig(type="password")
-            ),
-            vol.Optional(CONF_DB_NAME, default=current.get(CONF_DB_NAME, DEFAULT_DB_NAME)): TextSelector(),
-            vol.Required(CONF_DB_READONLY, default=current.get(CONF_DB_READONLY, False)): BooleanSelector(),
+            vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED)): BooleanSelector(),
+            vol.Required(CONF_DB_BACKEND, default=resolve_backend(current)): _backend_selector(),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
+
+    async def async_step_database_mysql(self, user_input: dict[str, Any] | None = None):
+        if user_input is not None:
+            self._opts.update(user_input)
+            return await self.async_step_owm()
+        current = {**self.config_entry.data, **self.config_entry.options}
+        return self.async_show_form(
+            step_id="database_mysql", data_schema=_mysql_schema(current)
+        )
 
     async def async_step_owm(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:

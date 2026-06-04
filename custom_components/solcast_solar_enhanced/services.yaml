@@ -17,3 +17,45 @@ fetch_weather:
   description: >
     Force an immediate OpenWeatherMap weather fetch. Requires OWM to be
     enabled and an API key to be configured.
+
+import_from_mysql:
+  name: Import history from MySQL
+  description: >
+    Copy all rows from a legacy MySQL database into the built-in SQLite store.
+    Only runs when the active storage backend is the built-in store. Omitted
+    fields fall back to the entry's stored MySQL connection, so you can call it
+    with no data after switching the backend to Built-in. Safe to re-run —
+    rows already present are skipped.
+  fields:
+    db_host:
+      name: Host
+      description: MySQL host (defaults to the stored value).
+      example: 192.168.1.10
+      selector:
+        text:
+    db_port:
+      name: Port
+      description: MySQL port (defaults to the stored value).
+      example: 3306
+      selector:
+        number:
+          min: 1
+          max: 65535
+          mode: box
+    db_user:
+      name: User
+      description: MySQL user (defaults to the stored value).
+      selector:
+        text:
+    db_password:
+      name: Password
+      description: MySQL password (defaults to the stored value).
+      selector:
+        text:
+          type: password
+    db_name:
+      name: Database
+      description: MySQL database name (defaults to the stored value).
+      example: solcast
+      selector:
+        text:

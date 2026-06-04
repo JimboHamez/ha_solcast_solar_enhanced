@@ -362,6 +362,35 @@ class DbManager:
             _LOGGER.error("DB tuning query failed: %s", exc)
             return []
 
+    async def async_get_all_records(self) -> list[dict[str, Any]]:
+        """Return every row as a full record dict (used by the SQLite import).
+
+        Columns are normalised to the record shape ``SqliteStore.async_insert_many``
+        expects, filling ``site``/``battery_charge`` defaults on pre-migration data.
+        """
+        if not self._pool:
+            return []
+        site_col = "site" if self.has_site_col else "'_total' AS site"
+        battery_col = (
+            "COALESCE(battery_charge, 0.0) AS battery_charge"
+            if self.has_battery_col
+            else "0.0 AS battery_charge"
+        )
+        try:
+            async with self._pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(
+                        f"SELECT period_end, period_end_epoch, period_start, "
+                        f"{site_col}, pv_actual, pv_export, pv_estimate, "
+                        f"pv_estimate10, pv_estimate90, azimuth, zenith, temp, "
+                        f"clouds, description, {battery_col} "
+                        f"FROM solcast_data ORDER BY period_end_epoch ASC"
+                    )
+                    return await cur.fetchall()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("DB export query failed: %s", exc)
+            return []
+
     async def async_close(self) -> None:
         """Close the connection pool."""
         if self._pool:

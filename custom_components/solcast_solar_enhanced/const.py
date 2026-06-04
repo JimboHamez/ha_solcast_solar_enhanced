@@ -18,12 +18,19 @@ CONF_PV_EXPORT_INPUT_MODE = "pv_export_input_mode"
 CONF_BATTERY_STAT_SENSOR = "battery_stat_sensor"
 
 CONF_DB_ENABLED = "db_enabled"
+CONF_DB_BACKEND = "db_backend"
 CONF_DB_HOST = "db_host"
 CONF_DB_PORT = "db_port"
 CONF_DB_USER = "db_user"
 CONF_DB_PASSWORD = "db_password"
 CONF_DB_NAME = "db_name"
 CONF_DB_READONLY = "db_readonly"
+
+# Storage backends. The built-in SQLite store needs no server, no credentials
+# and no extra dependency (stdlib sqlite3); MySQL is legacy and slated for
+# removal once users have migrated via the import service.
+DB_BACKEND_BUILTIN = "builtin"
+DB_BACKEND_MYSQL = "mysql"
 
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
@@ -59,6 +66,10 @@ DEFAULT_LONGITUDE = 145.0
 DEFAULT_CAPACITY_KW = 5.0
 DEFAULT_TILT = 20.0
 DEFAULT_AZIMUTH = 0.0
+DEFAULT_DB_ENABLED = True
+DEFAULT_DB_BACKEND = DB_BACKEND_BUILTIN
+# Built-in SQLite file, created in the HA config directory.
+DEFAULT_DB_FILENAME = "solcast_solar_enhanced.db"
 DEFAULT_DB_HOST = "localhost"
 DEFAULT_DB_PORT = 3306
 DEFAULT_DB_NAME = "solcast"
@@ -123,3 +134,4 @@ SENSOR_BASE_STATUS = "base_status"
 SERVICE_RUN_PV_TUNING = "run_pv_tuning"
 SERVICE_RUN_DAMPENING_UPDATE = "run_dampening_update"
 SERVICE_FETCH_WEATHER = "fetch_weather"
+SERVICE_IMPORT_FROM_MYSQL = "import_from_mysql"

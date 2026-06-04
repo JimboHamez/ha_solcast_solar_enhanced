@@ -23,9 +23,16 @@
         }
       },
       "database": {
-        "title": "MySQL Database",
+        "title": "Storage",
+        "description": "Built-in storage needs no setup and is recommended. Choose External MySQL only if you want to keep using a MySQL server (legacy).",
         "data": {
-          "db_enabled": "Enable MySQL",
+          "db_enabled": "Enable history storage",
+          "db_backend": "Storage backend"
+        }
+      },
+      "database_mysql": {
+        "title": "MySQL Database (legacy)",
+        "data": {
           "db_host": "Host",
           "db_port": "Port",
           "db_user": "Username",
@@ -91,9 +98,16 @@
         }
       },
       "database": {
-        "title": "MySQL Database",
+        "title": "Storage",
+        "description": "Built-in storage needs no setup and is recommended. Choose External MySQL only if you want to keep using a MySQL server (legacy).",
         "data": {
-          "db_enabled": "Enable MySQL",
+          "db_enabled": "Enable history storage",
+          "db_backend": "Storage backend"
+        }
+      },
+      "database_mysql": {
+        "title": "MySQL Database (legacy)",
+        "data": {
           "db_host": "Host",
           "db_port": "Port",
           "db_user": "Username",

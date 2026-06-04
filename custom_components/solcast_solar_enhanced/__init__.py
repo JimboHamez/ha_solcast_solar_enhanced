@@ -3,18 +3,36 @@ from __future__ import annotations
 
 import logging
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
+import homeassistant.helpers.config_validation as cv
 
 from .const import (
     BASE_DOMAIN,
+    CONF_DB_HOST,
+    CONF_DB_NAME,
+    CONF_DB_PASSWORD,
+    CONF_DB_PORT,
+    CONF_DB_USER,
     DOMAIN,
     PLATFORMS,
     SERVICE_FETCH_WEATHER,
+    SERVICE_IMPORT_FROM_MYSQL,
     SERVICE_RUN_DAMPENING_UPDATE,
     SERVICE_RUN_PV_TUNING,
 )
+
+# All fields optional — omitted values fall back to the entry's stored MySQL
+# config, so a user who is migrating off MySQL can call the service with no data.
+IMPORT_FROM_MYSQL_SCHEMA = vol.Schema({
+    vol.Optional(CONF_DB_HOST): cv.string,
+    vol.Optional(CONF_DB_PORT): cv.port,
+    vol.Optional(CONF_DB_USER): cv.string,
+    vol.Optional(CONF_DB_PASSWORD): cv.string,
+    vol.Optional(CONF_DB_NAME): cv.string,
+})
 from .coordinator import SolcastEnhancedCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,12 +73,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for coord in hass.data[DOMAIN].values():
             await coord.async_force_fetch_weather()
 
+    async def handle_import_from_mysql(call: ServiceCall) -> None:
+        mysql_opts = {k: v for k, v in call.data.items() if v is not None}
+        total = 0
+        for coord in hass.data[DOMAIN].values():
+            total += await coord.async_import_from_mysql(mysql_opts)
+        _LOGGER.info("import_from_mysql complete — %d record(s) imported", total)
+
     if not hass.services.has_service(DOMAIN, SERVICE_RUN_PV_TUNING):
         hass.services.async_register(DOMAIN, SERVICE_RUN_PV_TUNING, handle_run_pv_tuning)
     if not hass.services.has_service(DOMAIN, SERVICE_RUN_DAMPENING_UPDATE):
         hass.services.async_register(DOMAIN, SERVICE_RUN_DAMPENING_UPDATE, handle_run_dampening_update)
     if not hass.services.has_service(DOMAIN, SERVICE_FETCH_WEATHER):
         hass.services.async_register(DOMAIN, SERVICE_FETCH_WEATHER, handle_fetch_weather)
+    if not hass.services.has_service(DOMAIN, SERVICE_IMPORT_FROM_MYSQL):
+        hass.services.async_register(
+            DOMAIN, SERVICE_IMPORT_FROM_MYSQL, handle_import_from_mysql,
+            schema=IMPORT_FROM_MYSQL_SCHEMA,
+        )
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -79,6 +109,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_remove(DOMAIN, SERVICE_RUN_PV_TUNING)
         hass.services.async_remove(DOMAIN, SERVICE_RUN_DAMPENING_UPDATE)
         hass.services.async_remove(DOMAIN, SERVICE_FETCH_WEATHER)
+        hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_MYSQL)
 
     return unloaded
 
