@@ -18,12 +18,6 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
     CONF_DB_ENABLED,
-    CONF_DB_HOST,
-    CONF_DB_NAME,
-    CONF_DB_PASSWORD,
-    CONF_DB_PORT,
-    CONF_DB_READONLY,
-    CONF_DB_USER,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -49,12 +43,6 @@ STEP_SITE = {
 
 STEP_DATABASE = {
     CONF_DB_ENABLED: False,
-    CONF_DB_HOST: "localhost",
-    CONF_DB_PORT: 3306,
-    CONF_DB_USER: "",
-    CONF_DB_PASSWORD: "",
-    CONF_DB_NAME: "solcast",
-    CONF_DB_READONLY: False,
 }
 
 STEP_OWM = {

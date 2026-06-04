@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-04
+
+### Added
+- **Built-in SQLite storage — zero configuration.** History is stored in a single
+  file (`config/solcast_solar_enhanced.db`) using the Python standard-library
+  `sqlite3` module — no server, no credentials and no extra dependency. It is
+  enabled out of the box, so tuning and dampening work on a fresh install with
+  nothing to set up. The store uses WAL mode and runs all calls in the executor;
+  the schema is created complete on first run, so there are no migrations.
+- **Storage diagnostics.** The *Database Records* sensor now exposes
+  `latest_period_end`, `distinct_sites` and `sites` attributes, and the store logs
+  its file path and row count at startup — handy for verifying that data is
+  accumulating and for pointing tools like the sqlite-web add-on at the file.
+
+### Removed
+- **MySQL support is removed.** The integration is now SQLite-only: the MySQL
+  backend, the `aiomysql` dependency, the `db_host`/`db_port`/`db_user`/
+  `db_password`/`db_name`/`db_readonly` options and the storage-backend selector
+  are all gone. The storage step in the setup/options flow is now a single
+  *Enable history storage* toggle. To carry forward an existing MySQL history,
+  export it to CSV (e.g. `mysqldump`/`SELECT ... INTO OUTFILE`) before upgrading;
+  otherwise the built-in store starts fresh and rebuilds as data accumulates.
+
 ## [1.4.1] - 2026-06-04
 
 ### Fixed
@@ -177,7 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.2.0...v1.3.0

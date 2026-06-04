@@ -38,12 +38,6 @@ from .const import (
     CONF_CLOUD_THRESHOLD,
     CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
-    CONF_DB_HOST,
-    CONF_DB_NAME,
-    CONF_DB_PASSWORD,
-    CONF_DB_PORT,
-    CONF_DB_READONLY,
-    CONF_DB_USER,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -61,9 +55,7 @@ from .const import (
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
-    DEFAULT_DB_HOST,
-    DEFAULT_DB_NAME,
-    DEFAULT_DB_PORT,
+    DEFAULT_DB_ENABLED,
     DEFAULT_EXPORT_LIMIT_KW,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
@@ -245,23 +237,13 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
-        """Step 2 — MySQL Database (optional)."""
+        """Step 2 — Storage. Built-in SQLite store, on by default; no setup needed."""
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_owm()
 
         schema = vol.Schema({
-            vol.Required(CONF_DB_ENABLED, default=False): BooleanSelector(),
-            vol.Optional(CONF_DB_HOST, default=DEFAULT_DB_HOST): TextSelector(),
-            vol.Optional(CONF_DB_PORT, default=DEFAULT_DB_PORT): NumberSelector(
-                NumberSelectorConfig(min=1, max=65535, step=1)
-            ),
-            vol.Optional(CONF_DB_USER, default=""): TextSelector(),
-            vol.Optional(CONF_DB_PASSWORD, default=""): TextSelector(
-                TextSelectorConfig(type="password")
-            ),
-            vol.Optional(CONF_DB_NAME, default=DEFAULT_DB_NAME): TextSelector(),
-            vol.Required(CONF_DB_READONLY, default=False): BooleanSelector(),
+            vol.Required(CONF_DB_ENABLED, default=DEFAULT_DB_ENABLED): BooleanSelector(),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 
@@ -394,17 +376,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
 
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema({
-            vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, False)): BooleanSelector(),
-            vol.Optional(CONF_DB_HOST, default=current.get(CONF_DB_HOST, DEFAULT_DB_HOST)): TextSelector(),
-            vol.Optional(CONF_DB_PORT, default=current.get(CONF_DB_PORT, DEFAULT_DB_PORT)): NumberSelector(
-                NumberSelectorConfig(min=1, max=65535, step=1)
-            ),
-            vol.Optional(CONF_DB_USER, default=current.get(CONF_DB_USER, "")): TextSelector(),
-            vol.Optional(CONF_DB_PASSWORD, default=current.get(CONF_DB_PASSWORD, "")): TextSelector(
-                TextSelectorConfig(type="password")
-            ),
-            vol.Optional(CONF_DB_NAME, default=current.get(CONF_DB_NAME, DEFAULT_DB_NAME)): TextSelector(),
-            vol.Required(CONF_DB_READONLY, default=current.get(CONF_DB_READONLY, False)): BooleanSelector(),
+            vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED)): BooleanSelector(),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 

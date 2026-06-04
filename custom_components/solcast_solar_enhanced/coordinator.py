@@ -31,12 +31,6 @@ from .const import (
     CONF_CLOUD_THRESHOLD,
     CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
-    CONF_DB_HOST,
-    CONF_DB_NAME,
-    CONF_DB_PASSWORD,
-    CONF_DB_PORT,
-    CONF_DB_READONLY,
-    CONF_DB_USER,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -47,6 +41,8 @@ from .const import (
     CONF_PV_EXPORT_SENSOR,
     CONF_TILT,
     DAMPENING_INTERVAL_HOURS,
+    DEFAULT_DB_ENABLED,
+    DEFAULT_DB_FILENAME,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
@@ -64,7 +60,7 @@ from .const import (
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
 )
-from .db_manager import DbManager
+from .sqlite_store import SqliteStore
 from .pv_tuning import normalize_epoch, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OWMClient
@@ -127,7 +123,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._entry = entry
         self._opts = {**entry.data, **entry.options}
 
-        self._db: DbManager | None = None
+        self._db: SqliteStore | None = None
         self._owm: OWMClient | None = None
 
         self._weather: dict[str, Any] = {"temp": 0.0, "clouds": 0, "description": ""}
@@ -137,6 +133,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._db_record_count: int = 0
+        # Freshness/coverage diagnostics surfaced on the Database Records sensor.
+        self._db_latest_period_end: str | None = None
+        self._db_sites: list[str] = []
         self._base_status: str = "not_detected"
         self._auto_dampen_warned: bool = False
 
@@ -171,14 +170,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not load energy baselines: %s", exc)
 
-        if opts.get(CONF_DB_ENABLED):
-            self._db = DbManager(
-                host=opts.get(CONF_DB_HOST, "localhost"),
-                port=int(opts.get(CONF_DB_PORT, 3306)),
-                user=opts.get(CONF_DB_USER, ""),
-                password=opts.get(CONF_DB_PASSWORD, ""),
-                db=opts.get(CONF_DB_NAME, "solcast"),
-                readonly=bool(opts.get(CONF_DB_READONLY, False)),
+        if opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
+            self._db = SqliteStore(
+                self.hass, self.hass.config.path(DEFAULT_DB_FILENAME)
             )
             ok = await self._db.async_connect()
             if not ok:
@@ -286,7 +280,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         )
 
         # Persist to DB
-        if self._db and opts.get(CONF_DB_ENABLED):
+        if self._db and opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
             period_end = datetime.fromtimestamp(period_epoch, tz=timezone.utc).isoformat()
             start_epoch = pv_actual_start if pv_actual_start else period_epoch - 1800
             period_start = datetime.fromtimestamp(
@@ -356,6 +350,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 })
 
             self._db_record_count = await self._db.async_get_record_count()
+            # Diagnostics: newest slot written this cycle + sites seen in the store.
+            self._db_latest_period_end = period_end
+            self._db_sites = await self._db.async_get_sites()
 
         # PV tuning (daily)
         if opts.get(CONF_AUTO_TUNING, True):
@@ -381,6 +378,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "tuning": self._tuning_result,
             "dampening_table": self._dampening_table,
             "db_records": self._db_record_count,
+            "db_latest_period_end": self._db_latest_period_end,
+            "db_sites": self._db_sites,
             "base_status": self._base_status,
         }
 

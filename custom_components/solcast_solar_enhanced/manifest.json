@@ -1,12 +1,12 @@
 {
   "domain": "solcast_solar_enhanced",
   "name": "Solcast Solar Enhanced",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "documentation": "https://github.com/jimbohamez/ha_solcast_solar_enhanced",
   "issue_tracker": "https://github.com/jimbohamez/ha_solcast_solar_enhanced/issues",
   "after_dependencies": ["solcast_solar"],
   "codeowners": ["@jimbohamez"],
-  "requirements": ["aiomysql>=0.2.0"],
+  "requirements": [],
   "iot_class": "local_polling",
   "config_flow": true
 }

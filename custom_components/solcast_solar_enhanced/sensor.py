@@ -200,6 +200,19 @@ class DbRecordsSensor(_EnhancedSensorBase):
             return None
         return self.coordinator.data.get("db_records", 0)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Freshness/coverage diagnostics for verifying data is accumulating."""
+        data = self.coordinator.data
+        if not data:
+            return None
+        sites = data.get("db_sites") or []
+        return {
+            "latest_period_end": data.get("db_latest_period_end"),
+            "distinct_sites": len(sites),
+            "sites": sites,
+        }
+
 
 class DampeningSensor(_EnhancedSensorBase):
     _attr_name = "Dampening Hours with DB Data"

@@ -18,12 +18,6 @@ CONF_PV_EXPORT_INPUT_MODE = "pv_export_input_mode"
 CONF_BATTERY_STAT_SENSOR = "battery_stat_sensor"
 
 CONF_DB_ENABLED = "db_enabled"
-CONF_DB_HOST = "db_host"
-CONF_DB_PORT = "db_port"
-CONF_DB_USER = "db_user"
-CONF_DB_PASSWORD = "db_password"
-CONF_DB_NAME = "db_name"
-CONF_DB_READONLY = "db_readonly"
 
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
@@ -35,7 +29,7 @@ CONF_BATTERY_CHARGE_SENSOR = "battery_charge_sensor"
 
 # Multi-site (multiple Solcast rooftop arrays on one property).
 # DEFAULT_SITE_ID tags single-site / aggregate rows and back-filled legacy data;
-# kept in sync with db_manager.DEFAULT_SITE.
+# kept in sync with sqlite_store.DEFAULT_SITE.
 DEFAULT_SITE_ID = "_total"
 # Stored structured config: list of measurement groups mapping a generation
 # sensor (and optional per-MPPT DC apportionment) to one or more sites.
@@ -59,9 +53,9 @@ DEFAULT_LONGITUDE = 145.0
 DEFAULT_CAPACITY_KW = 5.0
 DEFAULT_TILT = 20.0
 DEFAULT_AZIMUTH = 0.0
-DEFAULT_DB_HOST = "localhost"
-DEFAULT_DB_PORT = 3306
-DEFAULT_DB_NAME = "solcast"
+DEFAULT_DB_ENABLED = True
+# Built-in SQLite file, created in the HA config directory.
+DEFAULT_DB_FILENAME = "solcast_solar_enhanced.db"
 DEFAULT_AUTO_TUNING = True
 DEFAULT_AUTO_DAMPENING = True
 DEFAULT_CLOUD_THRESHOLD = 20
