@@ -10,7 +10,7 @@
 
 A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that adds:
 
-1. **MySQL database storage** of PV power averages, forecasts, solar position, weather and battery data
+1. **Built-in history storage** of PV power averages, forecasts, solar position, weather and battery data — a zero-config SQLite file by default (no server, no dependency), with optional legacy MySQL
 2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via scipy (L-BFGS-B)
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
@@ -20,11 +20,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.4.0
+## 🆕 What's new in v1.5.0
 
-**Two correctness fixes for non-UTC sites and energy-counter users.** Dampening factors are now aligned to **local time** — they were built on a UTC slot grid while the base integration applies them by local half-hour, which shifted the whole curve by the UTC offset (for a UTC+10/+11 site, daytime periods got the night factor, effectively disabling dampening during daylight). And PV input **auto-detection is now unit-first** (`Wh`/`kWh`/`MWh` → energy counter, `W`/`kW` → averaged power), so a `kWh` counter that omits `state_class` can no longer be misread as instantaneous power. The integration now **standardises on cumulative energy counters**, with a rolling `mean_linear` helper as the power fallback. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.4.0) and [CHANGELOG](CHANGELOG.md).
+**Zero-config storage — no MySQL server required.** History now defaults to a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, using stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box. MySQL is now an optional **legacy** backend, and a new `import_from_mysql` service copies an existing MySQL history into the built-in store so you can migrate. The setup wizard's storage step is now a simple **backend selector** (Built-in vs External MySQL). The **Database Records** sensor also gained `latest_period_end` / `distinct_sites` attributes for verifying data is accumulating. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.5.0) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.3.0:_ stored database rows snap to the half-hour grid, enforcing one row per slot.
+> **Existing MySQL users:** nothing changes on upgrade — your MySQL backend is detected and kept. To move to the built-in store, switch the backend to *Built-in* in the options and call `solcast_solar_enhanced.import_from_mysql`.
+
+_Previously, in v1.4.0:_ two correctness fixes — dampening factors aligned to **local time**, and PV input **auto-detection made unit-first** (`Wh`/`kWh`/`MWh` → energy counter, `W`/`kW` → averaged power), standardising on cumulative energy counters.
 
 ---
 
@@ -64,9 +66,9 @@ sensor:
 (Repeat for export and per-MPPT DC as needed.) Accuracy depends on how often the source sensor updates. The old **boundary-resetting** 30-minute Statistics approach is no longer recommended — it can be read mid-reset at the `:00`/`:30` border.
 </details>
 
-### 3. MySQL database (optional)
+### 3. History storage
 
-If you want historical storage, dampening and PV tuning, a MySQL 8.0+ database is required. The schema is created automatically on first run.
+Historical storage powers dampening and PV tuning. **By default this needs nothing** — the integration creates a built-in SQLite file (`config/solcast_solar_enhanced.db`) with no server, credentials or extra dependency. A **MySQL 8.0+** database is supported as a legacy option if you prefer a central/shared store; its schema is created automatically on first run.
 
 ### 4. OpenWeatherMap API key (optional)
 
@@ -89,18 +91,16 @@ A free API key from [openweathermap.org](https://openweathermap.org/api) enables
 
 ### Python dependencies
 
-Install required packages in your HA Python environment:
+The default built-in SQLite store uses the Python standard library — **nothing to install**.
+
+Optional extras, installed in your HA Python environment only if you use those features:
 
 ```bash
-pip install aiomysql>=0.2.0
+pip install aiomysql>=0.2.0          # only for the legacy MySQL backend / import
+pip install numpy>=1.21.0 scipy>=1.7.0  # only for PV tuning
 ```
 
-For PV tuning (optional):
-```bash
-pip install numpy>=1.21.0 scipy>=1.7.0
-```
-
-Both dependencies use lazy imports — if not installed, the relevant features are disabled with an informational log message. The integration will still run.
+These use lazy imports — if not installed, the relevant feature is disabled with an informational log message. The integration still runs.
 
 ---
 
@@ -124,16 +124,24 @@ The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automa
 | PV Export sensor type | As above, for the export sensor |
 | Battery Charge sensor | Generation/power or energy-counter sensor for battery charge (optional) |
 
-### Step 2 — MySQL Database
+### Step 2 — Storage
 
 | Field | Default | Description |
 |---|---|---|
-| Enable MySQL | Off | Toggle DB storage on/off |
+| Enable history storage | On | Toggle storage on/off |
+| Storage backend | Built-in (recommended) | `Built-in` (zero-config SQLite file) or `External MySQL (legacy)` |
+
+Choosing **External MySQL** adds a follow-up step for the connection details:
+
+| Field | Default | Description |
+|---|---|---|
 | Host | localhost | MySQL server hostname |
 | Port | 3306 | MySQL port |
 | Username / Password | — | Credentials |
 | Database name | solcast | Schema name (created automatically) |
 | Read-only mode | Off | Read history only, never write |
+
+The built-in store lives at `config/solcast_solar_enhanced.db` and needs no further configuration. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path (it uses WAL mode, so leave the `-wal`/`-shm` sidecar files in place).
 
 ### Step 3 — OpenWeatherMap
 
@@ -275,7 +283,7 @@ When the base integration has more than one rooftop site, the enhanced integrati
 | Tuned Panel Azimuth | ° | Optimised azimuth from PV tuning |
 | Tuning RMSE | kW | Goodness of fit for tuned geometry |
 | Tuning Export Limited Excluded | — | Records dropped from last tuning run due to export limit filter |
-| Database Records | — | Total records in the DB |
+| Database Records | — | Total records in the store (attributes: `latest_period_end`, `distinct_sites`, `sites`) |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active |
 | Weather Temperature | °C | OWM current temperature |
 | Cloud Cover | % | OWM cloud cover |
@@ -306,10 +314,13 @@ In multi-site mode the **Tuned Panel Tilt** sensor additionally carries a `per_s
 | `solcast_solar_enhanced.run_pv_tuning` | Force immediate PV tuning |
 | `solcast_solar_enhanced.run_dampening_update` | Force immediate dampening recalculation and push |
 | `solcast_solar_enhanced.fetch_weather` | Force immediate OWM weather fetch |
+| `solcast_solar_enhanced.import_from_mysql` | Copy a legacy MySQL history into the built-in SQLite store (all fields optional — falls back to the stored MySQL config; safe to re-run) |
 
 ---
 
 ## Database schema
+
+Both backends use the same logical schema — one row per half-hour per site. The MySQL DDL is shown below; the built-in store creates an equivalent SQLite table (`INTEGER PRIMARY KEY`, `REAL`/`TEXT` columns, `UNIQUE(period_end_epoch, site)`), so queries and exports are identical across backends.
 
 ```sql
 CREATE TABLE solcast_data (
@@ -333,7 +344,7 @@ CREATE TABLE solcast_data (
 );
 ```
 
-The schema is created automatically on first run. On subsequent startups the integration checks `information_schema.TABLES` before issuing `CREATE TABLE`, so switching from read-only to read-write mode on an existing database does not require `CREATE` privilege. Columns added in later versions are migrated with idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements.
+The schema is created automatically on first run. For MySQL, on subsequent startups the integration checks `information_schema.TABLES` before issuing `CREATE TABLE`, so switching from read-only to read-write mode on an existing database does not require `CREATE` privilege. Columns added in later versions are migrated with idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements. The built-in SQLite store always starts from the complete schema, so it needs no migrations.
 
 When upgrading from a single-site schema, the `site` column is added (back-filling existing rows to `_total`) and the unique key is migrated from `(period_end_epoch)` to `(period_end_epoch, site)` — checked against `information_schema` so it runs at most once and is safe to re-run.
 
@@ -368,7 +379,10 @@ python tools/standalone_tuning.py --db solcast --user solcast --password secret 
 python tools/standalone_tuning.py --csv history.csv --capacity 5
 ```
 
-Requires `numpy` + `scipy`, and for DB mode one of `pymysql` or `mysql-connector-python` (CSV mode needs neither). Run `--help` for all options.
+Requires `numpy` + `scipy`, and for MySQL mode one of `pymysql` or `mysql-connector-python` (CSV mode needs neither). Run `--help` for all options.
+
+> **Built-in SQLite store:** the standalone tool currently reads MySQL or CSV. To tune against the built-in store, export it to CSV first, e.g.
+> `sqlite3 -header -csv config/solcast_solar_enhanced.db "SELECT * FROM solcast_data;" > history.csv`, then run with `--csv history.csv`. (A native `--sqlite` source is a planned follow-up.)
 
 ---
 
@@ -378,8 +392,9 @@ Requires `numpy` + `scipy`, and for DB mode one of `pymysql` or `mysql-connector
 |---|---|
 | Home Assistant | 2026.5.4+ |
 | Python | 3.12+ |
-| MySQL | 8.0+ |
-| aiomysql | 0.2.0+ |
+| Built-in SQLite store | stdlib `sqlite3` — no install |
+| MySQL (legacy, optional) | 8.0+ |
+| aiomysql (only for MySQL) | 0.2.0+ |
 | scipy / numpy | Optional — 1.7.0+ / 1.21.0+ |
 
 ---

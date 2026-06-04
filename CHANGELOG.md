@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-04
+
+### Added
+- **Built-in SQLite storage — the new default, with zero configuration.** History
+  is now stored in a single file (`config/solcast_solar_enhanced.db`) using the
+  Python standard-library `sqlite3` module — no server, no credentials and no
+  extra dependency. It is enabled out of the box, so tuning and dampening work on
+  a fresh install with nothing to set up. The store uses WAL mode and runs all
+  calls in the executor; it shares the same async API and logical schema as the
+  MySQL backend, so queries and exports are identical.
+- **`import_from_mysql` service.** Copies an existing MySQL history into the
+  built-in store. All fields are optional (falling back to the entry's stored
+  MySQL connection), and it is safe to re-run — rows already present are skipped.
+- **Storage diagnostics.** The *Database Records* sensor now exposes
+  `latest_period_end`, `distinct_sites` and `sites` attributes, and the built-in
+  store logs its file path and row count at startup, for verifying that data is
+  accumulating and for pointing tools like the sqlite-web add-on at the file.
+
+### Changed
+- **MySQL is now a legacy backend.** The storage step in the setup/options flow is
+  a backend selector (*Built-in* vs *External MySQL*); choosing MySQL reveals the
+  connection sub-step. Existing MySQL users are detected and kept on MySQL across
+  the upgrade (inferred from a configured `db_user`), so nothing changes for them.
+  MySQL and the `aiomysql` dependency are slated for removal in a future release
+  once users have migrated via the import service.
+
 ## [1.4.1] - 2026-06-04
 
 ### Fixed
@@ -177,7 +203,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.2.0...v1.3.0
