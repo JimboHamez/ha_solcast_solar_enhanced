@@ -94,6 +94,10 @@ ENERGY_DT_MAX_FRACTION = 2.0
 
 # Internal
 UPDATE_INTERVAL_MINUTES = 30
+# Seconds past the :00/:30 boundary at which the wall-clock-aligned refresh fires.
+# A small positive offset lets boundary energy-counter states post before the
+# delta is read (counters update on their own cadence, not exactly on the minute).
+HALF_HOUR_REFRESH_OFFSET_SECONDS = 30
 DAMPENING_INTERVAL_HOURS = 6
 TUNING_INTERVAL_HOURS = 24
 STORAGE_VERSION = 1

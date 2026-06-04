@@ -219,6 +219,34 @@ async def test_site_forecast_missing_returns_zeros(hass, coordinator):
 
 
 # ---------------------------------------------------------------------------
+# _total_forecast_for_period (property-wide detailedForecast)
+# ---------------------------------------------------------------------------
+
+async def test_total_forecast_matches_slot(hass, coordinator):
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today", "10.0",
+        {
+            "detailedForecast": [
+                {"period_start": "2024-09-10T06:00:00+00:00", "pv_estimate": 0.5,
+                 "pv_estimate10": 0.3, "pv_estimate90": 0.7},
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 4.2,
+                 "pv_estimate10": 3.0, "pv_estimate90": 5.0},
+            ],
+        },
+    )
+    import datetime as dt
+    slot = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, e10, e90 = coordinator._total_forecast_for_period(slot)
+    assert est == pytest.approx(4.2)
+    assert e10 == pytest.approx(3.0)
+    assert e90 == pytest.approx(5.0)
+
+
+async def test_total_forecast_missing_returns_zeros(hass, coordinator):
+    assert coordinator._total_forecast_for_period(1_000_000) == (0.0, 0.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
 # azimuth seed + configured site ids
 # ---------------------------------------------------------------------------
 

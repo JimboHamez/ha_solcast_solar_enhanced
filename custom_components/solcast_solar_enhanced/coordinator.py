@@ -4,12 +4,13 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -58,6 +59,7 @@ from .const import (
     DOMAIN,
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
+    HALF_HOUR_REFRESH_OFFSET_SECONDS,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
@@ -112,11 +114,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     """Coordinator that orchestrates all enhanced features."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        # No free-running interval: refreshes are driven by a wall-clock listener
+        # (see async_setup) so each cycle fires on the :00/:30 half-hour grid
+        # rather than drifting from HA's boot time. This keeps the energy-counter
+        # measurement window aligned with Solcast's half-hour slots.
         super().__init__(
             hass,
             _LOGGER,
             name="solcast_solar_enhanced",
-            update_interval=timedelta(minutes=UPDATE_INTERVAL_MINUTES),
+            update_interval=None,
         )
         self._entry = entry
         self._opts = {**entry.data, **entry.options}
@@ -145,6 +151,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         )
         self._energy_baselines: dict[str, Any] = {}
         self._baselines_dirty: bool = False
+
+        # Unsubscribe handle for the half-hour wall-clock refresh listener.
+        self._unsub_timer: CALLBACK_TYPE | None = None
 
     # ------------------------------------------------------------------
     # Setup / teardown
@@ -183,8 +192,27 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 longitude=float(opts.get(CONF_LONGITUDE, 145.0)),
             )
 
+        # Drive refreshes from the wall clock at :00/:30 + a small offset, so the
+        # measurement window aligns to Solcast's half-hour grid instead of drifting
+        # from HA's boot time. The offset lets boundary energy-counter states post
+        # before we read the delta (counters update on their own cadence).
+        self._unsub_timer = async_track_time_change(
+            self.hass,
+            self._handle_timed_refresh,
+            minute=(0, 30),
+            second=HALF_HOUR_REFRESH_OFFSET_SECONDS,
+        )
+
+    @callback
+    def _handle_timed_refresh(self, now: datetime) -> None:
+        """Wall-clock-aligned refresh trigger (fires at :00/:30 each hour)."""
+        self.hass.async_create_task(self.async_request_refresh())
+
     async def async_teardown(self) -> None:
-        """Close DB pool."""
+        """Close DB pool and cancel the refresh timer."""
+        if self._unsub_timer is not None:
+            self._unsub_timer()
+            self._unsub_timer = None
         if self._db:
             await self._db.async_close()
             self._db = None
@@ -250,7 +278,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
         az, zen = solar_position(period_epoch - 900, lat, lon)
 
-        # Forecast data from base integration
+        # Forecast data from base integration. forecast_now/today drive the
+        # sensors; the in-memory pv_estimate keys are only a fallback for the DB
+        # row (see below) since newer base versions don't expose them.
         forecast_now, forecast_today, pv_estimate, pv_est10, pv_est90 = (
             self._read_forecast_from_base(base_coord)
         )
@@ -262,6 +292,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             period_start = datetime.fromtimestamp(
                 start_epoch, tz=timezone.utc
             ).isoformat()
+            # Forecast slots are bucketed on clean half-hour boundaries, so the
+            # lookup keys off the snapped slot start (period_end − 30 min), not the
+            # drifting measured start used for the avg-kW math. Prefer the
+            # documented property-wide detailedForecast slot; fall back to the base
+            # coordinator's in-memory estimate only when the attribute is absent.
+            slot_start_epoch = period_epoch - 1800
+            t_est, t_est10, t_est90 = self._total_forecast_for_period(slot_start_epoch)
+            if (t_est, t_est10, t_est90) != (0.0, 0.0, 0.0):
+                pv_estimate, pv_est10, pv_est90 = t_est, t_est10, t_est90
             record = {
                 "period_end": period_end,
                 "period_end_epoch": period_epoch,
@@ -291,8 +330,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # site's export-limit clip exclusion. battery stays on '_total' only.
             for site_id, (site_kw, site_start) in site_actuals.items():
                 s_start = site_start if site_start else period_epoch - 1800
+                # Match the forecast on the snapped slot boundary (as above), while
+                # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(
-                    site_id, s_start
+                    site_id, slot_start_epoch
                 )
                 await self._db.async_insert_record({
                     "period_end": period_end,
@@ -701,6 +742,20 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     out[site] = (ac_kw, ac_start)
         return out
 
+    def _total_forecast_for_period(
+        self, start_epoch: int
+    ) -> tuple[float, float, float]:
+        """Return (pv_estimate, pv_estimate10, pv_estimate90) for the property total.
+
+        Reads the property-wide ``detailedForecast`` attribute off the base
+        ``forecast_today`` sensor and picks the slot matching the measured
+        interval's start — the same documented source the per-site path uses, just
+        without a site suffix. Preferred over the base coordinator's in-memory
+        ``pv_estimate`` key (which newer base versions don't expose), so the
+        ``_total`` row gets a real forecast instead of zeros.
+        """
+        return self._forecast_slot("detailedForecast", start_epoch)
+
     def _site_forecast_for_period(
         self, resource_id: str, start_epoch: int
     ) -> tuple[float, float, float]:
@@ -708,17 +763,28 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         Reads the per-site ``detailedForecast-<resource_id>`` attribute off the base
         ``forecast_today`` sensor (falls back to the underscore variant used by newer
-        base versions). Values are already average kW over the half-hour, matching
-        ``pv_actual``. Picks the entry whose ``period_start`` is closest to the
-        measured interval's start, within half a slot.
+        base versions).
+        """
+        est = self._forecast_slot(f"detailedForecast-{resource_id}", start_epoch)
+        if est == (0.0, 0.0, 0.0):
+            est = self._forecast_slot(f"detailedForecast_{resource_id}", start_epoch)
+        return est
+
+    def _forecast_slot(
+        self, attr_name: str, start_epoch: int
+    ) -> tuple[float, float, float]:
+        """Pick the ``detailedForecast`` slot closest to ``start_epoch``.
+
+        ``attr_name`` selects the property-wide (``detailedForecast``) or per-site
+        (``detailedForecast-<resource_id>``) series on the base ``forecast_today``
+        sensor. Values are already average kW over the half-hour, matching
+        ``pv_actual``. Returns zeros if the attribute is absent or no slot falls
+        within half a slot (900 s) of the measured interval's start.
         """
         state = self.hass.states.get("sensor.solcast_pv_forecast_forecast_today")
         if state is None:
             return 0.0, 0.0, 0.0
-        attrs = state.attributes
-        series = attrs.get(f"detailedForecast-{resource_id}")
-        if series is None:
-            series = attrs.get(f"detailedForecast_{resource_id}")
+        series = state.attributes.get(attr_name)
         if not series:
             return 0.0, 0.0, 0.0
 
