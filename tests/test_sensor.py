@@ -157,6 +157,25 @@ def test_db_records_defaults_zero():
     assert s.native_value == 0
 
 
+def test_db_records_attributes_expose_freshness_and_sites():
+    coord = _make_coordinator({
+        "db_records": 100,
+        "db_latest_period_end": "2026-06-04T12:30:00+00:00",
+        "db_sites": ["_total", "abcd-1234"],
+    })
+    s = _make_sensor(DbRecordsSensor, coord)
+    attrs = s.extra_state_attributes
+    assert attrs["latest_period_end"] == "2026-06-04T12:30:00+00:00"
+    assert attrs["distinct_sites"] == 2
+    assert attrs["sites"] == ["_total", "abcd-1234"]
+
+
+def test_db_records_attributes_none_without_data():
+    coord = _make_coordinator(None)
+    s = _make_sensor(DbRecordsSensor, coord)
+    assert s.extra_state_attributes is None
+
+
 # ---------------------------------------------------------------------------
 # DampeningSensor
 # ---------------------------------------------------------------------------

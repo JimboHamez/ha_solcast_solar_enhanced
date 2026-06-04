@@ -95,6 +95,14 @@ class SqliteStore:
                 conn.executescript(CREATE_TABLE_SQL)
                 conn.commit()
             self._conn = conn
+            # Surface the file path + current row count so users know where the
+            # store lives (e.g. to point sqlite-web at it) and that it loaded.
+            try:
+                row = conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()
+                count = int(row[0]) if row else 0
+            except Exception:  # noqa: BLE001 — table may be absent on a read-only first open
+                count = 0
+            _LOGGER.info("Built-in store ready at %s — %d row(s)", self._path, count)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite open failed (%s): %s", self._path, exc)

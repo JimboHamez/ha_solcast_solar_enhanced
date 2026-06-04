@@ -133,6 +133,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._db_record_count: int = 0
+        # Freshness/coverage diagnostics surfaced on the Database Records sensor.
+        self._db_latest_period_end: str | None = None
+        self._db_sites: list[str] = []
         self._base_status: str = "not_detected"
         self._auto_dampen_warned: bool = False
 
@@ -347,6 +350,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 })
 
             self._db_record_count = await self._db.async_get_record_count()
+            # Diagnostics: newest slot written this cycle + sites seen in the store.
+            self._db_latest_period_end = period_end
+            self._db_sites = await self._db.async_get_sites()
 
         # PV tuning (daily)
         if opts.get(CONF_AUTO_TUNING, True):
@@ -372,6 +378,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "tuning": self._tuning_result,
             "dampening_table": self._dampening_table,
             "db_records": self._db_record_count,
+            "db_latest_period_end": self._db_latest_period_end,
+            "db_sites": self._db_sites,
             "base_status": self._base_status,
         }
 
