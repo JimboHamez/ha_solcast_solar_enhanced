@@ -283,12 +283,12 @@ When the base integration has more than one rooftop site, the enhanced integrati
 The **Dampening Hours with DB Data** sensor exposes per-hour diagnostics as attributes:
 
 ```yaml
-hour_14_factor:           0.847    # final blended value pushed to base integration
-hour_14_alpha:            0.72     # DB confidence (0 = pure base, 1 = pure DB)
-hour_14_source:           blended  # db_history | blended | base_fallback | night
-hour_14_quality_records:  31.4     # quality-weighted record count
-hour_14_avg_quality:      0.81     # mean combined weight of contributing records
-overall_source:           blended
+hour_14_factor:           0.847      # final blended value pushed to base integration
+hour_14_alpha:            0.72       # DB confidence (0 = neutral 1.0, 1 = pure DB)
+hour_14_source:           db_blended # db_history | db_blended | no_data | night
+hour_14_quality_records:  31.4       # quality-weighted record count
+hour_14_avg_quality:      0.81       # mean combined weight of contributing records
+overall_source:           db_blended
 ```
 
 In multi-site mode the **Tuned Panel Tilt** sensor additionally carries a `per_site` attribute — a list of `{name, resource_id, tilt, azimuth, rmse_kw, n_records}` for each individually-tuned array.
