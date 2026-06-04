@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-04
+
+### Fixed
+- **`pv_estimate` is no longer written as zero.** The property-wide `_total` row
+  sourced its forecast estimates from the base coordinator's in-memory
+  `pv_estimate` key, which current `solcast_solar` versions don't expose, so the
+  `pv_estimate`/`pv_estimate10`/`pv_estimate90` columns were stored as `0`. The
+  `_total` row now reads the documented property-wide `detailedForecast`
+  attribute off `sensor.solcast_pv_forecast_forecast_today` — the same source the
+  per-site rows already use — and selects the slot matching the half-hour
+  boundary. The base coordinator key remains a fallback when the attribute is
+  unavailable.
+
+### Changed
+- **Update cycle now fires on the wall-clock half-hour grid.** The coordinator's
+  free-running 30-minute interval (anchored to HA's boot time) is replaced with a
+  listener that fires at `:00`/`:30` plus a small offset, so each energy-counter
+  measurement window aligns to Solcast's half-hour slots instead of drifting. A
+  small post-boundary offset lets boundary counter states post before the delta
+  is read; the elapsed-time average-kW math and the 15–60 min acceptance guard
+  are unchanged. Forecast slots are now matched on the snapped slot boundary
+  rather than the drifting measured start.
+
 ## [1.4.0] - 2026-06-03
 
 ### Fixed
@@ -154,7 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.1.1...v1.2.0
