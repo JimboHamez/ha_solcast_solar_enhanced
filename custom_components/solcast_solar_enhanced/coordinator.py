@@ -42,6 +42,7 @@ from .const import (
     CONF_TILT,
     DAMPENING_INTERVAL_HOURS,
     DEFAULT_DB_ENABLED,
+    DEFAULT_DB_FILENAME,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
@@ -60,7 +61,6 @@ from .const import (
     UPDATE_INTERVAL_MINUTES,
 )
 from .sqlite_store import SqliteStore
-from .storage import StorageBackend, build_mysql_manager, build_storage
 from .pv_tuning import normalize_epoch, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OWMClient
@@ -123,7 +123,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._entry = entry
         self._opts = {**entry.data, **entry.options}
 
-        self._db: StorageBackend | None = None
+        self._db: SqliteStore | None = None
         self._owm: OWMClient | None = None
 
         self._weather: dict[str, Any] = {"temp": 0.0, "clouds": 0, "description": ""}
@@ -171,9 +171,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Could not load energy baselines: %s", exc)
 
         if opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
-            # build_storage picks the built-in SQLite store (default) or legacy
-            # MySQL based on the configured backend; both share one async API.
-            self._db = build_storage(self.hass, opts)
+            self._db = SqliteStore(
+                self.hass, self.hass.config.path(DEFAULT_DB_FILENAME)
+            )
             ok = await self._db.async_connect()
             if not ok:
                 _LOGGER.warning("DB connection failed — DB features disabled for this session")
@@ -654,37 +654,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._owm:
             self._weather = await self._owm.async_fetch()
         self.async_set_updated_data(self.data or {})
-
-    async def async_import_from_mysql(self, mysql_opts: dict[str, Any]) -> int:
-        """Copy all rows from a MySQL database into the built-in SQLite store.
-
-        Only runs when this coordinator's active backend is the built-in store
-        (importing *into* SQLite). ``mysql_opts`` carries the source connection
-        (host/port/user/password/name); missing keys fall back to the entry's
-        stored MySQL config. Returns the number of rows imported. Safe to re-run —
-        ``INSERT OR IGNORE`` skips rows already present.
-        """
-        if not isinstance(self._db, SqliteStore):
-            _LOGGER.warning(
-                "import_from_mysql skipped — active store is not the built-in "
-                "SQLite backend"
-            )
-            return 0
-        merged = {**self._entry.data, **self._entry.options, **mysql_opts}
-        source = build_mysql_manager(merged, readonly=True)
-        if not await source.async_connect():
-            _LOGGER.error("import_from_mysql — could not connect to source MySQL")
-            return 0
-        try:
-            records = await source.async_get_all_records()
-        finally:
-            await source.async_close()
-        if not records:
-            return 0
-        imported = await self._db.async_insert_many(records)
-        _LOGGER.info("Imported %d record(s) from MySQL into the built-in store", imported)
-        self.async_set_updated_data(self.data or {})
-        return imported
 
     # ------------------------------------------------------------------
     # Helpers

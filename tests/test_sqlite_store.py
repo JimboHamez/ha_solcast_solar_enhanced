@@ -76,7 +76,7 @@ async def test_duplicate_epoch_site_ignored(store):
     # Same (epoch, site) — INSERT OR IGNORE keeps the first row.
     await store.async_insert_record(_record(JUNE1, pv_actual=9.9))
     assert await store.async_get_record_count() == 1
-    rows = await store.async_get_all_records()
+    rows = await store.async_get_records_for_tuning()
     assert rows[0]["pv_actual"] == pytest.approx(3.5)
 
 
@@ -109,20 +109,17 @@ async def test_readonly_refuses_insert(hass, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# bulk insert (import path)
+# repeated inserts accumulate / re-run is idempotent
 # ---------------------------------------------------------------------------
 
-async def test_insert_many_bulk_and_rerun(store):
-    recs = [_record(JUNE1 + i * 1800) for i in range(5)]
-    assert await store.async_insert_many(recs) == 5
+async def test_repeated_inserts_accumulate(store):
+    for i in range(5):
+        await store.async_insert_record(_record(JUNE1 + i * 1800))
     assert await store.async_get_record_count() == 5
-    # Re-running the same import is a no-op on existing rows.
-    await store.async_insert_many(recs)
+    # Re-inserting the same slots is a no-op (INSERT OR IGNORE).
+    for i in range(5):
+        await store.async_insert_record(_record(JUNE1 + i * 1800))
     assert await store.async_get_record_count() == 5
-
-
-async def test_insert_many_empty_is_noop(store):
-    assert await store.async_insert_many([]) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +184,7 @@ async def test_dampening_site_filter(store):
 
 
 # ---------------------------------------------------------------------------
-# sites + all records
+# sites
 # ---------------------------------------------------------------------------
 
 async def test_get_sites_distinct(store):
@@ -195,15 +192,3 @@ async def test_get_sites_distinct(store):
     await store.async_insert_record(_record(JUNE1 + 1800, site="_total"))
     await store.async_insert_record(_record(JUNE1, site="siteC"))
     assert set(await store.async_get_sites()) == {"_total", "siteC"}
-
-
-async def test_all_records_roundtrip_fields(store):
-    await store.async_insert_record(_record(JUNE1))
-    rows = await store.async_get_all_records()
-    assert len(rows) == 1
-    row = rows[0]
-    # Full record dict carries every stored column.
-    for key in ("period_end", "period_end_epoch", "period_start", "site",
-                "pv_actual", "pv_export", "pv_estimate", "description"):
-        assert key in row
-    assert row["period_end_epoch"] == JUNE1

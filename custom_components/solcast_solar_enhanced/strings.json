@@ -24,21 +24,9 @@
       },
       "database": {
         "title": "Storage",
-        "description": "Built-in storage needs no setup and is recommended. Choose External MySQL only if you want to keep using a MySQL server (legacy).",
+        "description": "History is stored in a built-in file (config/solcast_solar_enhanced.db) — no setup required. Leave enabled for tuning and dampening to work.",
         "data": {
-          "db_enabled": "Enable history storage",
-          "db_backend": "Storage backend"
-        }
-      },
-      "database_mysql": {
-        "title": "MySQL Database (legacy)",
-        "data": {
-          "db_host": "Host",
-          "db_port": "Port",
-          "db_user": "Username",
-          "db_password": "Password",
-          "db_name": "Database name",
-          "db_readonly": "Read-only mode"
+          "db_enabled": "Enable history storage"
         }
       },
       "owm": {
@@ -99,21 +87,9 @@
       },
       "database": {
         "title": "Storage",
-        "description": "Built-in storage needs no setup and is recommended. Choose External MySQL only if you want to keep using a MySQL server (legacy).",
+        "description": "History is stored in a built-in file (config/solcast_solar_enhanced.db) — no setup required. Leave enabled for tuning and dampening to work.",
         "data": {
-          "db_enabled": "Enable history storage",
-          "db_backend": "Storage backend"
-        }
-      },
-      "database_mysql": {
-        "title": "MySQL Database (legacy)",
-        "data": {
-          "db_host": "Host",
-          "db_port": "Port",
-          "db_user": "Username",
-          "db_password": "Password",
-          "db_name": "Database name",
-          "db_readonly": "Read-only mode"
+          "db_enabled": "Enable history storage"
         }
       },
       "owm": {

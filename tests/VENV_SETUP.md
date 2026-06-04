@@ -14,15 +14,14 @@ pip install -r requirements_test.txt
 This creates `.venv/` at the repo root and installs pytest plus the
 `pytest-homeassistant-custom-component` harness.
 
-### Optional dependencies (for scipy/DB tests)
+### Optional dependencies (for the scipy tuning test)
 
 ```bash
-pip install aiomysql>=0.2.0
 pip install numpy>=1.21.0 scipy>=1.7.0
 ```
 
-Without these, the aiomysql tests are skipped and the scipy tuning test
-is skipped automatically.
+Without these, the scipy tuning test is skipped automatically. (Storage uses
+stdlib `sqlite3`, so the store tests need no extra install.)
 
 ---
 

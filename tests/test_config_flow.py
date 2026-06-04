@@ -17,16 +17,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
-    CONF_DB_BACKEND,
     CONF_DB_ENABLED,
-    CONF_DB_HOST,
-    CONF_DB_NAME,
-    CONF_DB_PASSWORD,
-    CONF_DB_PORT,
-    CONF_DB_READONLY,
-    CONF_DB_USER,
-    DB_BACKEND_BUILTIN,
-    DB_BACKEND_MYSQL,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -52,21 +43,6 @@ STEP_SITE = {
 
 STEP_DATABASE = {
     CONF_DB_ENABLED: False,
-    CONF_DB_BACKEND: DB_BACKEND_BUILTIN,
-}
-
-STEP_DATABASE_MYSQL_SELECT = {
-    CONF_DB_ENABLED: True,
-    CONF_DB_BACKEND: DB_BACKEND_MYSQL,
-}
-
-STEP_DATABASE_MYSQL_DETAILS = {
-    CONF_DB_HOST: "192.168.1.10",
-    CONF_DB_PORT: 3306,
-    CONF_DB_USER: "solcast",
-    CONF_DB_PASSWORD: "secret",
-    CONF_DB_NAME: "solcast",
-    CONF_DB_READONLY: False,
 }
 
 STEP_OWM = {
@@ -144,42 +120,7 @@ async def test_full_flow_creates_entry(hass):
     data = result["data"]
     assert data[CONF_LATITUDE] == pytest.approx(-37.9)
     assert data[CONF_DB_ENABLED] is False
-    assert data[CONF_DB_BACKEND] == DB_BACKEND_BUILTIN
     assert data[CONF_AUTO_TUNING] is False
-
-
-async def test_mysql_backend_routes_through_subreport(hass):
-    """Selecting External MySQL inserts the database_mysql sub-step and saves creds."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_SITE)
-    assert result["step_id"] == "database"
-
-    # Choosing MySQL routes to the sub-step rather than straight to OWM.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], STEP_DATABASE_MYSQL_SELECT
-    )
-    assert result["step_id"] == "database_mysql"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], STEP_DATABASE_MYSQL_DETAILS
-    )
-    assert result["step_id"] == "owm"
-
-    with patch(
-        "custom_components.solcast_solar_enhanced.async_setup_entry",
-        return_value=True,
-    ):
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_OWM)
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_BATTERY)
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_TUNING)
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    data = result["data"]
-    assert data[CONF_DB_BACKEND] == DB_BACKEND_MYSQL
-    assert data[CONF_DB_HOST] == "192.168.1.10"
-    assert data[CONF_DB_USER] == "solcast"
 
 
 async def test_options_flow_shows_site_first(hass, mock_config_entry):

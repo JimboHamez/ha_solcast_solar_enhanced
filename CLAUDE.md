@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds MySQL-backed historical storage, automatic rooftop PV tilt/azimuth optimisation (scipy L-BFGS-B), and adaptive shading dampening computed purely from DB-collected actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates.
+A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds built-in SQLite historical storage (zero-config, stdlib `sqlite3`), automatic rooftop PV tilt/azimuth optimisation (scipy L-BFGS-B), and adaptive shading dampening computed purely from DB-collected actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates.
 
 Development happens by installing the component into a running Home Assistant instance. There are no build steps. A `pytest` test suite lives in `tests/` (run `pytest` from the repo root; deps in `requirements_test.txt`, uses `pytest-homeassistant-custom-component`). A standalone PV-tuning CLI for running the optimiser against the DB/CSV outside HA lives in `tools/standalone_tuning.py`.
 
@@ -13,24 +13,21 @@ Development happens by installing the component into a running Home Assistant in
 Copy `custom_components/solcast_solar_enhanced/` into the HA `config/custom_components/` directory, then restart HA. Optional dependencies must be installed in the HA Python venv:
 
 ```bash
-pip install aiomysql>=0.2.0           # only for the legacy MySQL backend / import
-pip install numpy>=1.21.0scipy>=1.7.0  # required for PV tuning
+pip install numpy>=1.21.0 scipy>=1.7.0  # required for PV tuning
 ```
 
-The default built-in SQLite store uses stdlib `sqlite3` (no install). Both optional deps use lazy imports — the integration runs without them, disabling only the relevant feature.
+Storage uses stdlib `sqlite3` (no install). PV tuning is the only optional dep — a lazy import that disables tuning when absent; the integration still runs.
 
 ## Module responsibilities
 
 | File | Role |
 |---|---|
-| `__init__.py` | Entry point — sets up coordinator, registers 4 services (incl. `import_from_mysql`), handles load/unload |
+| `__init__.py` | Entry point — sets up coordinator, registers 3 services, handles load/unload |
 | `coordinator.py` | `SolcastEnhancedCoordinator` (DataUpdateCoordinator) — half-hour-aligned update loop; orchestrates store writes, PV tuning (24 h), dampening push (6 h), OWM fetch |
 | `sensor.py` | 13 `CoordinatorEntity` sensors; all read from coordinator data/properties |
-| `config_flow.py` | UI wizard (`site → database → [database_mysql] → owm → battery → tuning`), plus mirrored options flow |
+| `config_flow.py` | UI wizard (`site → database → owm → battery → tuning`), plus mirrored options flow |
 | `const.py` | All config keys, defaults, domain names, sensor keys, service names, timing constants |
-| `storage.py` | `build_storage()` factory + `StorageBackend` Protocol + `resolve_backend()` back-compat inference — selects SQLite vs MySQL |
-| `sqlite_store.py` | `SqliteStore` — built-in, zero-config stdlib `sqlite3` store (executor jobs, WAL); default backend. Same async API as `DbManager` |
-| `db_manager.py` | `DbManager` — legacy async aiomysql pool, schema init/migration, query + `async_get_all_records` (import source) |
+| `sqlite_store.py` | `SqliteStore` — the built-in, zero-config stdlib `sqlite3` store (executor jobs, WAL, serialising lock); insert + 2 query methods + sites/count/lifecycle |
 | `pv_tuning.py` | `run_tuning()` (called via `async_add_executor_job`) + pure-Python `solar_position()` |
 | `shading_dampening.py` | `compute_dampening()` per half-hour slot + `average_slot_pairs()` |
 | `solcast_api.py` | `OWMClient` — thin aiohttp wrapper for OWM current-weather endpoint |
@@ -50,15 +47,13 @@ The default built-in SQLite store uses stdlib `sqlite3` (no install). Both optio
 
 **Dampening confidence blend**: `final = (1−α) × 1.0 + α × db_factor`, where `db_factor` is the quality-weighted actual/forecast ratio from DB records. The anchor is a neutral `1.0` (NOT the base integration's factors — those are never read into the calculation). α is a sigmoid over quality-weighted record count; clamped to ±15% of 1.0 when α < 0.5. Sources tagged as `night`, `no_data`, `db_blended`, or `db_history`.
 
-**Storage backends**: `storage.build_storage(hass, opts)` returns either `SqliteStore` (built-in, default) or `DbManager` (legacy MySQL); both implement the same async API (the `StorageBackend` Protocol), so the coordinator's insert/query call sites are backend-agnostic. `resolve_backend(opts)` picks one: an explicit `CONF_DB_BACKEND` wins, else infer MySQL when a non-empty `db_user` is set (a pre-existing MySQL entry), else built-in — so upgrades never switch a MySQL user onto an empty local file. The built-in store defaults **on** (`DEFAULT_DB_ENABLED=True`) at `hass.config.path("solcast_solar_enhanced.db")`, WAL mode, all calls via `async_add_executor_job`. **Import**: `coordinator.async_import_from_mysql()` (service `import_from_mysql`) reads via a temporary `DbManager.async_get_all_records()` and bulk-writes via `SqliteStore.async_insert_many()` (`INSERT OR IGNORE`, re-runnable); only imports *into* the built-in store.
-
-**MySQL schema migration** (`DbManager` only): `_init_schema()` runs `CREATE TABLE IF NOT EXISTS`, then `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for `battery_charge`, `pv_export` and `site`, then `_migrate_unique_key()` swaps the legacy `uq_epoch (period_end_epoch)` for `uq_epoch_site (period_end_epoch, site)` (guarded by `information_schema` checks since MySQL lacks `DROP INDEX IF EXISTS`). All safe to re-run. `SqliteStore` always creates the complete schema fresh, so it needs no migrations (`has_site_col`/`has_battery_col` always true).
+**Storage** (`sqlite_store.py`): the coordinator instantiates `SqliteStore(hass, hass.config.path("solcast_solar_enhanced.db"))` in `async_setup` when `CONF_DB_ENABLED` is set (defaults **on**, `DEFAULT_DB_ENABLED=True`). It's a single file, stdlib `sqlite3`, WAL mode (`synchronous=NORMAL`), every call run via `async_add_executor_job` and serialised by a lock. The schema is created complete on first run — no migrations — so `has_site_col`/`has_battery_col` are always true. Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`; the seasonal day-of-year window uses `strftime('%j', period_end_epoch, 'unixepoch')` (UTC). The integration is SQLite-only as of v1.5.0 (MySQL was removed).
 
 **Multi-site**: sites are auto-discovered from the base integration's RooftopSensors via `discover_sites(hass)` (module-level, shared with the config flow). The `CONF_SITE_GROUPS` config model maps a generation sensor (+ optional per-MPPT DC sensors) to one or more sites; the config-flow `sites` step authors it via per-site fields and derives the structure (`_derive_groups`). Each site is stored/tuned/dampened by its Solcast `resource_id`; the property-wide aggregate uses `site='_total'`, so aggregate queries pass `site=DEFAULT_SITE_ID` to avoid summing the additive per-site rows. Per-site `pv_actual` for shared-AC groups is apportioned by DC share (`ac × dcᵢ/Σdc`).
 
 **Energy-counter reads**: `_read_pv_value` supports cumulative energy counters (kWh/Wh/MWh — the recommended input) and averaged-power readings (kW/W, intended for a rolling `mean_linear` helper, *not* a raw instantaneous sensor). Energy mode computes avg kW from the energy delta over the *actual* elapsed time and guards resets/rollovers, first-read, and out-of-band intervals; baselines persist via HA `Store` (`{DOMAIN}_{entry_id}_energy_baseline`). `_resolve_input_mode` auto-detection is **unit-first**: a `…wh` unit → energy counter, a `…w` unit → averaged power; `state_class` is only a fallback when the unit is absent (this prevents a counter that omits `state_class` from being read as instantaneous power). Power mode stays available for per-MPPT DC sensors, which feed only a `dcᵢ/Σdc` ratio.
 
-**Optional deps pattern**: `pv_tuning.py` and `db_manager.py` each guard their imports with `try/except ImportError` and set a `*_AVAILABLE` flag. Feature code checks this flag before executing. `sqlite_store.py` has no optional dep (stdlib `sqlite3`), so the default storage path always works.
+**Optional deps pattern**: `pv_tuning.py` guards its imports with `try/except ImportError` and sets a `*_AVAILABLE` flag; feature code checks it before executing. `sqlite_store.py` has no optional dep (stdlib `sqlite3`), so storage always works.
 
 ## Base integration coupling
 
@@ -78,5 +73,5 @@ The default built-in SQLite store uses stdlib `sqlite3` (no install). Both optio
 ## Compatibility requirements
 
 - Home Assistant 2026.5.4+, Python 3.12+
-- Built-in store: stdlib `sqlite3` (no install). Legacy MySQL backend: MySQL 8.0+ (requires `ADD COLUMN IF NOT EXISTS` syntax)
+- Storage: built-in SQLite via stdlib `sqlite3` (no install, no server)
 - `manifest.json` declares `"dependencies": ["solcast_solar"]` — HA will refuse to load if the base integration is absent

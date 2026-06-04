@@ -1,13 +1,9 @@
-"""Built-in SQLite storage backend for Solcast Solar Enhanced.
+"""Built-in SQLite storage for Solcast Solar Enhanced.
 
-A zero-configuration alternative to the MySQL :class:`DbManager`: a single file
-in the HA config directory, backed by the Python standard-library ``sqlite3``
-module (no third-party dependency). Blocking calls run in HA's executor.
-
-The public API mirrors :class:`db_manager.DbManager` method-for-method so the
-coordinator and the ``storage.build_storage`` factory can treat the two backends
-interchangeably. Because the schema is created fresh and complete, none of the
-MySQL ``ALTER TABLE`` migration machinery is needed and ``has_site_col`` /
+A zero-configuration store: a single file in the HA config directory, backed by
+the Python standard-library ``sqlite3`` module (no third-party dependency).
+Blocking calls run in HA's executor, serialised by a lock. The schema is created
+fresh and complete, so there is no migration machinery and ``has_site_col`` /
 ``has_battery_col`` are always true.
 """
 from __future__ import annotations
@@ -63,7 +59,7 @@ _INSERT_SQL = (
 
 
 class SqliteStore:
-    """File-backed SQLite store with the DbManager async API."""
+    """File-backed SQLite store (async API, all I/O via the executor)."""
 
     def __init__(self, hass: HomeAssistant, path: str, readonly: bool = False) -> None:
         self._hass = hass
@@ -73,7 +69,7 @@ class SqliteStore:
         # sqlite3 connections aren't safe to share across threads without
         # serialisation; every executor call holds this lock.
         self._lock = threading.Lock()
-        # Always present on a fresh schema — kept for API parity with DbManager.
+        # Always present on a fresh schema (kept for query-builder symmetry).
         self.has_battery_col = True
         self.has_site_col = True
 
@@ -148,17 +144,6 @@ class SqliteStore:
             return False
         return await self._hass.async_add_executor_job(self._insert_many, [record])
 
-    async def async_insert_many(self, records: list[dict[str, Any]]) -> int:
-        """Bulk-insert records in one transaction. Returns the count attempted.
-
-        Used by the MySQL→SQLite import. ``INSERT OR IGNORE`` makes it safe to
-        re-run; rows already present (same epoch+site) are skipped.
-        """
-        if self._conn is None or self._readonly or not records:
-            return 0
-        ok = await self._hass.async_add_executor_job(self._insert_many, records)
-        return len(records) if ok else 0
-
     def _insert_many(self, records: list[dict[str, Any]]) -> bool:
         try:
             rows = [self._row_values(r) for r in records]
@@ -194,7 +179,7 @@ class SqliteStore:
             return 0
 
     def _site_filter(self, site: str | None) -> tuple[str, tuple[Any, ...]]:
-        """Build an optional ``AND site = ?`` clause (parity with DbManager)."""
+        """Build an optional ``AND site = ?`` clause for site-scoped queries."""
         if site is None:
             return "", ()
         return " AND site = ?", (site,)
@@ -254,13 +239,6 @@ class SqliteStore:
         )
         params = (*site_params, limit)
         return await self._hass.async_add_executor_job(self._query, sql, params)
-
-    async def async_get_all_records(self) -> list[dict[str, Any]]:
-        """Return every stored row as a full record dict (used by exports/imports)."""
-        if self._conn is None:
-            return []
-        sql = "SELECT * FROM solcast_data ORDER BY period_end_epoch ASC"
-        return await self._hass.async_add_executor_job(self._query, sql, ())
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         try:
