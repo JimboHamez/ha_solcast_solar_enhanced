@@ -802,6 +802,13 @@ and unique IDs derived from `f"{DOMAIN}_{entry_id}_{key}"`.
 
 `DeviceInfo` uses `DeviceEntryType.SERVICE` (enum, not string).
 
+The three 30-min average sensors (`PvActualSensor`, `PvExportSensor`,
+`BatteryChargeSensor`) extend `_RestoringSensorBase` (HA `RestoreSensor`): the
+coordinator only produces data on the half-hour grid, so after a restart they
+restore their last value rather than reading *unknown* until the first update
+cycle (~30 min); the live coordinator value supersedes the restored one once it
+arrives.
+
 ---
 
 ## Services

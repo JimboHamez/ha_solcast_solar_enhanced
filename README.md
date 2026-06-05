@@ -23,9 +23,11 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.6.0
+## 🆕 What's new in v1.6.1
 
-**Correctness, performance and hardening.** A solar-azimuth **east↔west flip** is fixed (it affected sites whose local morning/afternoon falls on a different UTC day from solar noon, e.g. UTC+10), and **existing databases are repaired in place** by a silent one-time migration. Forecast columns are **no longer silently zero-filled** when the base integration stores `period_start` as `datetime`. Low-power devices benefit from a **vectorised PV-tuning** objective (~59× faster), **dampening records fetched once per run** instead of per slot, and a **shared aiohttp session** for OpenWeatherMap. The base integration is now a **hard dependency**, only a **single instance** can be added, and the **OpenWeatherMap API key is redacted from logs**. Licensing standardised on **Apache-2.0**. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.0) and [CHANGELOG](CHANGELOG.md).
+**Restart resilience.** The **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors now **restore their last value across restarts** (HA `RestoreSensor`) instead of reading *unknown* until the first half-hour update cycle (up to ~30 min after a restart). The live value supersedes the restored one as soon as it arrives. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.1) and [CHANGELOG](CHANGELOG.md).
+
+_Previously, in v1.6.0:_ a solar-azimuth **east↔west flip** fix (with in-place repair of existing databases), forecast columns **no longer silently zero-filled**, low-power **performance** work (vectorised tuning, fewer dampening scans, shared HTTP session), the base integration made a **hard dependency**, **single-instance** enforcement, the **OWM API key redacted from logs**, and licensing standardised on **Apache-2.0**.
 
 _Previously, in v1.5.0:_ **zero-config storage** — history moved to a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box; **MySQL support was removed** (the storage step is now just an *Enable history storage* toggle).
 
@@ -282,9 +284,9 @@ When the base integration has more than one rooftop site, the enhanced integrati
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active |
 | Weather Temperature | °C | OWM current temperature |
 | Cloud Cover | % | OWM cloud cover |
-| Battery Charge 30min Average | kW | Value read from the configured battery sensor |
-| PV Power 30min Average | kW | Average generation for the period from the configured sensor |
-| PV Export 30min Average | kW | Average export for the period from the configured sensor |
+| Battery Charge 30min Average | kW | Value read from the configured battery sensor (restored across restarts) |
+| PV Power 30min Average | kW | Average generation for the period from the configured sensor (restored across restarts) |
+| PV Export 30min Average | kW | Average export for the period from the configured sensor (restored across restarts) |
 | Base Integration Status | — | `connected` or `not_detected` |
 
 The **Dampening Hours with DB Data** sensor exposes per-hour diagnostics as attributes:
