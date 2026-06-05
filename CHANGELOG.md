@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integration, one property, one shared database); a second add aborts.
 - **Minimum Home Assistant aligned to 2026.5.4** in `hacs.json` (was 2025.3),
   matching the documented requirement.
+- **License standardised on Apache-2.0.** Resolved a contradiction where the
+  `LICENSE` file was Apache-2.0 but the README claimed MIT; renamed `LICENSE.md`
+  → `LICENSE`, corrected the README, and added a `NOTICE` file.
 
 ### Security
 - **OpenWeatherMap API key redacted from logs.** A failed fetch logged the
@@ -50,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Debug-level logging at key data-flow checkpoints (per-cycle update summary,
   forecast estimate provenance, base-integration detection, tuning skips).
+- CI: GitHub Actions for hassfest + HACS validation and the pytest suite.
 
 ## [1.5.2] - 2026-06-05
 

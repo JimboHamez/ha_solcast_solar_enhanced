@@ -8,6 +8,9 @@
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/y/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 ![Maintenance](https://img.shields.io/maintenance/yes/2026?style=for-the-badge)
 
+[![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
+[![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
+
 A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that adds:
 
 1. **Built-in history storage** of PV power averages, forecasts, solar position, weather and battery data — a zero-config SQLite file (no server, no credentials, no dependency)
@@ -34,7 +37,9 @@ _Previously, in v1.4.0:_ two correctness fixes — dampening factors aligned to 
 
 ### 1. Base integration
 
-[BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) must be installed and configured before adding this integration.
+[BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) must be installed and configured before adding this integration. It is a **hard dependency** — Home Assistant will refuse to set up Solcast Solar Enhanced if the base integration is absent.
+
+> **Single instance.** This integration can only be added **once** — there is one base integration, one property and one shared database, so a second attempt to add it is rejected.
 
 ### 2. Generation / export sensors
 

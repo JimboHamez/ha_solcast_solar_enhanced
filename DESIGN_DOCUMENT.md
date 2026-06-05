@@ -1018,6 +1018,16 @@ except ImportError:
 Storage adds no dependency at all; users who do not need PV tuning are
 unaffected by the optional scipy/numpy extras.
 
+### Base integration (hard dependency)
+
+`manifest.json` lists `"dependencies": ["solcast_solar"]`, so Home Assistant
+refuses to set up this integration when the base integration is absent — it
+reads `hass.data["solcast_solar"]` and cannot function without it. The manifest
+also sets `"single_config_entry": true`: only one instance can be added, since
+there is one base integration, one property and one shared database
+(`config/solcast_solar_enhanced.db`); a second add is rejected by HA with
+`single_instance_allowed`.
+
 ---
 
 ## Questions for BJReplay
