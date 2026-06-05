@@ -251,9 +251,18 @@ state for use by the shading dampening and PV tuning calculations. Storage is
 `SqliteStore` (`sqlite_store.py`) wraps stdlib `sqlite3`: every call runs via
 `async_add_executor_job` and is serialised by a lock, the connection uses WAL
 mode (`synchronous=NORMAL`), and the complete schema is created on first run —
-so there are **no migrations** (the `site` and `battery_charge` columns are
-always present). Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`.
+so the `site` and `battery_charge` columns are always present (no *schema*
+migrations). Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`.
 The store logs its file path and row count at startup.
+
+**Data repairs.** One-time, in-place data fixes are gated by SQLite's built-in
+`PRAGMA user_version` (`SCHEMA_VERSION`), so they run silently once and are a
+no-op on later starts and on fresh databases. v1 recomputes the solar `azimuth`
+column for rows written before the hour-angle wrap fix (which mirrored azimuth
+east↔west for sites whose local morning/afternoon fell on a different UTC day
+from solar noon); the value is reconstructable in place because solar azimuth
+depends only on each row's stored `period_end_epoch` and the site lat/lon. Only
+rows whose value actually moved are rewritten, to spare SD-card wear.
 
 ### Database schema
 
@@ -307,9 +316,11 @@ diagnostics and reference, but are not summed into `total_pv`.
 On first run the store creates the complete `solcast_data` table (and its
 `UNIQUE(period_end_epoch, site)` constraint) in one `CREATE TABLE IF NOT
 EXISTS`, with WAL mode enabled. Because the full schema — including the `site`
-and `battery_charge` columns — is created up front, there are **no migrations**
-and no `ALTER TABLE`/`information_schema` probing; the `has_site_col` /
-`has_battery_col` flags are always true.
+and `battery_charge` columns — is created up front, there are **no schema
+migrations** and no `ALTER TABLE`/`information_schema` probing; the
+`has_site_col` / `has_battery_col` flags are always true. One-time *data*
+repairs (not schema changes) are handled separately via `async_migrate`, gated
+by `PRAGMA user_version` — see [Implementation](#implementation).
 
 ### Battery charge safety layers
 
@@ -949,6 +960,42 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 
 Evaluated and **not pursued** — see [Feature 4](#feature-4--short-range-forecast-correction-dropped)
 for the reasoning. No implementation work is planned.
+
+---
+
+## Roadmap
+
+Planned work, not yet implemented.
+
+### Database retention / dampening-scan efficiency (low-power devices)
+
+**Problem.** The store accumulates one row per half-hour per site
+(≈17.5k rows/site/year) and never prunes, so the table grows without bound.
+The dampening recalculation runs a seasonal day-of-year query
+(`async_get_records_for_dampening`) whose filter is
+`ABS(CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) <= ?`.
+Because the day-of-year is a *computed* expression, no index can serve it — the
+query is a full table scan. On a multi-year, multi-site database running on a
+Raspberry Pi (SD-card I/O), this scan gets progressively slower. (The 48×
+redundant re-scan per run was already removed — the fetch is hoisted to once per
+`_compute_dampening_slots` call — so what remains is the single O(N) scan.)
+
+**Options under consideration.**
+
+1. **Optional retention period.** A config setting (e.g. *Keep history for N
+   years*) that prunes rows older than the window. Default must be *keep
+   everything* so existing behaviour never changes silently. Pruning would run
+   on the same low-frequency timer as tuning/dampening.
+2. **Stored `day_of_year` column + index.** Persist the UTC day-of-year at insert
+   time and index it, turning the seasonal scan into an indexed range lookup.
+   Requires a schema addition and a one-time backfill migration (the
+   `PRAGMA user_version` mechanism added for the azimuth repair already provides
+   the gating for this).
+3. **Both** — retention to bound size, the indexed column to bound per-query cost.
+
+**Status.** Deferred. Current scan cost is acceptable for typical single-site,
+few-year databases; this becomes worthwhile for long-lived multi-site Pi
+installs. Tracked here so the reasoning isn't lost.
 
 ---
 

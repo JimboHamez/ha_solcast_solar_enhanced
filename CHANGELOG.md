@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Solar azimuth east↔west flip.** `solar_position()` did not normalise the
+  hour angle to [-180, 180], so for sites whose local morning/afternoon falls on
+  a different UTC calendar day from solar noon (e.g. UTC+10 mornings) the azimuth
+  was mirrored east↔west. Zenith was unaffected (cosine is periodic). Now
+  hemisphere- and longitude-agnostic, verified against an independent reference.
+- **Existing databases are repaired in place.** A silent, one-time migration
+  (gated by `PRAGMA user_version`) recomputes the stored `azimuth` for rows
+  written before the wrap fix, reconstructed from each row's `period_end_epoch`
+  and the site lat/lon. Only changed rows are rewritten.
+- **Forecast columns no longer silently zero-filled.** The base integration
+  stores `detailedForecast` `period_start` as `datetime` objects, which the slot
+  parser rejected — zeroing `pv_estimate`/`10`/`90`. The parser now accepts
+  `datetime`, ISO string and epoch.
+
+### Performance
+- **PV tuning objective vectorised** with numpy (≈59× faster on the objective;
+  numerically identical) — meaningful on low-power CPUs.
+- **Dampening records fetched once per run** instead of once per half-hour slot
+  (the day-of-year window is identical across all 48 slots).
+- **OpenWeatherMap uses Home Assistant's shared aiohttp session** instead of
+  building a new connector every fetch.
+
+### Added
+- Debug-level logging at key data-flow checkpoints (per-cycle update summary,
+  forecast estimate provenance, base-integration detection, tuning skips).
+
 ## [1.5.2] - 2026-06-05
 
 ### Fixed

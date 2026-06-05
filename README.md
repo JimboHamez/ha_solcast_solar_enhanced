@@ -333,7 +333,7 @@ CREATE TABLE solcast_data (
 );
 ```
 
-The complete schema is created on first run (WAL mode), so there are no migrations. The `UNIQUE(period_end_epoch, site)` constraint enforces one row per slot per site; repeated writes within a slot are coalesced with `INSERT OR IGNORE`.
+The complete schema is created on first run (WAL mode), so there are no *schema* migrations. The `UNIQUE(period_end_epoch, site)` constraint enforces one row per slot per site; repeated writes within a slot are coalesced with `INSERT OR IGNORE`. One-time *data* repairs (e.g. recomputing historical `azimuth` after the hour-angle fix) run silently once, gated by SQLite's `PRAGMA user_version`.
 
 ---
 
@@ -367,6 +367,14 @@ python tools/standalone_tuning.py --csv history.csv --capacity 5
 ```
 
 Requires `numpy` + `scipy`. The SQLite source uses the standard library; CSV mode needs neither. Run `--help` for all options.
+
+---
+
+## Roadmap
+
+Planned but not yet implemented:
+
+- **Database retention / dampening-scan efficiency.** The store keeps one row per half-hour per site forever (~17.5k rows/site/year), and the seasonal dampening query is a full table scan (its day-of-year filter is a computed expression no index can serve). On a long-lived, multi-site database on a Raspberry Pi this scan gets slower over time. Under consideration: an optional **retention period** (default *keep everything*), and/or a stored, **indexed day-of-year column** to make the seasonal lookup indexed. Deferred — current cost is fine for typical single-site, few-year installs. See the [design document](DESIGN_DOCUMENT.md#roadmap).
 
 ---
 
