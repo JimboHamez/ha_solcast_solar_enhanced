@@ -49,7 +49,12 @@ class OWMClient:
                 "description": str(data.get("weather", [{}])[0].get("description", "")),
             }
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("OWM fetch failed: %s", exc)
+            # aiohttp errors embed the request URL, which carries the API key in
+            # its `appid` query param — redact it so the key never reaches the log.
+            detail = str(exc)
+            if self._api_key:
+                detail = detail.replace(self._api_key, "***")
+            _LOGGER.warning("OWM fetch failed: %s: %s", type(exc).__name__, detail)
             return {"temp": 0.0, "clouds": 0, "description": "unavailable"}
 
     @staticmethod

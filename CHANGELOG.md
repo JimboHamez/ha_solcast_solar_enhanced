@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`solcast_solar` is now a hard dependency.** The manifest uses `dependencies`
+  (was `after_dependencies`), so Home Assistant refuses to set up this
+  integration when the base integration is absent — it cannot function without
+  it.
+- **Single config entry enforced.** Only one instance can be added (one base
+  integration, one property, one shared database); a second add aborts.
+- **Minimum Home Assistant aligned to 2026.5.4** in `hacs.json` (was 2025.3),
+  matching the documented requirement.
+
+### Security
+- **OpenWeatherMap API key redacted from logs.** A failed fetch logged the
+  aiohttp error verbatim, which embeds the request URL — and the key in its
+  `appid` query param. The key is now scrubbed before logging.
+
 ### Fixed
 - **Solar azimuth east↔west flip.** `solar_position()` did not normalise the
   hour angle to [-180, 180], so for sites whose local morning/afternoon falls on

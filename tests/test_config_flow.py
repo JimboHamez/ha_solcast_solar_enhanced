@@ -116,6 +116,17 @@ async def test_step_site_shows_form(hass):
     assert result["errors"] == {}
 
 
+async def test_single_config_entry_enforced(hass, mock_config_entry):
+    """With single_config_entry set, a second add aborts — there is one base
+    integration, one property and one shared database."""
+    mock_config_entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "single_instance_allowed"
+
+
 async def test_full_flow_creates_entry(hass):
     """Completing all 5 steps creates a config entry."""
     with patch(
