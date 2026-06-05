@@ -1013,13 +1013,20 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             pass
 
-        # Fallback: read sensor states
+        # Fallback: base coordinator data is unavailable. forecast_today is a
+        # genuine kWh daily total, so read it straight off the kWh sensor. But
+        # forecast_now is a kW *power* figure — the old fallback read
+        # forecast_remaining_today (a kWh count-down), which is the wrong unit.
+        # Derive it instead from the current half-hour detailedForecast slot's
+        # pv_estimate (already average kW over the slot), keeping the sensor's
+        # declared kW unit honest. Returns 0.0 if the attribute is absent.
         try:
-            forecast_now = self._read_sensor_state_float("sensor.solcast_pv_forecast_forecast_remaining_today")
             forecast_today = self._read_sensor_state_float("sensor.solcast_pv_forecast_forecast_today")
         except Exception:  # noqa: BLE001
-            forecast_now = 0.0
             forecast_today = 0.0
+        now_epoch = int(time.time())
+        slot_start = now_epoch - (now_epoch % 1800)
+        forecast_now = self._total_forecast_for_period(slot_start)[0]
         return forecast_now, forecast_today, 0.0, 0.0, 0.0
 
     def _read_sensor_state_float(self, entity_id: str) -> float:

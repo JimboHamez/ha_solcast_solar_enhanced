@@ -1,6 +1,9 @@
 """Test SolcastEnhancedCoordinator helpers."""
 from __future__ import annotations
 
+import time
+from datetime import datetime, timezone
+
 import pytest
 
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
@@ -115,10 +118,23 @@ async def test_read_forecast_from_base_coordinator(hass, coordinator, mock_base_
 
 
 async def test_read_forecast_from_base_none(hass, coordinator):
-    """Falls back to sensor states when base coordinator is None."""
-    hass.states.async_set("sensor.solcast_pv_forecast_forecast_remaining_today", "4.0")
+    """Falls back to sensor states when base coordinator is None.
+
+    forecast_today reads the kWh daily-total sensor; forecast_now is derived from
+    the current half-hour detailedForecast slot's pv_estimate (avg kW), not the
+    kWh forecast_remaining_today count-down (which was the old wrong-unit bug).
+    """
+    now_epoch = int(time.time())
+    slot_start = now_epoch - (now_epoch % 1800)
+    slot_iso = datetime.fromtimestamp(slot_start, tz=timezone.utc).isoformat()
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "18.0",
+        {"detailedForecast": [{"period_start": slot_iso, "pv_estimate": 2.5}]},
+    )
     now, today, est, est10, est90 = coordinator._read_forecast_from_base(None)
-    assert now == pytest.approx(4.0)
+    assert now == pytest.approx(2.5)  # kW from the current slot, not kWh remaining
+    assert today == pytest.approx(18.0)
     assert est == 0.0
 
 
