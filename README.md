@@ -78,6 +78,8 @@ A free API key from [openweathermap.org](https://openweathermap.org/api) enables
 
 ## Installation
 
+![Solcast Solar Enhanced sensors in Home Assistant](images/dashboard.png)
+
 ### HACS (recommended)
 
 1. Add this repository as a custom repository in HACS.
