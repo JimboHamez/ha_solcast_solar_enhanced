@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-05
+
+### Fixed
+- **Wrong unit on the *Forecast Now* fallback.** When the base integration's
+  in-memory coordinator data is unavailable, the *Forecast Now* (kW) sensor fell
+  back to reading `forecast_remaining_today` — a kWh count-down — and surfaced it
+  through a kilowatt-labelled sensor. It now derives the value from the current
+  half-hour `detailedForecast` slot's `pv_estimate` (average kW over the slot),
+  keeping the declared unit honest, and reads `0` when the attribute is absent.
+
+### Docs
+- Added a Home Assistant dashboard screenshot to the README installation section
+  (`images/dashboard.png`).
+
 ## [1.5.0] - 2026-06-04
 
 ### Added
@@ -200,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.3.0...v1.4.0
