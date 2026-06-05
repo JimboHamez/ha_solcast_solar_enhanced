@@ -47,7 +47,14 @@ def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float
 
     # Solar noon local
     solar_noon = 12 - longitude / 15 - eot / 60
-    hour_angle = math.radians(15 * (hour_utc - solar_noon))
+    # Normalise the hour angle to [-180, 180]. When the local morning falls on a
+    # different UTC calendar day from solar noon (e.g. a UTC+10 morning is the
+    # previous UTC day, a UTC-10 afternoon the next), the raw value overflows past
+    # ±180°, which would wrongly trip the afternoon branch below and mirror the
+    # azimuth east<->west. cos() is periodic so zenith is unaffected, but the
+    # azimuth's morning/afternoon sign decision is not. Hemisphere-agnostic.
+    hour_angle_deg = ((15 * (hour_utc - solar_noon)) + 180) % 360 - 180
+    hour_angle = math.radians(hour_angle_deg)
 
     lat_r = math.radians(latitude)
     cos_zenith = (

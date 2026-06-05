@@ -54,6 +54,63 @@ def test_solar_position_northern_hemisphere():
     assert zen < 90.0
 
 
+def _reference_azimuth(epoch: int, latitude: float, longitude: float) -> float:
+    """Independent azimuth-from-north via atan2, for cross-checking solar_position.
+
+    Uses the same declination/EOT model but an atan2 formulation that is immune to
+    the morning/afternoon sign-branch bug, so it validates the quadrant logic.
+    """
+    from datetime import datetime, timezone
+
+    dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+    doy = dt.timetuple().tm_yday
+    hour_utc = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+    decl = math.radians(23.45 * math.sin(math.radians(360 / 365 * (doy - 81))))
+    B = math.radians(360 / 365 * (doy - 81))
+    eot = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
+    ha = math.radians(15 * (hour_utc - (12 - longitude / 15 - eot / 60)))
+    lat_r = math.radians(latitude)
+    az = math.atan2(
+        math.sin(ha),
+        math.cos(ha) * math.sin(lat_r) - math.tan(decl) * math.cos(lat_r),
+    )
+    return (math.degrees(az) + 180) % 360  # atan2 is from south; +180 -> from north
+
+
+@pytest.mark.parametrize(
+    "label, lat, lon, iso",
+    [
+        # Regression: local morning/afternoon on a different UTC calendar day from
+        # solar noon used to overflow the hour angle past ±180° and mirror the
+        # azimuth east<->west. Covers far-east (UTC+10/+9 morning) and far-west
+        # (UTC-10 afternoon), both hemispheres.
+        ("melbourne_morning", -37.9, 145.0, "2026-06-04T23:15:00+00:00"),  # 09:15 AEST
+        ("tokyo_morning", 35.7, 139.7, "2026-06-21T23:30:00+00:00"),       # 08:30 JST
+        ("hawaii_afternoon", 21.3, -157.8, "2026-06-22T00:30:00+00:00"),   # 14:30 HST
+        ("santiago_morning", -33.4, -70.6, "2026-06-21T13:00:00+00:00"),   # 09:00 CLT
+    ],
+)
+def test_solar_azimuth_matches_reference_across_date_boundary(label, lat, lon, iso):
+    """Azimuth matches an independent atan2 reference regardless of UTC-date offset."""
+    from datetime import datetime
+
+    epoch = int(datetime.fromisoformat(iso).timestamp())
+    az, _ = solar_position(epoch, lat, lon)
+    ref = _reference_azimuth(epoch, lat, lon)
+    delta = (az - ref + 180) % 360 - 180  # signed shortest angular difference
+    assert abs(delta) < 1.0, f"{label}: az={az:.1f}° vs ref={ref:.1f}° (Δ={delta:.1f}°)"
+
+
+def test_solar_azimuth_morning_is_eastern_half():
+    """Southern-hemisphere UTC+10 morning sun is in the eastern half (the old bug
+    reported it at ~316°, the north-west)."""
+    # 2026-06-04 23:15 UTC = 09:15 AEST at Melbourne
+    epoch = int(__import__("datetime").datetime.fromisoformat(
+        "2026-06-04T23:15:00+00:00").timestamp())
+    az, _ = solar_position(epoch, -37.9, 145.0)
+    assert 0.0 <= az <= 180.0, f"Expected eastern-half azimuth, got {az:.1f}°"
+
+
 # ---------------------------------------------------------------------------
 # _cos_incidence
 # ---------------------------------------------------------------------------
