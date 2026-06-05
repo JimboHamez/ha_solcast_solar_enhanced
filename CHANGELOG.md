@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-06-05
+
 ### Changed
 - **PV Power / PV Export / Battery Charge 30-min average sensors persist across
   restarts.** They now restore their last value on startup (HA `RestoreSensor`)
@@ -276,7 +278,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.0...v1.5.1
