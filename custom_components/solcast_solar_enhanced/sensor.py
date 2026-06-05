@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -93,6 +94,37 @@ class _EnhancedSensorBase(CoordinatorEntity[SolcastEnhancedCoordinator], SensorE
 
     def _update_from_coordinator(self) -> None:
         pass
+
+
+class _RestoringSensorBase(_EnhancedSensorBase, RestoreSensor):
+    """Sensor that restores its last value across restarts.
+
+    The coordinator only produces data on the half-hour grid, so after a restart
+    ``coordinator.data`` is empty for up to ~30 min, which would otherwise show
+    the entity as *unknown* until the first update cycle. Restoring the last
+    value bridges that gap. Subclasses implement ``_live_value()``; as soon as
+    the coordinator yields a value it supersedes the restored one.
+    """
+
+    _restored_value: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None:
+            try:
+                self._restored_value = float(last.native_value)
+            except (TypeError, ValueError):
+                self._restored_value = None
+
+    def _live_value(self) -> float | None:
+        """Current value from the coordinator, or None if not yet available."""
+        return None
+
+    @property
+    def native_value(self) -> float | None:
+        live = self._live_value()
+        return live if live is not None else self._restored_value
 
 
 class ForecastNowSensor(_EnhancedSensorBase):
@@ -279,7 +311,7 @@ class BatteryChargeSensor(_EnhancedSensorBase):
         return self.coordinator.data.get("battery_charge")
 
 
-class PvActualSensor(_EnhancedSensorBase):
+class PvActualSensor(_RestoringSensorBase):
     _attr_name = "PV Power 30min Average"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -289,14 +321,13 @@ class PvActualSensor(_EnhancedSensorBase):
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_PV_ACTUAL)
 
-    @property
-    def native_value(self) -> float | None:
+    def _live_value(self) -> float | None:
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get("pv_actual")
 
 
-class PvExportSensor(_EnhancedSensorBase):
+class PvExportSensor(_RestoringSensorBase):
     _attr_name = "PV Export 30min Average"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -306,8 +337,7 @@ class PvExportSensor(_EnhancedSensorBase):
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_PV_EXPORT)
 
-    @property
-    def native_value(self) -> float | None:
+    def _live_value(self) -> float | None:
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get("pv_export")
