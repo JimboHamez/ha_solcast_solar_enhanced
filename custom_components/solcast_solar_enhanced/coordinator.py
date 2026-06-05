@@ -233,7 +233,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         # Detect base integration
         base_coord = self._get_base_coordinator()
-        self._base_status = "connected" if base_coord is not None else "not_detected"
+        new_status = "connected" if base_coord is not None else "not_detected"
+        if new_status != self._base_status:
+            _LOGGER.debug(
+                "Base integration status: %s -> %s", self._base_status, new_status
+            )
+        self._base_status = new_status
 
         # Discover Solcast sites (multiple arrays on one property).
         if opts.get(CONF_SITE_AUTODISCOVER, DEFAULT_SITE_AUTODISCOVER):
@@ -295,6 +300,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             t_est, t_est10, t_est90 = self._total_forecast_for_period(slot_start_epoch)
             if (t_est, t_est10, t_est90) != (0.0, 0.0, 0.0):
                 pv_estimate, pv_est10, pv_est90 = t_est, t_est10, t_est90
+                _LOGGER.debug("Forecast estimate from detailedForecast slot: %s", t_est)
+            elif pv_estimate:
+                _LOGGER.debug("Forecast estimate from base coordinator: %s", pv_estimate)
+            elif zen < 90:
+                # Daylight slot with no forecast from either source — the symptom
+                # of an empty/unparsed detailedForecast attribute.
+                _LOGGER.debug(
+                    "No forecast estimate for daylight slot %s (zenith %.1f) from "
+                    "either detailedForecast or base coordinator", period_end, zen
+                )
             record = {
                 "period_end": period_end,
                 "period_end_epoch": period_epoch,
@@ -368,6 +383,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 await self._run_dampening(opts, now_epoch, lat, lon)
                 self._last_dampening_ts = float(now_epoch)
 
+        # Per-cycle summary — the at-a-glance "is it working?" line. One row per
+        # half-hour update when debug logging is enabled for the component.
+        _LOGGER.debug(
+            "Update %s: base=%s pv_actual=%.3fkW pv_export=%.3fkW est=%.3fkW "
+            "clouds=%s%% battery=%.3f sites=%d db_rows=%s",
+            datetime.fromtimestamp(period_epoch, tz=timezone.utc).isoformat(),
+            self._base_status, pv_actual, pv_export, pv_estimate,
+            self._weather.get("clouds"), battery_charge, len(self._sites),
+            self._db_record_count,
+        )
+
         return {
             "pv_actual": pv_actual,
             "pv_export": pv_export,
@@ -394,6 +420,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # double-counts the additive per-site rows.
         records = await self._db.async_get_records_for_tuning(site=DEFAULT_SITE_ID)
         if not records:
+            _LOGGER.debug("PV tuning skipped: no usable records yet")
             return
         # Prefer the base integration's property-wide export limit; fall back to
         # the manual option when the base hasn't set one.
