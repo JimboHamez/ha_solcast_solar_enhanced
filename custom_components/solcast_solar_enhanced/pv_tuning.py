@@ -138,20 +138,34 @@ def run_tuning(
         _LOGGER.debug("Insufficient tuning records: %d (need 10)", len(filtered))
         return None
 
-    # Nominal geometry cosines
-    nominal_cos = np.array([
-        _cos_incidence(initial_tilt, initial_azimuth, r["zenith"], r["azimuth"])
-        for r in filtered
-    ])
+    # Vectorised geometry. The sun position (zenith/azimuth) is fixed per record,
+    # so precompute its trig once; the optimiser then only varies tilt/panel-az.
+    # This replaces a per-record Python _cos_incidence call on every objective
+    # evaluation (~millions of calls over a run) with array math — the same
+    # formula, far cheaper on low-power CPUs.
+    zenith_rad = np.radians(np.array([r["zenith"] for r in filtered]))
+    sun_az_rad = np.radians(np.array([r["azimuth"] for r in filtered]))
+    cos_zenith = np.cos(zenith_rad)
+    sin_zenith = np.sin(zenith_rad)
     pv_est_arr = np.array([r["pv_estimate"] for r in filtered])
     total_pv_arr = np.array([r["total_pv"] for r in filtered])
 
+    def cos_incidence_vec(tilt_deg: float, az_deg: float) -> np.ndarray:
+        """Vectorised equivalent of _cos_incidence over all records."""
+        tilt = math.radians(tilt_deg)
+        panel_az = math.radians(az_deg)
+        cos_inc = (
+            cos_zenith * math.cos(tilt)
+            + sin_zenith * math.sin(tilt) * np.cos(sun_az_rad - panel_az)
+        )
+        return np.maximum(0.0, cos_inc)
+
+    nominal_cos = cos_incidence_vec(initial_tilt, initial_azimuth)
+    safe_nom = np.where(nominal_cos > 1e-6, nominal_cos, 1e-6)
+
     def rmse(params: np.ndarray) -> float:
         tilt, az = params
-        candidate_cos = np.array([
-            _cos_incidence(tilt, az, r["zenith"], r["azimuth"]) for r in filtered
-        ])
-        safe_nom = np.where(nominal_cos > 1e-6, nominal_cos, 1e-6)
+        candidate_cos = cos_incidence_vec(tilt, az)
         scaled = pv_est_arr * (candidate_cos / safe_nom)
         return float(np.sqrt(np.mean((scaled - total_pv_arr) ** 2)))
 
