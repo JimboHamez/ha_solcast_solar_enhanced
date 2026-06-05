@@ -23,13 +23,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.5.0
+## 🆕 What's new in v1.6.0
 
-**Zero-config storage — no database server.** History is now kept in a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, using stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box. **MySQL support has been removed**: the storage step is now just an *Enable history storage* toggle. The **Database Records** sensor gained `latest_period_end` / `distinct_sites` attributes (and the store logs its path + row count at startup) for verifying data is accumulating. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.5.0) and [CHANGELOG](CHANGELOG.md).
+**Correctness, performance and hardening.** A solar-azimuth **east↔west flip** is fixed (it affected sites whose local morning/afternoon falls on a different UTC day from solar noon, e.g. UTC+10), and **existing databases are repaired in place** by a silent one-time migration. Forecast columns are **no longer silently zero-filled** when the base integration stores `period_start` as `datetime`. Low-power devices benefit from a **vectorised PV-tuning** objective (~59× faster), **dampening records fetched once per run** instead of per slot, and a **shared aiohttp session** for OpenWeatherMap. The base integration is now a **hard dependency**, only a **single instance** can be added, and the **OpenWeatherMap API key is redacted from logs**. Licensing standardised on **Apache-2.0**. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.0) and [CHANGELOG](CHANGELOG.md).
 
-> **Upgrading from a MySQL setup?** The built-in store starts fresh and rebuilds as data accumulates. To carry forward old history, export your MySQL `solcast_data` table to CSV before upgrading.
+_Previously, in v1.5.0:_ **zero-config storage** — history moved to a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box; **MySQL support was removed** (the storage step is now just an *Enable history storage* toggle).
 
-_Previously, in v1.4.0:_ two correctness fixes — dampening factors aligned to **local time**, and PV input **auto-detection made unit-first** (`Wh`/`kWh`/`MWh` → energy counter, `W`/`kW` → averaged power), standardising on cumulative energy counters.
+> **Upgrading from a MySQL setup (pre-1.5.0)?** The built-in store starts fresh and rebuilds as data accumulates. To carry forward old history, export your MySQL `solcast_data` table to CSV before upgrading.
 
 ---
 
