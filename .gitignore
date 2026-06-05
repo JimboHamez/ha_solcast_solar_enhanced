@@ -8,6 +8,9 @@ htmlcov/
 # Local working docs
 *.docx
 
+# Local-only PV-tuning / notebook-comparison sandbox (never pushed)
+testing/
+
 # SQLite databases and their WAL/SHM sidecars (never commit data)
 *.db
 *.db-wal

@@ -114,7 +114,11 @@ def run_tuning(
         pv_export = float(r.get("pv_export", 0) or 0)
         total_pv = pv_actual  # inverter AC output already includes export and battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
-        clouds = int(r.get("clouds", 100) or 100)
+        # Distinguish a genuine 0% (clearest sky — the records tuning most wants)
+        # from a missing value. A bare `or 100` would coerce a falsy 0 to 100 and
+        # drop the clearest records via the cloud-threshold filter below.
+        raw_clouds = r.get("clouds")
+        clouds = 100 if raw_clouds is None else int(raw_clouds)
         zenith = float(r.get("zenith", 90) or 90)
         azimuth = float(r.get("azimuth", 0) or 0)
 

@@ -5,6 +5,7 @@ import math
 import pytest
 
 from custom_components.solcast_solar_enhanced.pv_tuning import (
+    TUNING_AVAILABLE,
     _cos_incidence,
     run_tuning,
     solar_position,
@@ -176,6 +177,36 @@ def test_run_tuning_returns_result_with_clear_records():
     assert 0.0 <= result["tilt"] <= 90.0
     assert -180.0 <= result["azimuth"] <= 180.0
     assert result["rmse_kw"] >= 0.0
+
+
+def test_run_tuning_keeps_zero_cloud_records():
+    """A genuine 0% cloud reading (clearest sky) must NOT be dropped.
+
+    Regression: clouds were read as `int(r.get("clouds", 100) or 100)`, so a
+    falsy 0 became 100 and every clear-sky record was filtered out, returning
+    None despite ample data.
+    """
+    records = [
+        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
+         "pv_estimate": 4.0, "clouds": 0, "zenith": 30.0 + i * 0.1, "azimuth": 180.0 + i * 0.1}
+        for i in range(20)
+    ]
+    if not TUNING_AVAILABLE:
+        pytest.skip("scipy not available")
+    result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=20.0, initial_azimuth=0.0)
+    assert result is not None, "0% cloud records were wrongly excluded"
+    assert result["n_records"] == 20
+
+
+def test_run_tuning_treats_missing_cloud_as_overcast():
+    """A missing/None cloud value is still treated as overcast (excluded)."""
+    records = [
+        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
+         "pv_estimate": 4.0, "clouds": None, "zenith": 30.0, "azimuth": 180.0}
+        for _ in range(20)
+    ]
+    # cloud defaults to 100 → all excluded → None
+    assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_excludes_clipped_records():
