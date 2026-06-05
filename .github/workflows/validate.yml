@@ -23,3 +23,7 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Skip the brands check: this integration isn't (yet) registered in the
+          # home-assistant/brands repo. Required only for HACS-default-store
+          # inclusion, not for installing as a custom repository.
+          ignore: brands
