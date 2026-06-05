@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockModule, mock_integration
 
 from custom_components.solcast_solar_enhanced.const import (
+    BASE_DOMAIN,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
     CONF_AZIMUTH,
@@ -30,6 +32,13 @@ from custom_components.solcast_solar_enhanced.const import (
     DEFAULT_CLOUD_THRESHOLD,
     DOMAIN,
 )
+
+
+@pytest.fixture(autouse=True)
+def _mock_base_integration(hass):
+    """Register a stub solcast_solar integration so the now-hard manifest
+    dependency resolves during entry/flow setup in these tests."""
+    mock_integration(hass, MockModule(BASE_DOMAIN), built_in=False)
 
 STEP_SITE = {
     CONF_LATITUDE: -37.9,
