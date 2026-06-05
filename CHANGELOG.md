@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **PV Power / PV Export 30-min average sensors persist across restarts.** They
-  now restore their last value on startup (HA `RestoreSensor`) instead of showing
-  *unknown* until the first half-hour update cycle (up to ~30 min after a
-  restart). The live value supersedes the restored one as soon as it arrives.
+- **PV Power / PV Export / Battery Charge 30-min average sensors persist across
+  restarts.** They now restore their last value on startup (HA `RestoreSensor`)
+  instead of showing *unknown* until the first half-hour update cycle (up to
+  ~30 min after a restart). The live value supersedes the restored one as soon as
+  it arrives.
 
 ## [1.6.0] - 2026-06-05
 

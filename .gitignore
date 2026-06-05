@@ -7,3 +7,10 @@ htmlcov/
 
 # Local working docs
 *.docx
+
+# SQLite databases and their WAL/SHM sidecars (never commit data)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

@@ -294,7 +294,7 @@ class WeatherCloudsSensor(_EnhancedSensorBase):
         return self.coordinator.data.get("weather", {}).get("clouds")
 
 
-class BatteryChargeSensor(_EnhancedSensorBase):
+class BatteryChargeSensor(_RestoringSensorBase):
     _attr_name = "Battery Charge 30min Average"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -304,8 +304,7 @@ class BatteryChargeSensor(_EnhancedSensorBase):
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_BATTERY_CHARGE)
 
-    @property
-    def native_value(self) -> float | None:
+    def _live_value(self) -> float | None:
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get("battery_charge")

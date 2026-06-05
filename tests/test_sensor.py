@@ -88,7 +88,14 @@ def test_battery_charge_returns_value():
     assert s.native_value == pytest.approx(0.5)
 
 
-@pytest.mark.parametrize("cls, key", [(PvActualSensor, "pv_actual"), (PvExportSensor, "pv_export")])
+@pytest.mark.parametrize(
+    "cls, key",
+    [
+        (PvActualSensor, "pv_actual"),
+        (PvExportSensor, "pv_export"),
+        (BatteryChargeSensor, "battery_charge"),
+    ],
+)
 def test_restoring_sensor_uses_restored_value_until_coordinator_updates(cls, key):
     """After a restart the coordinator has no data for up to ~30 min; the sensor
     reports its restored value, then the live value once it arrives."""
@@ -101,7 +108,7 @@ def test_restoring_sensor_uses_restored_value_until_coordinator_updates(cls, key
     assert s.native_value == pytest.approx(4.2)  # live supersedes restored
 
 
-@pytest.mark.parametrize("cls", [PvActualSensor, PvExportSensor])
+@pytest.mark.parametrize("cls", [PvActualSensor, PvExportSensor, BatteryChargeSensor])
 def test_restoring_sensor_none_when_no_data_and_nothing_restored(cls):
     s = _make_sensor(cls, _make_coordinator(None))
     assert s.native_value is None
