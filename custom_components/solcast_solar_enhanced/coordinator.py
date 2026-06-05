@@ -179,6 +179,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             if not ok:
                 _LOGGER.warning("DB connection failed — DB features disabled for this session")
                 self._db = None
+            else:
+                # One-time, silent repair of azimuth values written before the
+                # hour-angle wrap fix; gated by PRAGMA user_version so it runs once.
+                await self._db.async_migrate(
+                    float(opts.get(CONF_LATITUDE, -37.9)),
+                    float(opts.get(CONF_LONGITUDE, 145.0)),
+                )
 
         if opts.get(CONF_OWM_ENABLED) and opts.get(CONF_OWM_API_KEY):
             self._owm = OWMClient(

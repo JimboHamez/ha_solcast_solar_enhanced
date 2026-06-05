@@ -55,6 +55,49 @@ async def test_connect_creates_schema_and_is_available(store):
     assert await store.async_get_record_count() == 0
 
 
+# ---------------------------------------------------------------------------
+# azimuth repair migration
+# ---------------------------------------------------------------------------
+
+# 2026-06-04T23:30:00Z period end → midpoint 23:15Z = 09:15 AEST. The old bug
+# stored ~316.46° (NW); the correct morning azimuth is ~43.5° (NE).
+_MELB_LAT, _MELB_LON = -37.9, 145.0
+_MORNING_EPOCH = 1780615800
+
+
+async def _azimuth_of(store, epoch):
+    recs = await store.async_get_records_for_tuning()
+    for r in recs:
+        # tuning query doesn't return epoch, so match on the single inserted row
+        return r["azimuth"]
+    return None
+
+
+async def test_migrate_repairs_wrong_azimuth(store):
+    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+    changed = await store.async_migrate(_MELB_LAT, _MELB_LON)
+    assert changed == 1
+    fixed = await _azimuth_of(store, _MORNING_EPOCH)
+    assert fixed == pytest.approx(43.5, abs=1.0)
+    assert 0.0 <= fixed <= 180.0  # eastern half, not the mirrored ~316°
+
+
+async def test_migrate_is_idempotent(store):
+    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+    assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 1
+    # Second run is gated by user_version → no rescan, nothing changed.
+    assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
+
+
+async def test_migrate_leaves_correct_rows_untouched(store):
+    from custom_components.solcast_solar_enhanced.pv_tuning import solar_position
+
+    correct = round(solar_position(_MORNING_EPOCH - 900, _MELB_LAT, _MELB_LON)[0], 5)
+    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=correct))
+    assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
+    assert await _azimuth_of(store, _MORNING_EPOCH) == pytest.approx(correct)
+
+
 async def test_connect_failure_returns_false(hass):
     # A path inside a non-existent directory cannot be opened.
     s = SqliteStore(hass, "/nonexistent-dir-xyz/sub/test.db")

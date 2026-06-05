@@ -15,7 +15,16 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .pv_tuning import solar_position
+
 _LOGGER = logging.getLogger(__name__)
+
+# Bumped when stored data needs a one-time, in-place repair. v1 recomputes the
+# solar ``azimuth`` column for rows written before the hour-angle wrap fix (an
+# east<->west mirror for sites whose local morning/afternoon fell on a different
+# UTC day from solar noon). Tracked via SQLite's built-in PRAGMA user_version so
+# the repair runs silently once and never re-scans on later starts.
+SCHEMA_VERSION = 1
 
 # Default site identifier for single-site / aggregate rows. Kept in sync with
 # const.DEFAULT_SITE_ID (imported lazily-free to avoid a const import cycle here).
@@ -158,6 +167,61 @@ class SqliteStore:
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite insert failed: %s", exc)
             return False
+
+    # ------------------------------------------------------------------
+    # Migrations
+    # ------------------------------------------------------------------
+
+    async def async_migrate(self, latitude: float, longitude: float) -> int:
+        """Run any pending one-time data repairs. Returns rows changed.
+
+        Silent and idempotent: gated on PRAGMA user_version, so it scans once and
+        is a no-op on every later start (and on a fresh, empty database).
+        """
+        if self._conn is None or self._readonly:
+            return 0
+        return await self._hass.async_add_executor_job(
+            self._migrate_azimuth, latitude, longitude
+        )
+
+    def _migrate_azimuth(self, latitude: float, longitude: float) -> int:
+        try:
+            with self._lock:
+                version = self._conn.execute("PRAGMA user_version").fetchone()[0]
+                if version >= SCHEMA_VERSION:
+                    return 0
+                rows = self._conn.execute(
+                    'SELECT "index", period_end_epoch, azimuth FROM solcast_data'
+                ).fetchall()
+                # Solar azimuth depends only on epoch + site lat/lon (it is the sun
+                # position, shared by every site on the property), so recompute it
+                # from each row's stored epoch at the interval midpoint (epoch-900),
+                # matching how it was originally written. Only rewrite rows whose
+                # value actually moved, to avoid needless SD-card writes.
+                updates = [
+                    (round(new_az, 5), idx)
+                    for idx, epoch, old_az in rows
+                    if abs(
+                        (new_az := solar_position(int(epoch) - 900, latitude, longitude)[0])
+                        - (old_az or 0.0)
+                    )
+                    > 0.01
+                ]
+                if updates:
+                    self._conn.executemany(
+                        'UPDATE solcast_data SET azimuth = ? WHERE "index" = ?', updates
+                    )
+                self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                self._conn.commit()
+            if updates:
+                _LOGGER.info(
+                    "Repaired solar azimuth on %d of %d stored row(s)",
+                    len(updates), len(rows),
+                )
+            return len(updates)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("Azimuth repair failed: %s", exc)
+            return 0
 
     # ------------------------------------------------------------------
     # Reads
