@@ -427,6 +427,49 @@ instantaneous reading, transient cloud effects within the period are
 already smoothed — making the ratio more stable and reliable as input
 to the dampening calculation.
 
+### The "tuned estimate" prerequisite (relationship to Feature 2 / notebook 3.4)
+
+Notebook 3.4b is explicit that its input must be a **tuned** Solcast estimate
+("How to get a Solcast tuned estimate can be found in 3.4"). This is a
+prerequisite, not a tip. 3.4 first corrects the site's **tilt / azimuth /
+capacity**; 3.4b then computes the *residual* `measured / estimate` ratio per
+(zenith, azimuth) bin. Running shading on an **un-tuned** estimate makes each
+bin factor silently absorb orientation/capacity error *as well as* shading,
+conflating two unrelated effects. "Tuned first" is what makes the residual mean
+"shading."
+
+The 3.4b sample dataset is constructed to enforce exactly this separation:
+`rooftop_meas` is `rooftop_solcast` multiplied by a fixed shading mask.
+**95% of rows are bit-identical** (mask = exactly 1.0 — i.e. zero orientation
+error by construction); the ~5% that differ occur **only at low sun**
+(zenith 53–86°) in two lobes — morning-east (az ≈ −96°) and afternoon-west
+(az ≈ +53°) — with factors clustered around 0.29. There is no weather noise:
+the ratio is either 1.0 or a clean shading factor.
+
+**How this integration differs (a deliberate gap to be aware of).** Our pipeline
+follows the same tune→shade *shape*, but the tuning loop is **advisory and
+manual**, not automatic:
+
+- `compute_dampening` consumes the **raw base-integration forecast** (`pv_estimate`
+  is written to the DB straight from `solcast_solar`, unmodified by our tuner).
+- `run_tuning`'s output is surfaced only as the **"Tuned Panel Tilt/Azimuth"**
+  sensors; it is **never fed back** into the estimate.
+
+So the "tuned estimate" stage is closed by the human: the user reads the suggested
+tilt/azimuth, updates their **Solcast account** site configuration, and the base
+forecast then becomes the tuned estimate that dampening refines. Consequently our
+dampening is strictly a **residual-bias dampening**, not a pure shading
+correction — it equals "shading" only when the Solcast site is already
+well-configured. On a mis-configured site it will fold orientation/capacity error
+into the dampening curve, the very conflation 3.4b's prerequisite avoids. (Two
+further divergences from 3.4b: we push a single **hourly** curve applied in **all**
+conditions, where 3.4b is a 2-D geometry grid applied on **clear-sky only**.)
+
+**Guidance:** apply the *Tuned Panel Tilt/Azimuth* values in the Solcast account
+before relying on dampening for accuracy. A future option could gate the
+dampening push on tuning convergence (low RMSE) so orientation error is corrected
+first; see the [roadmap](#roadmap).
+
 ### Why cloud filtering is essential
 
 The dampening factor is `total_pv / pv_estimate`. On a clear day this
@@ -435,6 +478,28 @@ reflects shading geometry. On a cloudy day it reflects cloud attenuation
 corrupts the dampening factor, causing systematic underestimation on
 future clear days. The OWM `clouds` value (0–100) stored per record
 drives the filtering.
+
+**OpenWeatherMap is therefore a functional requirement of this feature, not an
+optional extra.** The per-record cloud percentage comes *only* from OWM
+(`OWMClient.async_fetch` → `clouds.all`). The design is **fail-safe**: when OWM is
+disabled (the config default) or a fetch fails, the in-memory weather defaults to
+*unknown* (`clouds = None`, `temp = None`), and at the DB-write boundary the
+coordinator coerces the unknown cloud value to the **`100` sentinel** — a value
+the clear-sky filter *excludes*. So a record written without OWM data can never
+masquerade as clear sky: tuning finds nothing to fit (returns `None`) and
+dampening reports `no_data` (stays neutral `1.0`, pushes nothing). The Cloud
+Cover / Weather Temperature sensors read the raw `None` and show *unavailable*
+rather than a misleading `0 %` / `0 °C`. To make this loud rather than silent,
+`async_setup` raises a **repair issue** (`ISSUE_OWM_REQUIRED`) whenever a
+cloud-driven feature (`auto_tuning` / `auto_dampening`) is enabled but no OWM
+source is configured; it clears when OWM is added or on unload.
+
+*Why `100`, not `0`:* both `0` and `100` are valid real readings, so the
+"unknown" sentinel must sit on the **excluded** side of the filter. `0` collides
+with real clear sky (the highest-quality data → would be *trusted*); `100`
+collides with real overcast (already excluded → *safe*). The same reasoning fixed
+the falsy-`0` coercion bug in v1.6.2/3. See the README *OpenWeatherMap*
+prerequisite for the access requirements.
 
 ### Cloud quality weighting
 
@@ -863,20 +928,28 @@ running HA version.
 The store lives at `config/solcast_solar_enhanced.db` and needs no further
 configuration — no host, port, credentials or schema name.
 
-**Step 3 — OpenWeatherMap (optional)**
+**Step 3 — OpenWeatherMap (required for tuning & dampening)**
 
-| Field | Description |
-|---|---|
-| Enable OWM | Toggle weather data on/off |
-| OWM API Key | Key from openweathermap.org |
+Off by default. Without it, cloud cover is stored as the unknown/excluded
+sentinel, so tuning/dampening have no clear-sky data and stay inert, and a
+repair issue is raised — see
+[Why cloud filtering is essential](#why-cloud-filtering-is-essential). Needed
+unless you only want raw history logging.
 
-OWM endpoint used:
+| Field | Default | Description |
+|---|---|---|
+| Enable OWM | Off | Fetch per-cycle cloud cover (drives the clear-sky filter) |
+| OWM API Key | "" | Free key from openweathermap.org — Current Weather Data API |
+
+OWM endpoint used (free tier; ~48 calls/day vs the free 60/min, ~1M/month limit):
 ```
 GET https://api.openweathermap.org/data/2.5/weather
     ?lat={latitude}&lon={longitude}&appid={key}&units=metric
 ```
 Parses: `main.temp` (°C), `clouds.all` (0–100 int),
-`weather[0].description` (text).
+`weather[0].description` (text). A failed/invalid fetch falls back to *unknown*
+(`temp`/`clouds` = `None` → stored as the excluded `100` sentinel; sensors show
+*unavailable*), logged as `OWM fetch failed`.
 
 **Step 4 — Battery Storage (optional)**
 
@@ -1003,6 +1076,30 @@ redundant re-scan per run was already removed — the fetch is hoisted to once p
 **Status.** Deferred. Current scan cost is acceptable for typical single-site,
 few-year databases; this becomes worthwhile for long-lived multi-site Pi
 installs. Tracked here so the reasoning isn't lost.
+
+### Gate dampening on tuning convergence (tuned-estimate prerequisite)
+
+**Problem.** Notebook 3.4b requires a geometry-*tuned* estimate before computing
+shading (see [Feature 3 → the "tuned estimate" prerequisite](#the-tuned-estimate-prerequisite-relationship-to-feature-2--notebook-34)).
+Our `compute_dampening` instead runs on the raw base forecast, and our
+`run_tuning` output is advisory (sensors only, never fed back). On a
+mis-configured Solcast site — wrong tilt/azimuth/capacity — the dampening curve
+silently absorbs that orientation/capacity error as if it were shading.
+
+**Options under consideration.**
+
+1. **Convergence gate.** Suppress (or heavily clamp toward 1.0) the dampening push
+   until tuning has converged — e.g. the latest `run_tuning` RMSE is below a
+   threshold *and* the tuned tilt/azimuth are stable across runs — so orientation
+   error is surfaced for correction before it leaks into dampening.
+2. **Divergence warning.** When the tuned tilt/azimuth differ materially from the
+   site's configured values, raise a repair issue / log prompting the user to
+   update their Solcast account, rather than silently dampening around it.
+3. **Docs-only.** Accept the current behaviour and rely on the Feature 3 guidance
+   (apply the *Tuned Panel Tilt/Azimuth* sensors in the Solcast account first).
+
+**Status.** Deferred — design note captured. Option 3 (documentation) is in place;
+1/2 are the active correctness improvement if mis-configuration proves common.
 
 ---
 

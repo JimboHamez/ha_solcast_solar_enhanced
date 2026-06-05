@@ -10,6 +10,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
@@ -57,6 +58,7 @@ from .const import (
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
+    ISSUE_OWM_REQUIRED,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
@@ -127,7 +129,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._db: SqliteStore | None = None
         self._owm: OWMClient | None = None
 
-        self._weather: dict[str, Any] = {"temp": 0.0, "clouds": 0, "description": ""}
+        # Weather defaults to *unknown* (None), not 0. Without OWM there is no
+        # cloud data; a 0 here would read as perfectly clear sky and be trusted by
+        # the tuning/dampening clear-sky filters. None is fail-safe: the sensors
+        # show "unavailable" and the stored record is excluded (see the DB-write
+        # coercion below and the OWM-required repair issue in async_setup).
+        self._weather: dict[str, Any] = {"temp": None, "clouds": None, "description": "unavailable"}
         self._tuning_result: dict[str, Any] | None = None
         self._site_tuning_results: dict[str, dict[str, Any]] = {}
         self._dampening_table: list[dict[str, Any]] = []
@@ -195,6 +202,23 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 session=async_get_clientsession(self.hass),
             )
 
+        # Surface a repair issue when the cloud-driven features are enabled but no
+        # OWM source is configured. Without it every record's cloud cover is
+        # unknown (excluded), so tuning/dampening stay inert — fail loud, not
+        # silent. Re-evaluated on every reload (an options change reloads the
+        # entry), so enabling OWM clears the issue.
+        if not self._owm and (
+            opts.get(CONF_AUTO_TUNING, True) or opts.get(CONF_AUTO_DAMPENING, True)
+        ):
+            ir.async_create_issue(
+                self.hass, DOMAIN, ISSUE_OWM_REQUIRED,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_OWM_REQUIRED,
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_OWM_REQUIRED)
+
         # Drive refreshes from the wall clock at :00/:30 + a small offset, so the
         # measurement window aligns to Solcast's half-hour grid instead of drifting
         # from HA's boot time. The offset lets boundary energy-counter states post
@@ -219,6 +243,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._db:
             await self._db.async_close()
             self._db = None
+        # Clear the OWM repair issue on unload (a reload re-creates it if still
+        # applicable via async_setup).
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_OWM_REQUIRED)
 
     # ------------------------------------------------------------------
     # Main update
@@ -319,6 +346,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "No forecast estimate for daylight slot %s (zenith %.1f) from "
                     "either detailedForecast or base coordinator", period_end, zen
                 )
+            # Weather is stored NOT NULL; coerce the unknown sentinel (None) to a
+            # value the clear-sky filters *exclude* — 100% cloud — so a record
+            # written without OWM data can never masquerade as clear sky. The
+            # sensors still read the raw None (showing "unavailable").
+            w_temp = self._weather.get("temp")
+            w_clouds = self._weather.get("clouds")
+            temp_db = round(w_temp, 2) if w_temp is not None else 0.0
+            clouds_db = 100 if w_clouds is None else int(w_clouds)
+            desc_db = self._weather.get("description") or "unavailable"
             record = {
                 "period_end": period_end,
                 "period_end_epoch": period_epoch,
@@ -334,9 +370,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "pv_estimate90": round(pv_est90, 4),
                 "azimuth": round(az, 5),
                 "zenith": round(zen, 5),
-                "temp": round(self._weather["temp"], 2),
-                "clouds": self._weather["clouds"],
-                "description": self._weather["description"],
+                "temp": temp_db,
+                "clouds": clouds_db,
+                "description": desc_db,
                 "battery_charge": round(battery_charge, 4),
             }
             await self._db.async_insert_record(record)

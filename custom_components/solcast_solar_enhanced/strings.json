@@ -143,5 +143,11 @@
         "energy_mwh": "Energy counter — MWh (recommended)"
       }
     }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap needed for PV tuning & dampening",
+      "description": "PV tuning and adaptive dampening use OpenWeatherMap cloud cover to identify clear-sky periods — the only data where measured vs forecast reflects panel geometry and shading rather than passing clouds. OpenWeatherMap is not configured, so every record's cloud cover is unknown and excluded, leaving these features inactive (dampening stays neutral and is not pushed to Solcast). Add a free OpenWeatherMap API key in this integration's options to enable them, or ignore this if you only want history logging."
+    }
   }
 }

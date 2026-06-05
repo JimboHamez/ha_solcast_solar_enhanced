@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-06-05
+
+### Fixed
+- **Clear-sky (0% cloud) records no longer dropped from adaptive dampening.**
+  `compute_dampening` read cloud cover as `int(r.get("clouds", 100) or 100)` (the
+  same falsy-`0` bug fixed for tuning in 1.6.2). A genuine 0% reading — the
+  clearest sky, the best data for a shading ratio — was scored in `_cloud_weight`'s
+  zero band and excluded. Now `None`-aware: real `0` is kept, missing stays
+  overcast.
+
+### Changed
+- **OpenWeatherMap is now treated as required for tuning & dampening, and the
+  no-cloud-data path is fail-safe.** Cloud cover is the only input that lets these
+  features isolate clear-sky periods, and it comes solely from OWM. Previously,
+  with OWM disabled or a failed fetch, every record was stored as `clouds = 0`
+  (perfectly clear) — so the clear-sky filter excluded nothing and could push a
+  cloud-contaminated dampening curve to Solcast. Now:
+  - missing/failed weather is stored as *unknown* and coerced to the excluded
+    `100` sentinel, so such records can never masquerade as clear sky — tuning
+    returns no result and dampening stays neutral (nothing pushed);
+  - the **Cloud Cover** and **Weather Temperature** sensors report *unavailable*
+    instead of a misleading `0 % / 0 °C`;
+  - a **repair issue** is raised when a cloud-driven feature is enabled but no OWM
+    source is configured, and cleared once a key is added.
+- **Docs:** README reframes OWM from "optional" to required (with the free
+  Current Weather Data API access requirements); `DESIGN_DOCUMENT.md` adds the
+  tuning↔dampening "tuned estimate" prerequisite (notebook 3.4 → 3.4b), the
+  fail-safe cloud-sentinel rationale, and a roadmap note on gating dampening by
+  tuning convergence.
+
 ## [1.6.2] - 2026-06-05
 
 ### Fixed
@@ -288,7 +318,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...HEAD
+[1.6.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.2...v1.6.0

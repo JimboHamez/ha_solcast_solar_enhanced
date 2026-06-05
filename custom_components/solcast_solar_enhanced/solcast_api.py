@@ -43,9 +43,16 @@ class OWMClient:
             else:
                 async with aiohttp.ClientSession() as session:
                     data = await self._get(session, params)
+            # Missing temp/clouds in a "successful" response are treated as
+            # *unknown* (None), not 0. 0 is a real, valid reading (clear sky / 0°C)
+            # that the clear-sky filters trust; coercing an absent value to 0 would
+            # inject a false clear-sky record. None is the fail-safe sentinel —
+            # downstream treats it as overcast/unknown and excludes it.
+            temp_raw = data.get("main", {}).get("temp")
+            clouds_raw = data.get("clouds", {}).get("all")
             return {
-                "temp": float(data.get("main", {}).get("temp", 0.0)),
-                "clouds": int(data.get("clouds", {}).get("all", 0)),
+                "temp": float(temp_raw) if temp_raw is not None else None,
+                "clouds": int(clouds_raw) if clouds_raw is not None else None,
                 "description": str(data.get("weather", [{}])[0].get("description", "")),
             }
         except Exception as exc:  # noqa: BLE001
@@ -55,7 +62,9 @@ class OWMClient:
             if self._api_key:
                 detail = detail.replace(self._api_key, "***")
             _LOGGER.warning("OWM fetch failed: %s: %s", type(exc).__name__, detail)
-            return {"temp": 0.0, "clouds": 0, "description": "unavailable"}
+            # Unknown weather → None (fail-safe): the record is excluded from
+            # tuning/dampening rather than trusted as a false clear-sky reading.
+            return {"temp": None, "clouds": None, "description": "unavailable"}
 
     @staticmethod
     async def _get(

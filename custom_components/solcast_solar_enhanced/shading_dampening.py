@@ -74,7 +74,12 @@ def compute_dampening(
         pv_actual = float(r.get("pv_actual", 0) or 0)
         total_pv = pv_actual  # inverter AC output already includes export and battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
-        clouds = int(r.get("clouds", 100) or 100)
+        # Distinguish a genuine 0% (clearest sky — the highest-quality records for
+        # a shading ratio) from a missing value. A bare `or 100` would coerce a
+        # falsy 0 to 100, so `_cloud_weight` would score the clearest sky in its
+        # lowest/zero band and drop or under-weight exactly the best data.
+        raw_clouds = r.get("clouds")
+        clouds = 100 if raw_clouds is None else int(raw_clouds)
         zenith = float(r.get("zenith", 90) or 90)
         azimuth = float(r.get("azimuth", 0) or 0)
 

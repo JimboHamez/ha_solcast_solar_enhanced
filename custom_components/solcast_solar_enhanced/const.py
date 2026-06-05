@@ -97,6 +97,10 @@ TUNING_INTERVAL_HOURS = 24
 STORAGE_VERSION = 1
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
 
+# Repair-issue id raised when cloud-driven features (tuning/dampening) are enabled
+# but no OpenWeatherMap source is configured. Translation lives under `issues`.
+ISSUE_OWM_REQUIRED = "owm_required"
+
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"
 SENSOR_FORECAST_TODAY = "forecast_today"

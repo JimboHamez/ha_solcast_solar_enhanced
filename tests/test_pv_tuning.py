@@ -209,6 +209,20 @@ def test_run_tuning_treats_missing_cloud_as_overcast():
     assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
+def test_run_tuning_excludes_no_owm_sentinel():
+    """The no-OWM storage sentinel (clouds=100) is excluded as fully overcast.
+
+    Without an OWM source the coordinator stores clouds=100 so records can never
+    masquerade as clear sky; tuning then has nothing to fit and returns None.
+    """
+    records = [
+        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
+         "pv_estimate": 4.0, "clouds": 100, "zenith": 30.0, "azimuth": 45.0}
+        for _ in range(20)
+    ]
+    assert run_tuning(records, 5.0, 20, 0.95) is None
+
+
 def test_run_tuning_excludes_clipped_records():
     """Records where both total_pv and pv_estimate exceed clip threshold are excluded."""
     capacity_kw = 5.0

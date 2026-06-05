@@ -96,6 +96,42 @@ def test_compute_dampening_excludes_zero_estimate():
     assert result["source"] == "no_data"
 
 
+def test_compute_dampening_keeps_zero_cloud_records():
+    """A genuine 0% cloud reading (clearest sky — the best data for a shading
+    ratio) must be kept, not coerced to overcast and dropped.
+
+    Regression: clouds were read as `int(r.get("clouds", 100) or 100)`, so a
+    falsy 0 became 100, `_cloud_weight` scored it in its zero band, and every
+    clear-sky record was excluded → spurious 'no_data'.
+    """
+    record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
+              "pv_estimate": 5.0, "clouds": 0, "zenith": 45.0, "azimuth": 180.0}
+    result = compute_dampening([record] * 50, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] != "no_data", "0% cloud records were wrongly excluded"
+    assert result["quality_records"] > 0.0
+
+
+def test_compute_dampening_missing_cloud_treated_overcast():
+    """A missing/None cloud value still defaults to overcast (excluded)."""
+    record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
+              "pv_estimate": 5.0, "clouds": None, "zenith": 45.0, "azimuth": 180.0}
+    result = compute_dampening([record] * 50, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
+
+
+def test_compute_dampening_excludes_no_owm_sentinel():
+    """The no-OWM storage sentinel (clouds=100) is excluded → stays neutral.
+
+    Without an OWM source the coordinator stores clouds=100, so dampening finds
+    no usable records and reports 'no_data' (neutral 1.0, nothing pushed).
+    """
+    record = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
+              "pv_estimate": 5.0, "clouds": 100, "zenith": 45.0, "azimuth": 180.0}
+    result = compute_dampening([record] * 50, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
+    assert result["factor"] == pytest.approx(1.0)
+
+
 def test_compute_dampening_excludes_high_cloud():
     records = [{"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
                 "pv_estimate": 4.0, "clouds": 80, "zenith": 45.0, "azimuth": 180.0}]

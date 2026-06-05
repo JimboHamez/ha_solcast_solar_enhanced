@@ -69,7 +69,18 @@ async def test_owm_fetch_handles_errors_gracefully():
 
     client = OWMClient("key", -37.9, 145.0, session=_Boom(_OWM_PAYLOAD))
     result = await client.async_fetch()
-    assert result == {"temp": 0.0, "clouds": 0, "description": "unavailable"}
+    # Unknown weather → None (fail-safe), NOT 0. A 0 would read as clear sky and
+    # be trusted by the tuning/dampening clear-sky filters.
+    assert result == {"temp": None, "clouds": None, "description": "unavailable"}
+
+
+async def test_owm_fetch_missing_clouds_is_unknown_not_zero():
+    """A success response lacking a clouds field yields None, not a false 0%."""
+    session = _FakeSession({"main": {"temp": 9.0}, "weather": [{"description": "x"}]})
+    client = OWMClient("key", -37.9, 145.0, session=session)
+    result = await client.async_fetch()
+    assert result["clouds"] is None
+    assert result["temp"] == 9.0
 
 
 async def test_owm_fetch_redacts_api_key_in_logs(caplog):

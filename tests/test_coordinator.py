@@ -6,12 +6,20 @@ from datetime import datetime, timezone
 
 import pytest
 
+from homeassistant.helpers import issue_registry as ir
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
 from custom_components.solcast_solar_enhanced.const import (
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
+    CONF_AUTO_TUNING,
+    CONF_OWM_API_KEY,
+    CONF_OWM_ENABLED,
+    DOMAIN,
+    ISSUE_OWM_REQUIRED,
 )
 
 
@@ -211,3 +219,48 @@ async def test_dampening_slots_fetch_records_once(hass, coordinator):
     await coordinator._compute_dampening_slots({}, now_epoch, -37.81, 144.96, "_total")
 
     assert db.async_get_records_for_dampening.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# OpenWeatherMap requirement — repair issue + fail-safe weather default
+# ---------------------------------------------------------------------------
+
+async def test_weather_default_is_unknown_not_clear(coordinator):
+    """Without OWM the in-memory weather is unknown (None), never a false 0 clear."""
+    assert coordinator._weather["clouds"] is None
+    assert coordinator._weather["temp"] is None
+
+
+async def test_setup_raises_owm_issue_when_disabled(hass, mock_config_entry):
+    """OWM off + a cloud-driven feature on → a repair issue is raised, cleared on teardown."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=dict(mock_config_entry.data),
+        options={CONF_OWM_ENABLED: False, CONF_AUTO_TUNING: True},
+        entry_id="owm_off_tuning_on",
+    )
+    entry.add_to_hass(hass)
+    coord = SolcastEnhancedCoordinator(hass, entry)
+    await coord.async_setup()
+    try:
+        assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is not None
+    finally:
+        await coord.async_teardown()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is None
+
+
+async def test_setup_no_owm_issue_when_configured(hass, mock_config_entry):
+    """A configured OWM key clears/avoids the repair issue."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=dict(mock_config_entry.data),
+        options={CONF_OWM_ENABLED: True, CONF_OWM_API_KEY: "k"},
+        entry_id="owm_on",
+    )
+    entry.add_to_hass(hass)
+    coord = SolcastEnhancedCoordinator(hass, entry)
+    await coord.async_setup()
+    try:
+        assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is None
+    finally:
+        await coord.async_teardown()

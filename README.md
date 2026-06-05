@@ -23,11 +23,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.6.2
+## 🆕 What's new in v1.6.3
 
-**Clear-sky records no longer lost to PV tuning.** A 0% cloud reading — the clearest sky, exactly the data the tilt/azimuth optimiser most wants — was being silently discarded by the cloud-cover filter (a falsy `0` was coerced to fully overcast). Those records are now kept, while a genuinely missing cloud value still defaults to overcast. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.2) and [CHANGELOG](CHANGELOG.md).
+**Dampening gets the same clear-sky fix, and OpenWeatherMap is now properly required.** The 0%-cloud bug fixed for tuning in 1.6.2 was also dropping the clearest-sky records from **adaptive dampening** — now fixed. More importantly, OWM is reframed from "optional" to **required for tuning & dampening**: without it there's no cloud data to find clear-sky periods, so those features can't work. The no-cloud path is now **fail-safe** — records are stored as *unknown and excluded* (never a false "clear sky"), the **Cloud Cover/Temperature** sensors show *unavailable* instead of `0`, and a **repair issue** prompts you to add a (free) OWM key. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.3) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.6.1:_ the **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors gained **restart resilience** (HA `RestoreSensor`), restoring their last value on startup instead of reading *unknown* until the first half-hour update cycle.
+_Previously, in v1.6.2:_ the same clear-sky (0% cloud) fix for **PV tuning** — clearest-sky records were being discarded by a falsy-`0` coercion.
+
+_And in v1.6.1:_ the **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors gained **restart resilience** (HA `RestoreSensor`), restoring their last value on startup instead of reading *unknown* until the first half-hour update cycle.
 
 _And in v1.6.0:_ a solar-azimuth **east↔west flip** fix (with in-place repair of existing databases), forecast columns **no longer silently zero-filled**, low-power **performance** work (vectorised tuning, fewer dampening scans, shared HTTP session), the base integration made a **hard dependency**, **single-instance** enforcement, the **OWM API key redacted from logs**, and licensing standardised on **Apache-2.0**.
 
@@ -79,9 +81,23 @@ sensor:
 
 Historical storage powers dampening and PV tuning, and **needs nothing** — the integration creates a built-in SQLite file (`config/solcast_solar_enhanced.db`) with no server, credentials or extra dependency. It is enabled by default.
 
-### 4. OpenWeatherMap API key (optional)
+### 4. OpenWeatherMap API key (required for tuning & dampening)
 
-A free API key from [openweathermap.org](https://openweathermap.org/api) enables cloud cover data, which significantly improves dampening accuracy by filtering cloudy periods.
+> **Without OpenWeatherMap, the two headline features — PV tuning and adaptive dampening — stay inactive.** History storage still records data, but with no cloud information every record is treated as *unknown and excluded*: tuning produces no result and dampening stays neutral (1.0, nothing pushed to Solcast). A **repair issue** appears in *Settings → Repairs* until you add a key. Treat OWM as required unless you only want raw history logging.
+
+**Why it's required.** Tuning and dampening isolate *clear-sky* records — the only periods where `pv_actual / pv_estimate` reflects panel geometry and local shading rather than passing clouds (which Solcast already models). The per-record cloud-cover percentage that drives that filter comes **only** from OpenWeatherMap. With OWM disabled (or on a failed fetch) the cloud cover is stored as *unknown*, which the clear-sky filter treats as fully overcast and excludes — so the features have no clear-sky data to work from and remain inert (fail-safe: they never fit to or push out a cloud-contaminated correction).
+
+**What you need:**
+
+| Requirement | Detail |
+|---|---|
+| Account | A free account at [openweathermap.org](https://openweathermap.org/api) |
+| API key | Created under **API keys** in your OWM account. New keys can take up to ~2 hours to activate |
+| Plan / endpoint | The free **Current Weather Data** API (`api.openweathermap.org/data/2.5/weather`). No paid plan needed |
+| Quota | Free tier allows 60 calls/min and ~1 M calls/month; this integration makes **one call per 30-min cycle (~48/day)** — comfortably within the free limit |
+| Enable it | OWM is **off by default** — in setup **Step 3** toggle *Enable OWM* on and paste the key |
+
+**Verify it's working** after setup: the **Cloud Cover** sensor should show a real percentage (not *unavailable*), the log should be free of `OWM fetch failed` warnings, and the *OpenWeatherMap needed…* repair issue should be gone. A bad or not-yet-active key reads as *unavailable* (unknown) — records are then excluded, so the features stay inert until the key works.
 
 ---
 
@@ -144,10 +160,12 @@ The store lives at `config/solcast_solar_enhanced.db` and needs no further confi
 
 ### Step 3 — OpenWeatherMap
 
-| Field | Description |
-|---|---|
-| Enable OWM | Toggle weather data on/off |
-| OWM API key | Key from openweathermap.org |
+**Required for tuning & dampening** (see [§4 above](#4-openweathermap-api-key-required-for-tuning--dampening)). Off by default — enable it and supply a key, or tuning/dampening will run on unfiltered data.
+
+| Field | Default | Description |
+|---|---|---|
+| Enable OWM | **Off** | Turn on to fetch per-cycle cloud cover (needed for the clear-sky filter) |
+| OWM API key | — | Free key from openweathermap.org (Current Weather Data API) |
 
 ### Step 4 — Battery Storage
 
