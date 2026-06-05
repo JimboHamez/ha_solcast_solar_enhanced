@@ -242,6 +242,30 @@ async def test_total_forecast_matches_slot(hass, coordinator):
     assert e90 == pytest.approx(5.0)
 
 
+async def test_total_forecast_matches_slot_datetime_period_start(hass, coordinator):
+    """Regression: the base integration stores period_start as datetime objects,
+    not ISO strings. The old code did fromisoformat(datetime) -> TypeError ->
+    silently zero-filled every forecast column."""
+    import datetime as dt
+
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today", "10.0",
+        {
+            "detailedForecast": [
+                {"period_start": dt.datetime(2024, 9, 10, 6, 0, tzinfo=dt.timezone.utc),
+                 "pv_estimate": 0.5, "pv_estimate10": 0.3, "pv_estimate90": 0.7},
+                {"period_start": dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc),
+                 "pv_estimate": 4.2, "pv_estimate10": 3.0, "pv_estimate90": 5.0},
+            ],
+        },
+    )
+    slot = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, e10, e90 = coordinator._total_forecast_for_period(slot)
+    assert est == pytest.approx(4.2)
+    assert e10 == pytest.approx(3.0)
+    assert e90 == pytest.approx(5.0)
+
+
 async def test_total_forecast_missing_returns_zeros(hass, coordinator):
     assert coordinator._total_forecast_for_period(1_000_000) == (0.0, 0.0, 0.0)
 

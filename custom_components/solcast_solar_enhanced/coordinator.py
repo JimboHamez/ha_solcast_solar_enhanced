@@ -790,18 +790,22 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         best: dict[str, Any] | None = None
         best_delta: float | None = None
         for entry in series:
-            period_start = entry.get("period_start")
-            if not period_start:
-                continue
-            try:
-                ts = datetime.fromisoformat(period_start).timestamp()
-            except (ValueError, TypeError):
+            ts = self._period_start_epoch(entry.get("period_start"))
+            if ts is None:
                 continue
             delta = abs(ts - start_epoch)
             if best_delta is None or delta < best_delta:
                 best_delta = delta
                 best = entry
         if best is None or best_delta is None or best_delta > 900:
+            # The base integration stores period_start as datetime objects, not
+            # ISO strings, in the in-memory attribute; a parse miss here silently
+            # zero-fills the forecast columns, so log it loudly when a populated
+            # series produces no usable slot.
+            _LOGGER.debug(
+                "%s: no forecast slot within 900s of %s (%d entries)",
+                attr_name, start_epoch, len(series),
+            )
             return 0.0, 0.0, 0.0
 
         def _f(key: str) -> float:
@@ -811,6 +815,32 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 return 0.0
 
         return _f("pv_estimate"), _f("pv_estimate10"), _f("pv_estimate90")
+
+    @staticmethod
+    def _period_start_epoch(period_start: Any) -> float | None:
+        """Epoch seconds for a detailedForecast ``period_start``, or None.
+
+        The base integration stores ``period_start`` as a timezone-aware
+        ``datetime`` in the in-memory attribute (HA only stringifies attributes at
+        the API/recorder boundary), but it can also arrive as an ISO 8601 string or
+        a raw epoch. Handle all three; a naive datetime/string is assumed UTC.
+        """
+        if period_start in (None, ""):
+            return None
+        if isinstance(period_start, datetime):
+            dt = period_start
+        elif isinstance(period_start, (int, float)):
+            return float(period_start)
+        elif isinstance(period_start, str):
+            try:
+                dt = datetime.fromisoformat(period_start)
+            except ValueError:
+                return None
+        else:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
 
     def _read_base_auto_dampen(self) -> bool:
         """True if the base integration's automatic dampening is enabled.
