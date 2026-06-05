@@ -195,3 +195,19 @@ async def test_dampening_slots_built_on_local_time_grid(hass, coordinator):
     assert len(slots) == 48
     assert slots[0]["source"] == "night"       # local 00:00
     assert slots[24]["source"] != "night"      # local 12:00 — sun is up
+
+
+async def test_dampening_slots_fetch_records_once(hass, coordinator):
+    """The day-of-year window is identical for all 48 slots, so the DB scan must
+    run once per call — not once per (daytime) slot."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    await hass.config.async_set_time_zone("Australia/Melbourne")
+    db = MagicMock()
+    db.async_get_records_for_dampening = AsyncMock(return_value=[])
+    coordinator._db = db
+
+    now_epoch = 1718452800  # 2024-06-15T12:00:00Z
+    await coordinator._compute_dampening_slots({}, now_epoch, -37.81, 144.96, "_total")
+
+    assert db.async_get_records_for_dampening.call_count == 1

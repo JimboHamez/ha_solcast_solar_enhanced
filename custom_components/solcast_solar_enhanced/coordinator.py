@@ -10,6 +10,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -184,6 +185,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 api_key=opts[CONF_OWM_API_KEY],
                 latitude=float(opts.get(CONF_LATITUDE, -37.9)),
                 longitude=float(opts.get(CONF_LONGITUDE, 145.0)),
+                session=async_get_clientsession(self.hass),
             )
 
         # Drive refreshes from the wall clock at :00/:30 + a small offset, so the
@@ -590,13 +592,20 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         now_local = datetime.fromtimestamp(now_epoch, tz=tz)
         slot_results: list[dict[str, Any]] = []
 
+        # All 48 slots share the same calendar day (only the time-of-day varies),
+        # so the day-of-year window query is identical across them. Fetch the
+        # records once instead of re-running the full-table strftime scan per slot.
+        slot_doy = now_local.timetuple().tm_yday
+        records: list[dict[str, Any]] = []
+        if self._db:
+            records = await self._db.async_get_records_for_dampening(slot_doy, site=site)
+
         for slot in range(48):
             hour, minute = divmod(slot * 30, 60)
             slot_local = now_local.replace(
                 hour=hour, minute=minute, second=0, microsecond=0
             )
             slot_epoch = int(slot_local.timestamp())
-            slot_doy = slot_local.timetuple().tm_yday
 
             # Sun position at the slot midpoint (+15 min), matching the stored
             # records' midpoint convention for geometric weighting.
@@ -613,12 +622,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "clipped_excluded": 0,
                 })
                 continue
-
-            records: list[dict[str, Any]] = []
-            if self._db:
-                records = await self._db.async_get_records_for_dampening(
-                    slot_doy, site=site
-                )
 
             slot_result = compute_dampening(
                 records=records,
