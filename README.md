@@ -23,11 +23,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.6.1
+## 🆕 What's new in v1.6.2
 
-**Restart resilience.** The **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors now **restore their last value across restarts** (HA `RestoreSensor`) instead of reading *unknown* until the first half-hour update cycle (up to ~30 min after a restart). The live value supersedes the restored one as soon as it arrives. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.1) and [CHANGELOG](CHANGELOG.md).
+**Clear-sky records no longer lost to PV tuning.** A 0% cloud reading — the clearest sky, exactly the data the tilt/azimuth optimiser most wants — was being silently discarded by the cloud-cover filter (a falsy `0` was coerced to fully overcast). Those records are now kept, while a genuinely missing cloud value still defaults to overcast. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.2) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.6.0:_ a solar-azimuth **east↔west flip** fix (with in-place repair of existing databases), forecast columns **no longer silently zero-filled**, low-power **performance** work (vectorised tuning, fewer dampening scans, shared HTTP session), the base integration made a **hard dependency**, **single-instance** enforcement, the **OWM API key redacted from logs**, and licensing standardised on **Apache-2.0**.
+_Previously, in v1.6.1:_ the **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors gained **restart resilience** (HA `RestoreSensor`), restoring their last value on startup instead of reading *unknown* until the first half-hour update cycle.
+
+_And in v1.6.0:_ a solar-azimuth **east↔west flip** fix (with in-place repair of existing databases), forecast columns **no longer silently zero-filled**, low-power **performance** work (vectorised tuning, fewer dampening scans, shared HTTP session), the base integration made a **hard dependency**, **single-instance** enforcement, the **OWM API key redacted from logs**, and licensing standardised on **Apache-2.0**.
 
 _Previously, in v1.5.0:_ **zero-config storage** — history moved to a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box; **MySQL support was removed** (the storage step is now just an *Enable history storage* toggle).
 

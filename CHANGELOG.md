@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-06-05
+
+### Fixed
+- **Clear-sky (0% cloud) records no longer dropped from PV tuning.** `run_tuning`
+  read cloud cover as `int(r.get("clouds", 100) or 100)`; because `0` is falsy, a
+  genuine 0% reading — the clearest sky, exactly the data tuning most wants — was
+  coerced to `100` and excluded by the cloud-cover filter. Missing/`None` is now
+  distinguished from a real `0`, so clear records are kept while a missing value
+  still defaults to overcast (excluded).
+
 ## [1.6.1] - 2026-06-05
 
 ### Changed
@@ -278,7 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.5.1...v1.5.2
