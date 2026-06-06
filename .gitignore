@@ -17,3 +17,6 @@ testing/
 *.db-shm
 *.sqlite
 *.sqlite3
+
+# Local history exports / imports (e.g. node-red CSVs) — user data, never pushed
+data/
