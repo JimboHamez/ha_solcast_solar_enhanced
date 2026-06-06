@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.6] - 2026-06-06
+
+### Changed
+- **PV tuning now fits the most recent *clear-sky* records, not the most recent
+  records of any weather.** `async_get_records_for_tuning` previously took the
+  latest 2000 rows by timestamp and only then applied the clear-sky filter, so in
+  a cloudy season the tuner could be left with a tiny, low-quality sample (e.g. 75
+  winter records) while thousands of clear-sky rows sat unused in older data. The
+  clear-sky filter (`clouds < cloud_threshold`) now runs **in SQL before the
+  LIMIT**, so tuning fits up to 2000 clear-sky records spanning all seasons. The
+  summer-high-sun / winter-low-sun angular diversity is exactly what constrains
+  tilt and azimuth, so this materially stabilises the tuned result.
+
+### Fixed
+- **Dampening push rejected when a factor exceeded 1.0.** The base integration's
+  `set_dampening` only accepts factors in `[0.0, 1.0]` (dampening attenuates a
+  forecast, it cannot boost it), but `compute_dampening` has no upper clamp in the
+  confident regime — so once enough history accumulated, an hour where measured
+  output exceeds the Solcast forecast (ratio > 1.0) produced a factor > 1.0 and the
+  **entire push failed** with *"Dampening factor value present that is not between
+  0.0 and 1.0"*. Factors are now clamped to `[0.0, 1.0]` immediately before the
+  push (a factor > 1.0 → `1.0`, i.e. no dampening for that hour — the closest the
+  base model can represent). The unclamped value is preserved in the dampening
+  sensor attributes for diagnostics, and a debug log notes when clamping occurs (a
+  persistent > 1.0 hour means the Solcast forecast is under-predicting — often a
+  sign the configured orientation/capacity is off).
+
 ## [1.6.5] - 2026-06-06
 
 ### Fixed
@@ -409,7 +436,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.5...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.6...HEAD
+[1.6.6]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.5...v1.6.6
 [1.6.5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...v1.6.3

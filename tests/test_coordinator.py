@@ -383,3 +383,23 @@ async def test_run_dampening_gate_disabled_pushes_despite_divergence(hass, coord
     assert any(f != 1.0 for f in pushed["hourly"])  # gate off → no neutralising
     assert coordinator._dampening_gated is False
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is None
+
+
+# ---------------------------------------------------------------------------
+# _push_dampening — clamp factors to [0,1] for the base set_dampening service
+# ---------------------------------------------------------------------------
+
+async def test_push_dampening_clamps_factors_to_unit_range(hass, coordinator):
+    """The base set_dampening only accepts [0,1]; factors >1 (forecast
+    under-predicts) clamp to 1.0 and negatives to 0.0 before the push."""
+    captured: dict[str, object] = {}
+
+    async def _handler(call):
+        captured["damp"] = call.data["damp_factor"]
+
+    hass.services.async_register("solcast_solar", "set_dampening", _handler)
+    await coordinator._push_dampening([0.8, 1.3, 1.0, -0.2, 1.15])
+
+    values = [float(x) for x in captured["damp"].split(",")]
+    assert values == [0.8, 1.0, 1.0, 0.0, 1.0]
+    assert all(0.0 <= v <= 1.0 for v in values)

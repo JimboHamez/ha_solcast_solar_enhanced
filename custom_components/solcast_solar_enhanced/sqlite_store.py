@@ -319,20 +319,32 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     async def async_get_records_for_tuning(
-        self, limit: int = 2000, site: str | None = None
+        self, limit: int = 2000, site: str | None = None, cloud_max: int | None = None
     ) -> list[dict[str, Any]]:
-        """Fetch recent records for PV tuning."""
+        """Fetch recent records for PV tuning.
+
+        When ``cloud_max`` is given, the clear-sky filter (``clouds < cloud_max``)
+        is applied **in SQL before the LIMIT**, so the result is the most recent
+        ``limit`` *clear-sky* rows rather than the most recent rows of any weather
+        (of which only a few may be clear in a cloudy season). This lets tuning use
+        clear-sky data spanning all seasons — the sun-angle diversity that actually
+        constrains tilt/azimuth — instead of a recent cloudy window.
+        """
         if self._conn is None:
             return []
         site_clause, site_params = self._site_filter(site)
+        cloud_clause, cloud_params = "", ()
+        if cloud_max is not None:
+            cloud_clause = " AND clouds < ?"
+            cloud_params = (int(cloud_max),)
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, azimuth, zenith, clouds, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
-            f"WHERE pv_actual > 0{site_clause} "
+            f"WHERE pv_actual > 0{site_clause}{cloud_clause} "
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )
-        params = (*site_params, limit)
+        params = (*site_params, *cloud_params, limit)
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:

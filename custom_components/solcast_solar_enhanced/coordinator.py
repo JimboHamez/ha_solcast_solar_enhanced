@@ -497,8 +497,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if not self._db:
             return
         # Aggregate tuning operates on the property-wide '_total' rows so it never
-        # double-counts the additive per-site rows.
-        records = await self._db.async_get_records_for_tuning(site=DEFAULT_SITE_ID)
+        # double-counts the additive per-site rows. Pull the most recent *clear-sky*
+        # rows (filter in SQL before the LIMIT) so tuning fits orientation-relevant
+        # data spanning all seasons, not just a recent cloudy window.
+        cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
+        records = await self._db.async_get_records_for_tuning(
+            site=DEFAULT_SITE_ID, cloud_max=cloud_threshold
+        )
         if not records:
             _LOGGER.debug("PV tuning skipped: no usable records yet")
             return
@@ -546,7 +551,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         by_id = {s["resource_id"]: s for s in self._sites}
         results: dict[str, dict[str, Any]] = {}
         for site_id in site_ids:
-            records = await self._db.async_get_records_for_tuning(site=site_id)
+            records = await self._db.async_get_records_for_tuning(
+                site=site_id, cloud_max=cloud_threshold
+            )
             if not records:
                 continue
             site = by_id.get(site_id, {})
@@ -831,7 +838,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         target a single site.
         """
         try:
-            damp_factor = ",".join(f"{round(f, 4)}" for f in hourly_factors)
+            # The base integration's set_dampening only accepts factors in
+            # [0.0, 1.0]: dampening can attenuate a forecast, never boost it. A
+            # computed factor > 1.0 means the measured output exceeds the Solcast
+            # forecast for that hour (the forecast under-predicts) — we cannot ask
+            # Solcast to boost, so clamp to 1.0 (no dampening). The unclamped value
+            # is kept in the dampening sensor attributes for diagnostics.
+            clamped = [min(1.0, max(0.0, f)) for f in hourly_factors]
+            n_clamped = sum(1 for c, f in zip(clamped, hourly_factors) if c != f)
+            if n_clamped:
+                _LOGGER.debug(
+                    "Clamped %d dampening factor(s) outside [0,1] before push%s "
+                    "(forecast under-/over-shoots those hours)",
+                    n_clamped, f" for site {site}" if site else "",
+                )
+            damp_factor = ",".join(f"{round(c, 4)}" for c in clamped)
             data: dict[str, Any] = {"damp_factor": damp_factor}
             if site:
                 data["site"] = site

@@ -291,3 +291,32 @@ async def test_prune_readonly_is_noop(hass, tmp_path):
         assert await ro.async_get_record_count() == 1
     finally:
         await ro.async_close()
+
+
+async def test_tuning_query_cloud_max_filters_in_sql(store):
+    # Two clear rows + two cloudy rows; cloud_max should keep only clear ones,
+    # applied before the LIMIT so a cloudy recent window can't crowd out clear data.
+    await store.async_insert_record(_record(JUNE1 + 0,    clouds=5))
+    await store.async_insert_record(_record(JUNE1 + 1800, clouds=10))
+    await store.async_insert_record(_record(JUNE1 + 3600, clouds=80))
+    await store.async_insert_record(_record(JUNE1 + 5400, clouds=100))
+    rows = await store.async_get_records_for_tuning(cloud_max=20)
+    assert len(rows) == 2
+    assert all(r["clouds"] < 20 for r in rows)
+
+
+async def test_tuning_query_clear_beats_recent_window(store):
+    # 3 recent cloudy rows + 1 older clear row; with a small limit and cloud_max
+    # the clear row survives (clear-sky filter happens before LIMIT).
+    await store.async_insert_record(_record(JUNE1,          clouds=0))    # older, clear
+    await store.async_insert_record(_record(JUNE1 + 86400,  clouds=90))   # newer, cloudy
+    await store.async_insert_record(_record(JUNE1 + 172800, clouds=90))
+    rows = await store.async_get_records_for_tuning(limit=2, cloud_max=20)
+    assert [r["clouds"] for r in rows] == [0]
+
+
+async def test_tuning_query_no_cloud_max_keeps_all_weather(store):
+    await store.async_insert_record(_record(JUNE1, clouds=5))
+    await store.async_insert_record(_record(JUNE1 + 1800, clouds=95))
+    rows = await store.async_get_records_for_tuning()
+    assert len(rows) == 2
