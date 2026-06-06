@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -16,9 +17,12 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
     CONF_AUTO_TUNING,
+    CONF_DAMPENING_GATE,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
+    DAMPENING_GATE_MIN_RECORDS,
     DOMAIN,
+    ISSUE_DAMPENING_GATED,
     ISSUE_OWM_REQUIRED,
 )
 
@@ -264,3 +268,118 @@ async def test_setup_no_owm_issue_when_configured(hass, mock_config_entry):
         assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is None
     finally:
         await coord.async_teardown()
+
+
+# ---------------------------------------------------------------------------
+# _weather_for_storage — NOT NULL DB coercion (single-site AND per-site rows)
+# ---------------------------------------------------------------------------
+
+async def test_weather_for_storage_coerces_unknown_to_excluded(coordinator):
+    """Unknown weather (no OWM / failed fetch) → 0 °C and the 100% excluded sentinel."""
+    coordinator._weather = {"temp": None, "clouds": None, "description": "unavailable"}
+    temp, clouds, desc = coordinator._weather_for_storage()
+    assert temp == 0.0
+    assert clouds == 100  # excluded side — can never pass the clear-sky filter
+    assert desc == "unavailable"
+
+
+async def test_weather_for_storage_passes_real_values(coordinator):
+    """Real OWM values (including a genuine 0% clear sky) are preserved/rounded."""
+    coordinator._weather = {"temp": 18.456, "clouds": 0, "description": "clear sky"}
+    temp, clouds, desc = coordinator._weather_for_storage()
+    assert temp == pytest.approx(18.46)
+    assert clouds == 0  # genuine clear sky is NOT coerced to the sentinel
+    assert desc == "clear sky"
+
+
+# ---------------------------------------------------------------------------
+# Dampening convergence gate — _angle_diff / _orientation_diverged
+# ---------------------------------------------------------------------------
+
+def test_angle_diff_wraps_shortest_path():
+    assert SolcastEnhancedCoordinator._angle_diff(10.0, 350.0) == pytest.approx(20.0)
+    assert SolcastEnhancedCoordinator._angle_diff(350.0, 10.0) == pytest.approx(-20.0)
+    assert SolcastEnhancedCoordinator._angle_diff(90.0, 270.0) == pytest.approx(-180.0)
+    assert abs(SolcastEnhancedCoordinator._angle_diff(45.0, 50.0)) == pytest.approx(5.0)
+
+
+async def test_orientation_diverged_none_without_result(coordinator):
+    assert coordinator._orientation_diverged(None, 20.0, 0.0) is None
+
+
+async def test_orientation_diverged_none_when_low_confidence(coordinator):
+    """A big divergence is ignored until tuning has enough clear-sky records."""
+    result = {"tilt": 60.0, "azimuth": 90.0, "n_records": DAMPENING_GATE_MIN_RECORDS - 1}
+    assert coordinator._orientation_diverged(result, 20.0, 0.0) is None
+
+
+async def test_orientation_diverged_none_when_aligned(coordinator):
+    """Confident tuning that agrees with the configured orientation does not gate."""
+    result = {"tilt": 22.0, "azimuth": 5.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    assert coordinator._orientation_diverged(result, 20.0, 0.0) is None
+
+
+async def test_orientation_diverged_on_tilt(coordinator):
+    result = {"tilt": 45.0, "azimuth": 2.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    div = coordinator._orientation_diverged(result, 20.0, 0.0)
+    assert div is not None
+    assert div["tilt_delta"] == pytest.approx(25.0)
+
+
+async def test_orientation_diverged_on_azimuth_wraparound(coordinator):
+    """Azimuth divergence uses the shortest circular distance, e.g. 350° vs 10°."""
+    result = {"tilt": 21.0, "azimuth": 350.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    div = coordinator._orientation_diverged(result, 20.0, 40.0)
+    assert div is not None
+    # 350 vs 40 → 50° apart the short way, above the 25° tolerance
+    assert div["azimuth_delta"] == pytest.approx(50.0)
+
+
+# ---------------------------------------------------------------------------
+# _run_dampening — gate holds neutral + raises/clears the repair issue (single-site)
+# ---------------------------------------------------------------------------
+
+async def _run_gate_dampening(hass, coordinator, tuning_result, gate_on=True):
+    """Drive _run_dampening with the DB/push/auto-dampen dependencies stubbed,
+    returning the hourly factors that were pushed."""
+    opts = {CONF_DAMPENING_GATE: gate_on}
+    coordinator._tuning_result = tuning_result
+    # A non-neutral slot table so a non-gated push is clearly distinguishable from 1.0.
+    slots = [{"factor": 0.8} for _ in range(48)]
+    pushed: dict[str, list[float]] = {}
+
+    async def _fake_push(hourly, site=None):
+        pushed["hourly"] = hourly
+        pushed["site"] = site
+
+    with patch.object(
+        coordinator, "_compute_dampening_slots", AsyncMock(return_value=slots)
+    ), patch.object(
+        coordinator, "_read_base_auto_dampen", return_value=False
+    ), patch.object(coordinator, "_push_dampening", side_effect=_fake_push):
+        await coordinator._run_dampening(opts, int(time.time()), -37.9, 145.0)
+    return pushed
+
+
+async def test_run_dampening_gate_holds_neutral_and_raises_issue(hass, coordinator):
+    diverged = {"tilt": 50.0, "azimuth": 0.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    pushed = await _run_gate_dampening(hass, coordinator, diverged)
+    assert all(f == 1.0 for f in pushed["hourly"])  # held neutral
+    assert coordinator._dampening_gated is True
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is not None
+
+
+async def test_run_dampening_pushes_curve_when_aligned(hass, coordinator):
+    aligned = {"tilt": 21.0, "azimuth": 2.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    pushed = await _run_gate_dampening(hass, coordinator, aligned)
+    assert any(f != 1.0 for f in pushed["hourly"])  # real curve pushed
+    assert coordinator._dampening_gated is False
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is None
+
+
+async def test_run_dampening_gate_disabled_pushes_despite_divergence(hass, coordinator):
+    diverged = {"tilt": 50.0, "azimuth": 0.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
+    pushed = await _run_gate_dampening(hass, coordinator, diverged, gate_on=False)
+    assert any(f != 1.0 for f in pushed["hourly"])  # gate off → no neutralising
+    assert coordinator._dampening_gated is False
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is None

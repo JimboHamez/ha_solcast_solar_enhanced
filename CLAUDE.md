@@ -4,19 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds built-in SQLite historical storage (zero-config, stdlib `sqlite3`), automatic rooftop PV tilt/azimuth optimisation (scipy L-BFGS-B), and adaptive shading dampening computed purely from DB-collected actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates.
+A Home Assistant (HA) custom integration (`custom_components/solcast_solar_enhanced`) that acts as a companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar). It adds built-in SQLite historical storage (zero-config, stdlib `sqlite3`), automatic rooftop PV tilt/azimuth optimisation (numpy grid search — no scipy, so it works on a Raspberry Pi), and adaptive shading dampening computed purely from DB-collected actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates.
 
 Development happens by installing the component into a running Home Assistant instance. There are no build steps. A `pytest` test suite lives in `tests/` (run `pytest` from the repo root; deps in `requirements_test.txt`, uses `pytest-homeassistant-custom-component`). A standalone PV-tuning CLI for running the optimiser against the DB/CSV outside HA lives in `tools/standalone_tuning.py`.
 
 ## Installation for development
 
-Copy `custom_components/solcast_solar_enhanced/` into the HA `config/custom_components/` directory, then restart HA. Optional dependencies must be installed in the HA Python venv:
+Copy `custom_components/solcast_solar_enhanced/` into the HA `config/custom_components/` directory, then restart HA. PV tuning needs numpy, which Home Assistant already ships (and which has Raspberry Pi wheels), so a normal HA install needs nothing extra:
 
 ```bash
-pip install numpy>=1.21.0 scipy>=1.7.0  # required for PV tuning
+pip install numpy>=1.21.0  # already present in Home Assistant; no scipy
 ```
 
-Storage uses stdlib `sqlite3` (no install). PV tuning is the only optional dep — a lazy import that disables tuning when absent; the integration still runs.
+Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search, not scipy** — scipy has no Pi wheel and fails to build under HA (BJReplay/ha-solcast-solar #85). numpy is imported lazily, so tuning disables itself (integration still runs) in the unlikely event numpy is absent.
 
 ## Module responsibilities
 

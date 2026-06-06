@@ -1,4 +1,4 @@
-"""Test PV tuning: solar position calculation and L-BFGS-B optimisation."""
+"""Test PV tuning: solar position calculation and numpy grid-search optimisation."""
 from __future__ import annotations
 
 import math
@@ -7,6 +7,7 @@ import pytest
 from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
     _cos_incidence,
+    _minimize_grid,
     run_tuning,
     solar_position,
 )
@@ -167,7 +168,7 @@ def test_run_tuning_returns_result_with_clear_records():
     ]
     result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=20.0, initial_azimuth=0.0)
     if result is None:
-        pytest.skip("scipy not available")
+        pytest.skip("numpy not available")
 
     assert "tilt" in result
     assert "azimuth" in result
@@ -192,7 +193,7 @@ def test_run_tuning_keeps_zero_cloud_records():
         for i in range(20)
     ]
     if not TUNING_AVAILABLE:
-        pytest.skip("scipy not available")
+        pytest.skip("numpy not available")
     result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=20.0, initial_azimuth=0.0)
     assert result is not None, "0% cloud records were wrongly excluded"
     assert result["n_records"] == 20
@@ -257,5 +258,74 @@ def test_run_tuning_zero_export_limit_disables_filter():
     result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=0.0,
                         initial_tilt=20.0, initial_azimuth=0.0)
     if result is None:
-        pytest.skip("scipy not available")
+        pytest.skip("numpy not available")
     assert result["n_records"] == 20
+
+
+# ---------------------------------------------------------------------------
+# _minimize_grid — pure-numpy grid search (scipy replacement)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
+def test_minimize_grid_finds_known_minimum():
+    """The coarse-to-fine grid search locates a known quadratic minimum within
+    the finest step (0.25°), with no scipy involved. ``eval_row`` is the batched
+    objective: a 1-D array of RMSEs, one per candidate tilt, for one azimuth."""
+    import numpy as np
+    target_tilt, target_az = 33.0, -42.0
+
+    def eval_row(tilts, az):
+        return (np.asarray(tilts, dtype=float) - target_tilt) ** 2 + (az - target_az) ** 2
+
+    tilt, az, val = _minimize_grid(eval_row, 20.0, 0.0)
+    assert tilt == pytest.approx(target_tilt, abs=0.25)
+    assert az == pytest.approx(target_az, abs=0.25)
+    assert val == pytest.approx(0.0, abs=0.2)
+
+
+@pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
+def test_minimize_grid_normalises_azimuth_into_band():
+    """A best azimuth found in a refinement window past ±180 is wrapped back."""
+    import numpy as np
+
+    def eval_row(tilts, az):
+        # Minimum sits at az = 179.9, near the +180 boundary.
+        d = ((az - 179.9 + 180) % 360) - 180
+        return np.asarray(tilts, dtype=float) ** 2 + d ** 2
+
+    _, az, _ = _minimize_grid(eval_row, 10.0, 175.0)
+    assert -180.0 <= az <= 180.0
+
+
+@pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
+def test_run_tuning_recovers_synthetic_orientation():
+    """End-to-end: records synthesised from a known panel orientation are tuned
+    back to that orientation (the grid search replaces L-BFGS-B with the same
+    geometry)."""
+    true_tilt, true_az = 30.0, 40.0
+    nom_tilt, nom_az = 20.0, 0.0
+    base_epoch = 1717200000  # ~2024-06-01 UTC
+    records = []
+    for i in range(200):
+        ep = base_epoch + i * 1800
+        az, zen = solar_position(ep, -37.9, 145.0)
+        if zen >= 88:
+            continue
+        nom = _cos_incidence(nom_tilt, nom_az, zen, az)
+        tru = _cos_incidence(true_tilt, true_az, zen, az)
+        if nom < 1e-6:
+            continue
+        pv_est = max(0.0, 5.0 * math.cos(math.radians(zen)))
+        records.append({
+            "pv_actual": pv_est * (tru / nom),
+            "pv_export": 0.0,
+            "pv_estimate": pv_est,
+            "clouds": 0,
+            "zenith": zen,
+            "azimuth": az,
+        })
+    result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=nom_tilt, initial_azimuth=nom_az)
+    assert result is not None
+    assert result["tilt"] == pytest.approx(true_tilt, abs=1.0)
+    assert result["azimuth"] == pytest.approx(true_az, abs=1.0)
+    assert result["rmse_kw"] == pytest.approx(0.0, abs=0.05)

@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Sito e sistema",
+        "data": {
+          "latitude": "Latitudine",
+          "longitude": "Longitudine",
+          "capacity_kw": "Potenza dell'impianto (kW CC)",
+          "tilt": "Inclinazione dei pannelli (°)",
+          "azimuth": "Azimut dei pannelli (°)",
+          "pv_actual_sensor": "Sensore di potenza / produzione FV",
+          "pv_export_sensor": "Sensore di immissione FV",
+          "battery_stat_sensor": "Sensore media 30 min di carica batteria (facoltativo)",
+          "pv_actual_input_mode": "Tipo di sensore FV",
+          "pv_export_input_mode": "Tipo di sensore di immissione FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Consigliato: un contatore di energia cumulativa (Wh/kWh, total_increasing). Se si dispone solo di una lettura di potenza, usare un helper statistico mean_linear mobile (kW), non un sensore istantaneo grezzo.",
+          "pv_export_sensor": "Preferibile un contatore di energia immessa cumulativa (Wh/kWh); altrimenti un helper mean_linear mobile (kW).",
+          "pv_actual_input_mode": "Il rilevamento automatico sceglie tra contatore di energia e potenza mediata in base all'unità (Wh/kWh o W/kW).",
+          "pv_export_input_mode": "Rilevamento automatico in base all'unità. Contatore di energia consigliato."
+        }
+      },
+      "database": {
+        "title": "Archiviazione",
+        "description": "La cronologia è salvata in un file integrato (config/solcast_solar_enhanced.db) — nessuna configurazione necessaria. Lasciare abilitato affinché regolazione e smorzamento funzionino.",
+        "data": {
+          "db_enabled": "Abilita l'archiviazione della cronologia",
+          "db_retention_days": "Conserva la cronologia per (giorni, 0 = conserva tutto)"
+        },
+        "data_description": {
+          "db_retention_days": "0 conserva tutta la cronologia (predefinito). Un valore limita il database sui dispositivi a bassa potenza eliminando ogni giorno le righe più vecchie, ma lo smorzamento stagionale usa una finestra pluriennale, quindi conservare almeno ~400 giorni (≈13 mesi) se vi si fa affidamento."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Abilita OpenWeatherMap",
+          "owm_api_key": "Chiave API"
+        }
+      },
+      "battery": {
+        "title": "Accumulo a batteria",
+        "data": {
+          "battery_enabled": "Abilita fallback batteria grezzo",
+          "battery_mode": "Modalità",
+          "battery_net_sensor": "Sensore di potenza netta della batteria (con segno)",
+          "battery_charge_sensor": "Sensore di potenza di carica della batteria"
+        }
+      },
+      "tuning": {
+        "title": "Regolazione FV e smorzamento",
+        "data": {
+          "auto_tuning": "Regolazione FV automatica",
+          "auto_dampening": "Smorzamento automatico",
+          "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
+          "cloud_threshold": "Soglia nuvolosità (%)",
+          "cloud_max_include": "Nuvolosità massima da includere (%)",
+          "clipping_threshold": "Soglia di clipping (frazione della potenza)",
+          "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
+        }
+      },
+      "sites": {
+        "title": "Mappatura sensori per sito",
+        "description": "Rilevati {count} siti Solcast. Per ogni stringa, scegliere il sensore che ne misura la produzione. Se più stringhe condividono un'uscita CA dell'inverter, assegnare a ciascuna anche il proprio sensore CC/MPPT per ripartire la produzione. Lasciare vuoto un sito per ignorarlo. 'Tipo di sensore' è di solito Rilevamento automatico."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Sito e sistema",
+        "data": {
+          "latitude": "Latitudine",
+          "longitude": "Longitudine",
+          "capacity_kw": "Potenza dell'impianto (kW CC)",
+          "tilt": "Inclinazione dei pannelli (°)",
+          "azimuth": "Azimut dei pannelli (°)",
+          "pv_actual_sensor": "Sensore di potenza / produzione FV",
+          "pv_export_sensor": "Sensore di immissione FV",
+          "battery_stat_sensor": "Sensore media 30 min di carica batteria (facoltativo)",
+          "pv_actual_input_mode": "Tipo di sensore FV",
+          "pv_export_input_mode": "Tipo di sensore di immissione FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Consigliato: un contatore di energia cumulativa (Wh/kWh, total_increasing). Se si dispone solo di una lettura di potenza, usare un helper statistico mean_linear mobile (kW), non un sensore istantaneo grezzo.",
+          "pv_export_sensor": "Preferibile un contatore di energia immessa cumulativa (Wh/kWh); altrimenti un helper mean_linear mobile (kW).",
+          "pv_actual_input_mode": "Il rilevamento automatico sceglie tra contatore di energia e potenza mediata in base all'unità (Wh/kWh o W/kW).",
+          "pv_export_input_mode": "Rilevamento automatico in base all'unità. Contatore di energia consigliato."
+        }
+      },
+      "database": {
+        "title": "Archiviazione",
+        "description": "La cronologia è salvata in un file integrato (config/solcast_solar_enhanced.db) — nessuna configurazione necessaria. Lasciare abilitato affinché regolazione e smorzamento funzionino.",
+        "data": {
+          "db_enabled": "Abilita l'archiviazione della cronologia",
+          "db_retention_days": "Conserva la cronologia per (giorni, 0 = conserva tutto)"
+        },
+        "data_description": {
+          "db_retention_days": "0 conserva tutta la cronologia (predefinito). Un valore limita il database sui dispositivi a bassa potenza eliminando ogni giorno le righe più vecchie, ma lo smorzamento stagionale usa una finestra pluriennale, quindi conservare almeno ~400 giorni (≈13 mesi) se vi si fa affidamento."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Abilita OpenWeatherMap",
+          "owm_api_key": "Chiave API"
+        }
+      },
+      "battery": {
+        "title": "Accumulo a batteria",
+        "data": {
+          "battery_enabled": "Abilita fallback batteria grezzo",
+          "battery_mode": "Modalità",
+          "battery_net_sensor": "Sensore di potenza netta della batteria (con segno)",
+          "battery_charge_sensor": "Sensore di potenza di carica della batteria"
+        }
+      },
+      "tuning": {
+        "title": "Regolazione FV e smorzamento",
+        "data": {
+          "auto_tuning": "Regolazione FV automatica",
+          "auto_dampening": "Smorzamento automatico",
+          "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
+          "cloud_threshold": "Soglia nuvolosità (%)",
+          "cloud_max_include": "Nuvolosità massima da includere (%)",
+          "clipping_threshold": "Soglia di clipping (frazione della potenza)",
+          "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
+        }
+      },
+      "sites": {
+        "title": "Mappatura sensori per sito",
+        "description": "Rilevati {count} siti Solcast. Per ogni stringa, scegliere il sensore che ne misura la produzione. Se più stringhe condividono un'uscita CA dell'inverter, assegnare a ciascuna anche il proprio sensore CC/MPPT per ripartire la produzione. Lasciare vuoto un sito per ignorarlo. 'Tipo di sensore' è di solito Rilevamento automatico."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Regolazione — esclusi per limite di immissione"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Rilevamento automatico (consigliato)",
+        "power_kw": "Potenza mediata — kW (helper mean_linear)",
+        "power_w": "Potenza mediata — W (helper mean_linear)",
+        "energy_kwh": "Contatore di energia — kWh (consigliato)",
+        "energy_wh": "Contatore di energia — Wh (consigliato)",
+        "energy_mwh": "Contatore di energia — MWh (consigliato)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap necessario per regolazione FV e smorzamento",
+      "description": "La regolazione FV e lo smorzamento adattivo usano la nuvolosità di OpenWeatherMap per individuare i periodi di cielo sereno, gli unici dati in cui il confronto tra misurato e previsto riflette la geometria dei pannelli e l'ombreggiamento anziché nubi di passaggio. OpenWeatherMap non è configurato, quindi la nuvolosità di ogni record è sconosciuta ed esclusa, lasciando queste funzioni inattive (lo smorzamento resta neutro e non viene inviato a Solcast). Aggiungere una chiave API gratuita di OpenWeatherMap nelle opzioni di questa integrazione per abilitarle, oppure ignorare questo avviso se si desidera solo registrare la cronologia."
+    },
+    "dampening_gated": {
+      "title": "Smorzamento in pausa — l'orientamento regolato differisce da Solcast",
+      "description": "La regolazione FV ha raggiunto con sicurezza la convergenza su un'inclinazione/azimut dei pannelli che differisce in modo sostanziale dall'orientamento configurato per il sito Solcast. Finché non concordano, la previsione Solcast si basa su una geometria errata, perciò lo smorzamento adattivo incorporerebbe quell'errore di orientamento nella propria correzione invece di catturare l'ombreggiamento reale. Lo smorzamento viene quindi mantenuto neutro (1.0) per le stringhe interessate e nulla viene inviato a Solcast. Leggere i valori attuali dai sensori «Inclinazione pannelli regolata» e «Azimut pannelli regolato», aggiornare di conseguenza la configurazione del sito Solcast e lo smorzamento riprenderà automaticamente. Per disattivare questa protezione, disattivare «Blocca lo smorzamento…» nelle opzioni dell'integrazione."
+    }
+  }
+}

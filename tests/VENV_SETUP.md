@@ -14,14 +14,14 @@ pip install -r requirements_test.txt
 This creates `.venv/` at the repo root and installs pytest plus the
 `pytest-homeassistant-custom-component` harness.
 
-### Optional dependencies (for the scipy tuning test)
+### Optional dependency (for the PV tuning tests)
 
 ```bash
-pip install numpy>=1.21.0 scipy>=1.7.0
+pip install numpy>=1.21.0   # no scipy — the optimiser is a numpy grid search
 ```
 
-Without these, the scipy tuning test is skipped automatically. (Storage uses
-stdlib `sqlite3`, so the store tests need no extra install.)
+Without numpy, the tuning tests are skipped automatically. (Storage uses stdlib
+`sqlite3`, so the store tests need no extra install.)
 
 ---
 

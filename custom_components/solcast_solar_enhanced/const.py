@@ -18,6 +18,14 @@ CONF_PV_EXPORT_INPUT_MODE = "pv_export_input_mode"
 CONF_BATTERY_STAT_SENSOR = "battery_stat_sensor"
 
 CONF_DB_ENABLED = "db_enabled"
+# Optional history retention. 0 = keep everything (default, never prunes). When
+# > 0, rows older than this many days are deleted on a daily timer to bound the
+# table on long-lived / low-power (Raspberry Pi) installs. Seasonal dampening
+# uses a cross-year day-of-year window, so a value below ~13 months degrades it —
+# DB_RETENTION_MIN_RECOMMENDED_DAYS drives a warning, not a hard floor.
+CONF_DB_RETENTION_DAYS = "db_retention_days"
+DEFAULT_DB_RETENTION_DAYS = 0
+DB_RETENTION_MIN_RECOMMENDED_DAYS = 400
 
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
@@ -46,6 +54,7 @@ CONF_CLOUD_THRESHOLD = "cloud_threshold"
 CONF_CLOUD_MAX_INCLUDE = "cloud_max_include"
 CONF_CLIPPING_THRESHOLD = "clipping_threshold"
 CONF_EXPORT_LIMIT_KW = "export_limit_kw"
+CONF_DAMPENING_GATE = "dampening_gate"
 
 # Defaults
 DEFAULT_LATITUDE = -37.9
@@ -62,6 +71,7 @@ DEFAULT_CLOUD_THRESHOLD = 20
 DEFAULT_CLOUD_MAX_INCLUDE = 60
 DEFAULT_CLIPPING_THRESHOLD = 0.95
 DEFAULT_EXPORT_LIMIT_KW = 0.0
+DEFAULT_DAMPENING_GATE = True
 
 # PV input modes — how to interpret the configured pv_actual / pv_export sensors.
 #   auto        : detect from state_class + unit_of_measurement
@@ -100,6 +110,15 @@ OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
 # Repair-issue id raised when cloud-driven features (tuning/dampening) are enabled
 # but no OpenWeatherMap source is configured. Translation lives under `issues`.
 ISSUE_OWM_REQUIRED = "owm_required"
+
+# Dampening convergence gate: hold the dampening push at neutral (1.0) when the
+# tuned orientation diverges materially from the configured (Solcast) one, so a
+# mis-configured site can't bake orientation error into the dampening curve (the
+# notebook 3.4b "tuned estimate" prerequisite). Per-site aware.
+ISSUE_DAMPENING_GATED = "dampening_gated"
+DAMPENING_GATE_MIN_RECORDS = 50      # tuning confidence before the gate may act
+DAMPENING_GATE_TILT_TOL = 15.0       # ° tilt divergence that trips the gate
+DAMPENING_GATE_AZIMUTH_TOL = 25.0    # ° azimuth divergence that trips the gate
 
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"

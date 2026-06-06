@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Site et système",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "Puissance du système (kW CC)",
+          "tilt": "Inclinaison des panneaux (°)",
+          "azimuth": "Azimut des panneaux (°)",
+          "pv_actual_sensor": "Capteur de puissance / production PV",
+          "pv_export_sensor": "Capteur d'injection PV",
+          "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
+          "pv_actual_input_mode": "Type de capteur PV",
+          "pv_export_input_mode": "Type de capteur d'injection PV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut.",
+          "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
+          "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
+          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé."
+        }
+      },
+      "database": {
+        "title": "Stockage",
+        "description": "L'historique est enregistré dans un fichier intégré (config/solcast_solar_enhanced.db) — aucune configuration requise. Laissez-le activé pour que le réglage et l'atténuation fonctionnent.",
+        "data": {
+          "db_enabled": "Activer le stockage de l'historique",
+          "db_retention_days": "Conserver l'historique pendant (jours, 0 = tout conserver)"
+        },
+        "data_description": {
+          "db_retention_days": "0 conserve tout l'historique (par défaut). Une valeur limite la base de données sur les appareils peu puissants en supprimant chaque jour les lignes anciennes, mais l'atténuation saisonnière utilise une fenêtre pluriannuelle ; conservez donc au moins ~400 jours (≈13 mois) si vous en dépendez."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Activer OpenWeatherMap",
+          "owm_api_key": "Clé d'API"
+        }
+      },
+      "battery": {
+        "title": "Stockage par batterie",
+        "data": {
+          "battery_enabled": "Activer le repli batterie brut",
+          "battery_mode": "Mode",
+          "battery_net_sensor": "Capteur de puissance nette de batterie (signée)",
+          "battery_charge_sensor": "Capteur de puissance de charge de batterie"
+        }
+      },
+      "tuning": {
+        "title": "Réglage PV et atténuation",
+        "data": {
+          "auto_tuning": "Réglage PV automatique",
+          "auto_dampening": "Atténuation automatique",
+          "dampening_gate": "Verrouiller l'atténuation jusqu'à ce que le réglage corresponde à l'orientation Solcast",
+          "cloud_threshold": "Seuil de nébulosité (%)",
+          "cloud_max_include": "Nébulosité maximale à inclure (%)",
+          "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
+          "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
+        }
+      },
+      "sites": {
+        "title": "Affectation des capteurs par site",
+        "description": "{count} sites Solcast détectés. Pour chaque champ, choisissez le capteur qui mesure sa production. Si plusieurs champs partagent une sortie CA d'onduleur, indiquez aussi à chacun son capteur CC/MPPT afin de répartir la production. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Site et système",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "Puissance du système (kW CC)",
+          "tilt": "Inclinaison des panneaux (°)",
+          "azimuth": "Azimut des panneaux (°)",
+          "pv_actual_sensor": "Capteur de puissance / production PV",
+          "pv_export_sensor": "Capteur d'injection PV",
+          "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
+          "pv_actual_input_mode": "Type de capteur PV",
+          "pv_export_input_mode": "Type de capteur d'injection PV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut.",
+          "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
+          "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
+          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé."
+        }
+      },
+      "database": {
+        "title": "Stockage",
+        "description": "L'historique est enregistré dans un fichier intégré (config/solcast_solar_enhanced.db) — aucune configuration requise. Laissez-le activé pour que le réglage et l'atténuation fonctionnent.",
+        "data": {
+          "db_enabled": "Activer le stockage de l'historique",
+          "db_retention_days": "Conserver l'historique pendant (jours, 0 = tout conserver)"
+        },
+        "data_description": {
+          "db_retention_days": "0 conserve tout l'historique (par défaut). Une valeur limite la base de données sur les appareils peu puissants en supprimant chaque jour les lignes anciennes, mais l'atténuation saisonnière utilise une fenêtre pluriannuelle ; conservez donc au moins ~400 jours (≈13 mois) si vous en dépendez."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Activer OpenWeatherMap",
+          "owm_api_key": "Clé d'API"
+        }
+      },
+      "battery": {
+        "title": "Stockage par batterie",
+        "data": {
+          "battery_enabled": "Activer le repli batterie brut",
+          "battery_mode": "Mode",
+          "battery_net_sensor": "Capteur de puissance nette de batterie (signée)",
+          "battery_charge_sensor": "Capteur de puissance de charge de batterie"
+        }
+      },
+      "tuning": {
+        "title": "Réglage PV et atténuation",
+        "data": {
+          "auto_tuning": "Réglage PV automatique",
+          "auto_dampening": "Atténuation automatique",
+          "dampening_gate": "Verrouiller l'atténuation jusqu'à ce que le réglage corresponde à l'orientation Solcast",
+          "cloud_threshold": "Seuil de nébulosité (%)",
+          "cloud_max_include": "Nébulosité maximale à inclure (%)",
+          "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
+          "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
+        }
+      },
+      "sites": {
+        "title": "Affectation des capteurs par site",
+        "description": "{count} sites Solcast détectés. Pour chaque champ, choisissez le capteur qui mesure sa production. Si plusieurs champs partagent une sortie CA d'onduleur, indiquez aussi à chacun son capteur CC/MPPT afin de répartir la production. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Réglage — exclus pour limite d'injection"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Détection automatique (recommandé)",
+        "power_kw": "Puissance moyennée — kW (assistant mean_linear)",
+        "power_w": "Puissance moyennée — W (assistant mean_linear)",
+        "energy_kwh": "Compteur d'énergie — kWh (recommandé)",
+        "energy_wh": "Compteur d'énergie — Wh (recommandé)",
+        "energy_mwh": "Compteur d'énergie — MWh (recommandé)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap requis pour le réglage PV et l'atténuation",
+      "description": "Le réglage PV et l'atténuation adaptative utilisent la nébulosité d'OpenWeatherMap pour repérer les périodes de ciel dégagé — les seules données où la comparaison mesuré/prévision reflète la géométrie des panneaux et l'ombrage plutôt que des nuages de passage. OpenWeatherMap n'est pas configuré : la nébulosité de chaque enregistrement est donc inconnue et exclue, ce qui laisse ces fonctions inactives (l'atténuation reste neutre et n'est pas envoyée à Solcast). Ajoutez une clé d'API OpenWeatherMap gratuite dans les options de cette intégration pour les activer, ou ignorez ceci si vous souhaitez seulement journaliser l'historique."
+    },
+    "dampening_gated": {
+      "title": "Atténuation en pause — l'orientation réglée diffère de Solcast",
+      "description": "Le réglage PV a convergé avec confiance vers une inclinaison/un azimut de panneau qui diffère sensiblement de l'orientation configurée pour votre site Solcast. Tant qu'ils ne concordent pas, la prévision Solcast repose sur une géométrie erronée ; l'atténuation adaptative intégrerait donc cette erreur d'orientation dans sa correction au lieu de capter l'ombrage réel. L'atténuation est par conséquent maintenue neutre (1.0) pour les champs concernés et rien n'est envoyé à Solcast. Relevez les valeurs actuelles des capteurs « Inclinaison de panneau réglée » et « Azimut de panneau réglé », mettez à jour la configuration de votre site Solcast en conséquence, et l'atténuation reprendra automatiquement. Pour désactiver cette protection, décochez « Verrouiller l'atténuation… » dans les options de l'intégration."
+    }
+  }
+}

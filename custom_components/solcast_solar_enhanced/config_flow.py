@@ -25,6 +25,7 @@ except Exception:  # noqa: BLE001
 
 from .const import (
     CONF_AUTO_DAMPENING,
+    CONF_DAMPENING_GATE,
     CONF_AUTO_TUNING,
     CONF_AZIMUTH,
     CONF_BATTERY_CHARGE_SENSOR,
@@ -38,6 +39,7 @@ from .const import (
     CONF_CLOUD_THRESHOLD,
     CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
+    CONF_DB_RETENTION_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -49,6 +51,7 @@ from .const import (
     CONF_SITE_GROUPS,
     CONF_TILT,
     DEFAULT_AUTO_DAMPENING,
+    DEFAULT_DAMPENING_GATE,
     DEFAULT_AUTO_TUNING,
     DEFAULT_AZIMUTH,
     DEFAULT_CAPACITY_KW,
@@ -56,6 +59,7 @@ from .const import (
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
     DEFAULT_DB_ENABLED,
+    DEFAULT_DB_RETENTION_DAYS,
     DEFAULT_EXPORT_LIMIT_KW,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
@@ -244,6 +248,9 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema({
             vol.Required(CONF_DB_ENABLED, default=DEFAULT_DB_ENABLED): BooleanSelector(),
+            vol.Required(CONF_DB_RETENTION_DAYS, default=DEFAULT_DB_RETENTION_DAYS): NumberSelector(
+                NumberSelectorConfig(min=0, max=3650, step=1)
+            ),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 
@@ -286,6 +293,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema({
             vol.Required(CONF_AUTO_TUNING, default=DEFAULT_AUTO_TUNING): BooleanSelector(),
             vol.Required(CONF_AUTO_DAMPENING, default=DEFAULT_AUTO_DAMPENING): BooleanSelector(),
+            vol.Required(CONF_DAMPENING_GATE, default=DEFAULT_DAMPENING_GATE): BooleanSelector(),
             vol.Required(CONF_CLOUD_THRESHOLD, default=DEFAULT_CLOUD_THRESHOLD): NumberSelector(
                 NumberSelectorConfig(min=10, max=50, step=1)
             ),
@@ -377,6 +385,10 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema({
             vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED)): BooleanSelector(),
+            vol.Required(
+                CONF_DB_RETENTION_DAYS,
+                default=current.get(CONF_DB_RETENTION_DAYS, DEFAULT_DB_RETENTION_DAYS),
+            ): NumberSelector(NumberSelectorConfig(min=0, max=3650, step=1)),
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 
@@ -419,6 +431,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Required(CONF_AUTO_TUNING, default=current.get(CONF_AUTO_TUNING, DEFAULT_AUTO_TUNING)): BooleanSelector(),
             vol.Required(CONF_AUTO_DAMPENING, default=current.get(CONF_AUTO_DAMPENING, DEFAULT_AUTO_DAMPENING)): BooleanSelector(),
+            vol.Required(CONF_DAMPENING_GATE, default=current.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)): BooleanSelector(),
             vol.Required(CONF_CLOUD_THRESHOLD, default=current.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)): NumberSelector(
                 NumberSelectorConfig(min=10, max=50, step=1)
             ),

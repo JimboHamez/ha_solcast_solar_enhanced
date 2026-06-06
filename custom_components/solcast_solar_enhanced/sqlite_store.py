@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -167,6 +168,36 @@ class SqliteStore:
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite insert failed: %s", exc)
             return False
+
+    # ------------------------------------------------------------------
+    # Retention
+    # ------------------------------------------------------------------
+
+    async def async_prune(self, retention_days: int) -> int:
+        """Delete rows older than ``retention_days`` days. Returns rows removed.
+
+        A no-op when ``retention_days <= 0`` (the default — keep everything) or in
+        read-only mode. A plain ``DELETE`` (no ``VACUUM``) is intentional: in the
+        steady state old rows are deleted as fast as new ones arrive, so SQLite
+        reuses the freed pages and the file size stabilises without the heavy I/O
+        of a rewrite — important on an SD-card-backed Raspberry Pi.
+        """
+        if self._conn is None or self._readonly or retention_days <= 0:
+            return 0
+        return await self._hass.async_add_executor_job(self._prune, retention_days)
+
+    def _prune(self, retention_days: int) -> int:
+        cutoff = int(time.time()) - retention_days * 86400
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "DELETE FROM solcast_data WHERE period_end_epoch < ?", (cutoff,)
+                )
+                self._conn.commit()
+                return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("SQLite prune failed: %s", exc)
+            return 0
 
     # ------------------------------------------------------------------
     # Migrations

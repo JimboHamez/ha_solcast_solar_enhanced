@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Standort & System",
+        "data": {
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "capacity_kw": "Anlagenleistung (kW DC)",
+          "tilt": "Modulneigung (°)",
+          "azimuth": "Modulazimut (°)",
+          "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
+          "pv_export_sensor": "Sensor für PV-Einspeisung",
+          "battery_stat_sensor": "Sensor für Batterieladung 30-Min-Mittel (optional)",
+          "pv_actual_input_mode": "PV-Sensortyp",
+          "pv_export_input_mode": "Typ des PV-Einspeisesensors"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor.",
+          "pv_export_sensor": "Bevorzugt ein kumulativer Einspeise-Energiezähler (Wh/kWh); andernfalls ein gleitender mean_linear-Helfer (kW).",
+          "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
+          "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen."
+        }
+      },
+      "database": {
+        "title": "Speicher",
+        "description": "Der Verlauf wird in einer integrierten Datei gespeichert (config/solcast_solar_enhanced.db) – keine Einrichtung erforderlich. Lassen Sie ihn aktiviert, damit Abstimmung und Dämpfung funktionieren.",
+        "data": {
+          "db_enabled": "Verlaufsspeicherung aktivieren",
+          "db_retention_days": "Verlauf aufbewahren für (Tage, 0 = alles behalten)"
+        },
+        "data_description": {
+          "db_retention_days": "0 behält den gesamten Verlauf (Standard). Ein Wert begrenzt die Datenbank auf leistungsschwachen Geräten, indem täglich ältere Zeilen gelöscht werden – die saisonale Dämpfung nutzt jedoch ein jahresübergreifendes Fenster, behalten Sie daher mindestens ~400 Tage (≈13 Monate), wenn Sie darauf angewiesen sind."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "OpenWeatherMap aktivieren",
+          "owm_api_key": "API-Schlüssel"
+        }
+      },
+      "battery": {
+        "title": "Batteriespeicher",
+        "data": {
+          "battery_enabled": "Rohen Batterie-Fallback aktivieren",
+          "battery_mode": "Modus",
+          "battery_net_sensor": "Sensor für Netto-Batterieleistung (vorzeichenbehaftet)",
+          "battery_charge_sensor": "Sensor für Batterieladeleistung"
+        }
+      },
+      "tuning": {
+        "title": "PV-Abstimmung & Dämpfung",
+        "data": {
+          "auto_tuning": "Automatische PV-Abstimmung",
+          "auto_dampening": "Automatische Dämpfung",
+          "dampening_gate": "Dämpfung sperren, bis die Abstimmung mit der Solcast-Ausrichtung übereinstimmt",
+          "cloud_threshold": "Wolkenschwelle (%)",
+          "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
+          "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
+          "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
+        }
+      },
+      "sites": {
+        "title": "Sensorzuordnung je Standort",
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Standort & System",
+        "data": {
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "capacity_kw": "Anlagenleistung (kW DC)",
+          "tilt": "Modulneigung (°)",
+          "azimuth": "Modulazimut (°)",
+          "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
+          "pv_export_sensor": "Sensor für PV-Einspeisung",
+          "battery_stat_sensor": "Sensor für Batterieladung 30-Min-Mittel (optional)",
+          "pv_actual_input_mode": "PV-Sensortyp",
+          "pv_export_input_mode": "Typ des PV-Einspeisesensors"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor.",
+          "pv_export_sensor": "Bevorzugt ein kumulativer Einspeise-Energiezähler (Wh/kWh); andernfalls ein gleitender mean_linear-Helfer (kW).",
+          "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
+          "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen."
+        }
+      },
+      "database": {
+        "title": "Speicher",
+        "description": "Der Verlauf wird in einer integrierten Datei gespeichert (config/solcast_solar_enhanced.db) – keine Einrichtung erforderlich. Lassen Sie ihn aktiviert, damit Abstimmung und Dämpfung funktionieren.",
+        "data": {
+          "db_enabled": "Verlaufsspeicherung aktivieren",
+          "db_retention_days": "Verlauf aufbewahren für (Tage, 0 = alles behalten)"
+        },
+        "data_description": {
+          "db_retention_days": "0 behält den gesamten Verlauf (Standard). Ein Wert begrenzt die Datenbank auf leistungsschwachen Geräten, indem täglich ältere Zeilen gelöscht werden – die saisonale Dämpfung nutzt jedoch ein jahresübergreifendes Fenster, behalten Sie daher mindestens ~400 Tage (≈13 Monate), wenn Sie darauf angewiesen sind."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "OpenWeatherMap aktivieren",
+          "owm_api_key": "API-Schlüssel"
+        }
+      },
+      "battery": {
+        "title": "Batteriespeicher",
+        "data": {
+          "battery_enabled": "Rohen Batterie-Fallback aktivieren",
+          "battery_mode": "Modus",
+          "battery_net_sensor": "Sensor für Netto-Batterieleistung (vorzeichenbehaftet)",
+          "battery_charge_sensor": "Sensor für Batterieladeleistung"
+        }
+      },
+      "tuning": {
+        "title": "PV-Abstimmung & Dämpfung",
+        "data": {
+          "auto_tuning": "Automatische PV-Abstimmung",
+          "auto_dampening": "Automatische Dämpfung",
+          "dampening_gate": "Dämpfung sperren, bis die Abstimmung mit der Solcast-Ausrichtung übereinstimmt",
+          "cloud_threshold": "Wolkenschwelle (%)",
+          "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
+          "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
+          "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
+        }
+      },
+      "sites": {
+        "title": "Sensorzuordnung je Standort",
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Abstimmung – einspeisebegrenzt ausgeschlossen"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Automatisch erkennen (empfohlen)",
+        "power_kw": "Gemittelte Leistung – kW (mean_linear-Helfer)",
+        "power_w": "Gemittelte Leistung – W (mean_linear-Helfer)",
+        "energy_kwh": "Energiezähler – kWh (empfohlen)",
+        "energy_wh": "Energiezähler – Wh (empfohlen)",
+        "energy_mwh": "Energiezähler – MWh (empfohlen)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap für PV-Abstimmung & Dämpfung erforderlich",
+      "description": "PV-Abstimmung und adaptive Dämpfung nutzen die Bewölkung von OpenWeatherMap, um klare Himmelsperioden zu erkennen – die einzigen Daten, bei denen Messwert vs. Prognose die Modulgeometrie und Verschattung widerspiegelt und nicht vorüberziehende Wolken. OpenWeatherMap ist nicht konfiguriert, daher ist die Bewölkung jedes Datensatzes unbekannt und wird ausgeschlossen, sodass diese Funktionen inaktiv bleiben (die Dämpfung bleibt neutral und wird nicht an Solcast übermittelt). Fügen Sie in den Optionen dieser Integration einen kostenlosen OpenWeatherMap-API-Schlüssel hinzu, um sie zu aktivieren, oder ignorieren Sie dies, wenn Sie nur den Verlauf protokollieren möchten."
+    },
+    "dampening_gated": {
+      "title": "Dämpfung pausiert – abgestimmte Ausrichtung weicht von Solcast ab",
+      "description": "Die PV-Abstimmung hat sicher auf eine Modulneigung/-azimut konvergiert, die wesentlich von der Ausrichtung abweicht, mit der Ihr Solcast-Standort konfiguriert ist. Solange sie nicht übereinstimmen, basiert die Solcast-Prognose auf der falschen Geometrie, sodass die adaptive Dämpfung diesen Ausrichtungsfehler in ihre Korrektur einbauen würde, statt echte Verschattung zu erfassen. Die Dämpfung wird daher für die betroffenen Stränge neutral (1.0) gehalten und nichts wird an Solcast übermittelt. Lesen Sie die aktuellen Werte der Sensoren „Abgestimmte Modulneigung“ und „Abgestimmter Modulazimut“ ab, passen Sie Ihre Solcast-Standortkonfiguration entsprechend an, und die Dämpfung wird automatisch fortgesetzt. Um diese Absicherung zu deaktivieren, schalten Sie ‚Dämpfung sperren …‘ in den Integrationsoptionen aus."
+    }
+  }
+}

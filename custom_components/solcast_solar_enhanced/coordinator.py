@@ -31,8 +31,12 @@ from .const import (
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
+    CONF_DAMPENING_GATE,
     CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
+    CONF_DB_RETENTION_DAYS,
+    DEFAULT_DB_RETENTION_DAYS,
+    DB_RETENTION_MIN_RECOMMENDED_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
@@ -42,7 +46,11 @@ from .const import (
     CONF_PV_EXPORT_INPUT_MODE,
     CONF_PV_EXPORT_SENSOR,
     CONF_TILT,
+    DAMPENING_GATE_AZIMUTH_TOL,
+    DAMPENING_GATE_MIN_RECORDS,
+    DAMPENING_GATE_TILT_TOL,
     DAMPENING_INTERVAL_HOURS,
+    DEFAULT_DAMPENING_GATE,
     DEFAULT_DB_ENABLED,
     DEFAULT_DB_FILENAME,
     DEFAULT_CLIPPING_THRESHOLD,
@@ -58,6 +66,7 @@ from .const import (
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
+    ISSUE_DAMPENING_GATED,
     ISSUE_OWM_REQUIRED,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
@@ -140,12 +149,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._dampening_table: list[dict[str, Any]] = []
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
+        self._last_prune_ts: float = 0.0
         self._db_record_count: int = 0
         # Freshness/coverage diagnostics surfaced on the Database Records sensor.
         self._db_latest_period_end: str | None = None
         self._db_sites: list[str] = []
         self._base_status: str = "not_detected"
         self._auto_dampen_warned: bool = False
+        # True while the dampening push is held neutral because a tuned orientation
+        # diverges materially from the configured (Solcast) one. Per-site aware:
+        # set if *any* target is gated this cycle. Surfaced on the Dampening sensor.
+        self._dampening_gated: bool = False
 
         # Discovered Solcast sites (multiple arrays on one property), each:
         # {resource_id, name, capacity, capacity_dc, tilt, azimuth, entity_id}.
@@ -243,9 +257,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._db:
             await self._db.async_close()
             self._db = None
-        # Clear the OWM repair issue on unload (a reload re-creates it if still
-        # applicable via async_setup).
+        # Clear repair issues on unload (a reload re-creates them if still
+        # applicable via async_setup / the next dampening run).
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_OWM_REQUIRED)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_DAMPENING_GATED)
 
     # ------------------------------------------------------------------
     # Main update
@@ -346,15 +361,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "No forecast estimate for daylight slot %s (zenith %.1f) from "
                     "either detailedForecast or base coordinator", period_end, zen
                 )
-            # Weather is stored NOT NULL; coerce the unknown sentinel (None) to a
-            # value the clear-sky filters *exclude* — 100% cloud — so a record
-            # written without OWM data can never masquerade as clear sky. The
-            # sensors still read the raw None (showing "unavailable").
-            w_temp = self._weather.get("temp")
-            w_clouds = self._weather.get("clouds")
-            temp_db = round(w_temp, 2) if w_temp is not None else 0.0
-            clouds_db = 100 if w_clouds is None else int(w_clouds)
-            desc_db = self._weather.get("description") or "unavailable"
+            # Coerce unknown weather to the excluded sentinel for the NOT NULL
+            # columns (used by both the aggregate and per-site rows below).
+            temp_db, clouds_db, desc_db = self._weather_for_storage()
             record = {
                 "period_end": period_end,
                 "period_end_epoch": period_epoch,
@@ -403,9 +412,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "pv_estimate90": round(s_est90, 4),
                     "azimuth": round(az, 5),
                     "zenith": round(zen, 5),
-                    "temp": round(self._weather["temp"], 2),
-                    "clouds": self._weather["clouds"],
-                    "description": self._weather["description"],
+                    "temp": temp_db,
+                    "clouds": clouds_db,
+                    "description": desc_db,
                     "battery_charge": 0.0,
                 })
 
@@ -413,6 +422,25 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # Diagnostics: newest slot written this cycle + sites seen in the store.
             self._db_latest_period_end = period_end
             self._db_sites = await self._db.async_get_sites()
+
+        # History retention (daily) — independent of auto-tuning, so it still
+        # bounds the table when only logging is enabled.
+        retention_days = int(opts.get(CONF_DB_RETENTION_DAYS, DEFAULT_DB_RETENTION_DAYS) or 0)
+        if self._db and retention_days > 0:
+            if now_epoch - self._last_prune_ts >= TUNING_INTERVAL_HOURS * 3600:
+                if retention_days < DB_RETENTION_MIN_RECOMMENDED_DAYS:
+                    _LOGGER.warning(
+                        "History retention is set to %d days — seasonal dampening uses a "
+                        "cross-year window and works best with at least ~%d days of history.",
+                        retention_days, DB_RETENTION_MIN_RECOMMENDED_DAYS,
+                    )
+                removed = await self._db.async_prune(retention_days)
+                self._last_prune_ts = float(now_epoch)
+                if removed:
+                    _LOGGER.info(
+                        "Pruned %d record(s) older than %d days from history.",
+                        removed, retention_days,
+                    )
 
         # PV tuning (daily)
         if opts.get(CONF_AUTO_TUNING, True):
@@ -448,6 +476,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "weather": self._weather,
             "tuning": self._tuning_result,
             "dampening_table": self._dampening_table,
+            "dampening_gated": self._dampening_gated,
             "db_records": self._db_record_count,
             "db_latest_period_end": self._db_latest_period_end,
             "db_sites": self._db_sites,
@@ -567,6 +596,59 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         return compass - 360 if compass > 180 else compass
 
     # ------------------------------------------------------------------
+    # Dampening convergence gate
+    # ------------------------------------------------------------------
+
+    def _weather_for_storage(self) -> tuple[float, int, str]:
+        """Weather coerced for the NOT NULL DB columns. Unknown (``None`` — no OWM,
+        or a failed fetch) becomes the *excluded* 100%-cloud / 0 °C sentinel so a
+        record written without cloud data can never pass the clear-sky filter as
+        clear. Used by both the aggregate ``_total`` and per-site rows."""
+        w_temp = self._weather.get("temp")
+        w_clouds = self._weather.get("clouds")
+        temp = round(w_temp, 2) if w_temp is not None else 0.0
+        clouds = 100 if w_clouds is None else int(w_clouds)
+        return temp, clouds, self._weather.get("description") or "unavailable"
+
+    @staticmethod
+    def _angle_diff(a: float, b: float) -> float:
+        """Smallest signed difference a−b on the circle, in (−180, 180]."""
+        return ((a - b + 180.0) % 360.0) - 180.0
+
+    def _orientation_diverged(
+        self, tuning_result: dict[str, Any] | None, seed_tilt: float, seed_az: float
+    ) -> dict[str, float] | None:
+        """Divergence info when tuning is *confident* and the tuned orientation
+        differs materially from the configured (Solcast) one; else ``None``.
+
+        This is the dampening gate's trigger: a confident tuned tilt/azimuth that
+        disagrees with the configured site means the Solcast forecast is built on
+        the wrong geometry, so its actual/estimate ratio mixes orientation error
+        with shading. Holding dampening neutral until they agree keeps the curve
+        meaning "shading" (the notebook 3.4b tuned-estimate prerequisite).
+        """
+        if not tuning_result:
+            return None
+        if int(tuning_result.get("n_records", 0)) < DAMPENING_GATE_MIN_RECORDS:
+            return None  # not enough clear-sky data to trust the divergence
+        d_tilt = abs(float(tuning_result["tilt"]) - seed_tilt)
+        d_az = abs(self._angle_diff(float(tuning_result["azimuth"]), seed_az))
+        if d_tilt > DAMPENING_GATE_TILT_TOL or d_az > DAMPENING_GATE_AZIMUTH_TOL:
+            return {"tilt_delta": round(d_tilt, 1), "azimuth_delta": round(d_az, 1)}
+        return None
+
+    def _site_orientation_seed(
+        self, site_id: str, opts: dict[str, Any]
+    ) -> tuple[float, float]:
+        """(tilt, azimuth) seed for a site in the tuner frame, matching the seeds
+        used by ``_run_site_tuning`` so the gate compares like with like."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), None)
+        if site is None:
+            return float(opts.get(CONF_TILT, 20.0)), float(opts.get(CONF_AZIMUTH, 0.0))
+        tilt = site.get("tilt") or float(opts.get(CONF_TILT, 20.0))
+        return float(tilt), self._site_azimuth_seed(site, opts)
+
+    # ------------------------------------------------------------------
     # Dampening
     # ------------------------------------------------------------------
 
@@ -594,6 +676,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return
         self._auto_dampen_warned = False
 
+        # Convergence gate: when a tuned orientation diverges materially from the
+        # configured one, hold that target's dampening at neutral 1.0 rather than
+        # push an orientation-contaminated curve. Per-site aware. Disable with
+        # CONF_DAMPENING_GATE.
+        gate_on = opts.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)
+        any_gated = False
+
         site_ids = self._configured_site_ids(opts.get(CONF_SITE_GROUPS) or [])
         if site_ids:
             # Multi-site: push a dampening set per site (which overrides the base's
@@ -604,10 +693,51 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     opts, now_epoch, lat, lon, site_id
                 )
                 hourly = average_slot_pairs([s["factor"] for s in slots])
+                if gate_on:
+                    seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
+                    div = self._orientation_diverged(
+                        self._site_tuning_results.get(site_id), seed_tilt, seed_az
+                    )
+                    if div:
+                        any_gated = True
+                        _LOGGER.warning(
+                            "Dampening gated for site %s: tuned orientation diverges "
+                            "from configured (Δtilt %.0f°, Δazimuth %.0f°) — pushing "
+                            "neutral 1.0. Apply the Tuned Panel Tilt/Azimuth values in "
+                            "your Solcast account.", site_id,
+                            div["tilt_delta"], div["azimuth_delta"],
+                        )
+                        hourly = [1.0] * len(hourly)
                 await self._push_dampening(hourly, site=site_id)
         else:
             hourly = average_slot_pairs([s["factor"] for s in self._dampening_table])
+            if gate_on:
+                div = self._orientation_diverged(
+                    self._tuning_result,
+                    float(opts.get(CONF_TILT, 20.0)),
+                    float(opts.get(CONF_AZIMUTH, 0.0)),
+                )
+                if div:
+                    any_gated = True
+                    _LOGGER.warning(
+                        "Dampening gated: tuned orientation diverges from configured "
+                        "(Δtilt %.0f°, Δazimuth %.0f°) — pushing neutral 1.0. Apply the "
+                        "Tuned Panel Tilt/Azimuth values in your Solcast account.",
+                        div["tilt_delta"], div["azimuth_delta"],
+                    )
+                    hourly = [1.0] * len(hourly)
             await self._push_dampening(hourly)
+
+        self._dampening_gated = any_gated
+        if any_gated:
+            ir.async_create_issue(
+                self.hass, DOMAIN, ISSUE_DAMPENING_GATED,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_DAMPENING_GATED,
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_DAMPENING_GATED)
 
     async def _compute_dampening_slots(
         self,
@@ -1223,4 +1353,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             from collections import Counter
             most_common = Counter(sources).most_common(1)
             attrs["overall_source"] = most_common[0][0] if most_common else "no_data"
+        # Gate state: when true, the push was held at neutral 1.0 because a tuned
+        # orientation diverges from the configured Solcast value (see repair issue).
+        attrs["gated"] = self._dampening_gated
         return attrs

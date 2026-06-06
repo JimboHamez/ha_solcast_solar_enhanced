@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Lokalita a systém",
+        "data": {
+          "latitude": "Zemepisná šírka",
+          "longitude": "Zemepisná dĺžka",
+          "capacity_kw": "Výkon systému (kW DC)",
+          "tilt": "Sklon panelov (°)",
+          "azimuth": "Azimut panelov (°)",
+          "pv_actual_sensor": "Senzor výkonu / výroby FV",
+          "pv_export_sensor": "Senzor dodávky FV do siete",
+          "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
+          "pv_actual_input_mode": "Typ senzora FV",
+          "pv_export_input_mode": "Typ senzora dodávky FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
+          "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
+          "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
+          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie."
+        }
+      },
+      "database": {
+        "title": "Úložisko",
+        "description": "História sa ukladá do zabudovaného súboru (config/solcast_solar_enhanced.db) — bez potreby nastavenia. Ponechajte zapnuté, aby ladenie a tlmenie fungovali.",
+        "data": {
+          "db_enabled": "Povoliť ukladanie histórie",
+          "db_retention_days": "Uchovávať históriu počas (dni, 0 = uchovať všetko)"
+        },
+        "data_description": {
+          "db_retention_days": "0 uchová celú históriu (predvolené). Hodnota obmedzí databázu na zariadeniach s nízkym výkonom denným mazaním starších riadkov — sezónne tlmenie však používa okno cez viac rokov, preto uchovajte aspoň ~400 dní (≈13 mesiacov), ak sa naň spoliehate."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Povoliť OpenWeatherMap",
+          "owm_api_key": "API kľúč"
+        }
+      },
+      "battery": {
+        "title": "Batériové úložisko",
+        "data": {
+          "battery_enabled": "Povoliť surový záložný režim batérie",
+          "battery_mode": "Režim",
+          "battery_net_sensor": "Senzor čistého výkonu batérie (so znamienkom)",
+          "battery_charge_sensor": "Senzor nabíjacieho výkonu batérie"
+        }
+      },
+      "tuning": {
+        "title": "Ladenie FV a tlmenie",
+        "data": {
+          "auto_tuning": "Automatické ladenie FV",
+          "auto_dampening": "Automatické tlmenie",
+          "dampening_gate": "Pozastaviť tlmenie, kým sa ladenie nezhoduje s orientáciou Solcast",
+          "cloud_threshold": "Prah oblačnosti (%)",
+          "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
+          "clipping_threshold": "Prah orezania (zlomok výkonu)",
+          "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
+        }
+      },
+      "sites": {
+        "title": "Priradenie senzorov pre jednotlivé lokality",
+        "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Lokalita a systém",
+        "data": {
+          "latitude": "Zemepisná šírka",
+          "longitude": "Zemepisná dĺžka",
+          "capacity_kw": "Výkon systému (kW DC)",
+          "tilt": "Sklon panelov (°)",
+          "azimuth": "Azimut panelov (°)",
+          "pv_actual_sensor": "Senzor výkonu / výroby FV",
+          "pv_export_sensor": "Senzor dodávky FV do siete",
+          "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
+          "pv_actual_input_mode": "Typ senzora FV",
+          "pv_export_input_mode": "Typ senzora dodávky FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
+          "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
+          "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
+          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie."
+        }
+      },
+      "database": {
+        "title": "Úložisko",
+        "description": "História sa ukladá do zabudovaného súboru (config/solcast_solar_enhanced.db) — bez potreby nastavenia. Ponechajte zapnuté, aby ladenie a tlmenie fungovali.",
+        "data": {
+          "db_enabled": "Povoliť ukladanie histórie",
+          "db_retention_days": "Uchovávať históriu počas (dni, 0 = uchovať všetko)"
+        },
+        "data_description": {
+          "db_retention_days": "0 uchová celú históriu (predvolené). Hodnota obmedzí databázu na zariadeniach s nízkym výkonom denným mazaním starších riadkov — sezónne tlmenie však používa okno cez viac rokov, preto uchovajte aspoň ~400 dní (≈13 mesiacov), ak sa naň spoliehate."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Povoliť OpenWeatherMap",
+          "owm_api_key": "API kľúč"
+        }
+      },
+      "battery": {
+        "title": "Batériové úložisko",
+        "data": {
+          "battery_enabled": "Povoliť surový záložný režim batérie",
+          "battery_mode": "Režim",
+          "battery_net_sensor": "Senzor čistého výkonu batérie (so znamienkom)",
+          "battery_charge_sensor": "Senzor nabíjacieho výkonu batérie"
+        }
+      },
+      "tuning": {
+        "title": "Ladenie FV a tlmenie",
+        "data": {
+          "auto_tuning": "Automatické ladenie FV",
+          "auto_dampening": "Automatické tlmenie",
+          "dampening_gate": "Pozastaviť tlmenie, kým sa ladenie nezhoduje s orientáciou Solcast",
+          "cloud_threshold": "Prah oblačnosti (%)",
+          "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
+          "clipping_threshold": "Prah orezania (zlomok výkonu)",
+          "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
+        }
+      },
+      "sites": {
+        "title": "Priradenie senzorov pre jednotlivé lokality",
+        "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Ladenie — vylúčené pre limit dodávky"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Automatická detekcia (odporúčané)",
+        "power_kw": "Priemerný výkon — kW (pomocník mean_linear)",
+        "power_w": "Priemerný výkon — W (pomocník mean_linear)",
+        "energy_kwh": "Počítadlo energie — kWh (odporúčané)",
+        "energy_wh": "Počítadlo energie — Wh (odporúčané)",
+        "energy_mwh": "Počítadlo energie — MWh (odporúčané)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "Pre ladenie FV a tlmenie je potrebný OpenWeatherMap",
+      "description": "Ladenie FV a adaptívne tlmenie využívajú oblačnosť z OpenWeatherMap na identifikáciu období jasnej oblohy — jediné údaje, kde porovnanie nameraného a predpovedaného odráža geometriu panelov a zatienenie, a nie prechádzajúce oblaky. OpenWeatherMap nie je nakonfigurovaný, takže oblačnosť každého záznamu je neznáma a vylúčená, čím tieto funkcie zostávajú neaktívne (tlmenie zostáva neutrálne a neodosiela sa do Solcast). Ak ich chcete povoliť, pridajte v možnostiach tejto integrácie bezplatný API kľúč OpenWeatherMap, alebo toto ignorujte, ak chcete len zaznamenávať históriu."
+    },
+    "dampening_gated": {
+      "title": "Tlmenie pozastavené — vyladená orientácia sa líši od Solcast",
+      "description": "Ladenie FV s istotou konvergovalo na sklon/azimut panelov, ktorý sa podstatne líši od orientácie nakonfigurovanej pre vašu lokalitu Solcast. Kým sa nezhodnú, predpoveď Solcast vychádza z nesprávnej geometrie, takže adaptívne tlmenie by zabudovalo túto chybu orientácie do svojej korekcie namiesto zachytenia skutočného zatienenia. Tlmenie sa preto pre dotknuté polia udržiava neutrálne (1.0) a do Solcast sa nič neodosiela. Prečítajte aktuálne hodnoty zo senzorov „Vyladený sklon panelov“ a „Vyladený azimut panelov“, aktualizujte podľa nich konfiguráciu vašej lokality Solcast a tlmenie sa automaticky obnoví. Ak chcete túto ochranu vypnúť, vypnite „Pozastaviť tlmenie…“ v možnostiach integrácie."
+    }
+  }
+}

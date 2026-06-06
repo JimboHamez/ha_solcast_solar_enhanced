@@ -235,3 +235,59 @@ async def test_get_sites_distinct(store):
     await store.async_insert_record(_record(JUNE1 + 1800, site="_total"))
     await store.async_insert_record(_record(JUNE1, site="siteC"))
     assert set(await store.async_get_sites()) == {"_total", "siteC"}
+
+
+# ---------------------------------------------------------------------------
+# retention / prune
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+
+async def test_prune_removes_only_old_rows(store):
+    now = int(_time.time())
+    old = now - 500 * 86400          # 500 days ago
+    recent = now - 10 * 86400        # 10 days ago
+    await store.async_insert_record(_record(old))
+    await store.async_insert_record(_record(recent))
+    removed = await store.async_prune(retention_days=400)
+    assert removed == 1
+    rows = await store.async_get_records_for_tuning()
+    assert len(rows) == 1            # the recent row survives
+
+
+async def test_prune_zero_is_noop(store):
+    now = int(_time.time())
+    await store.async_insert_record(_record(now - 9000 * 86400))
+    assert await store.async_prune(retention_days=0) == 0
+    assert await store.async_get_record_count() == 1
+
+
+async def test_prune_negative_is_noop(store):
+    now = int(_time.time())
+    await store.async_insert_record(_record(now - 9000 * 86400))
+    assert await store.async_prune(retention_days=-5) == 0
+    assert await store.async_get_record_count() == 1
+
+
+async def test_prune_nothing_to_remove(store):
+    now = int(_time.time())
+    await store.async_insert_record(_record(now - 10 * 86400))
+    assert await store.async_prune(retention_days=400) == 0
+    assert await store.async_get_record_count() == 1
+
+
+async def test_prune_readonly_is_noop(hass, tmp_path):
+    path = str(tmp_path / "ro.db")
+    writer = SqliteStore(hass, path)
+    assert await writer.async_connect() is True
+    await writer.async_insert_record(_record(int(_time.time()) - 9000 * 86400))
+    await writer.async_close()
+
+    ro = SqliteStore(hass, path, readonly=True)
+    assert await ro.async_connect() is True
+    try:
+        assert await ro.async_prune(retention_days=1) == 0
+        assert await ro.async_get_record_count() == 1
+    finally:
+        await ro.async_close()

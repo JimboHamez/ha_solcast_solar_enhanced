@@ -14,7 +14,7 @@
 A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that adds:
 
 1. **Built-in history storage** of PV power averages, forecasts, solar position, weather and battery data — a zero-config SQLite file (no server, no credentials, no dependency)
-2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via scipy (L-BFGS-B)
+2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via a numpy grid search (no scipy, so it works on a Raspberry Pi)
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
 5. **Energy-counter PV input** — reads cumulative energy counters (Wh/kWh/MWh) as the recommended input, deriving average kW from the energy delta over each interval (race-free); a rolling `mean_linear` power helper is supported as a fallback, with unit-first auto-detection
@@ -23,11 +23,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.6.3
+## 🆕 What's new in v1.6.4
 
-**Dampening gets the same clear-sky fix, and OpenWeatherMap is now properly required.** The 0%-cloud bug fixed for tuning in 1.6.2 was also dropping the clearest-sky records from **adaptive dampening** — now fixed. More importantly, OWM is reframed from "optional" to **required for tuning & dampening**: without it there's no cloud data to find clear-sky periods, so those features can't work. The no-cloud path is now **fail-safe** — records are stored as *unknown and excluded* (never a false "clear sky"), the **Cloud Cover/Temperature** sensors show *unavailable* instead of `0`, and a **repair issue** prompts you to add a (free) OWM key. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.3) and [CHANGELOG](CHANGELOG.md).
+**PV tuning now works on a Raspberry Pi, dampening won't bake in orientation errors, and the database can be capped.** Tuning **drops the scipy dependency** entirely — it has no Raspberry Pi wheel and fails to build under Home Assistant (the same problem that hit the base integration) — replacing it with a pure-**numpy grid search** (the method Solcast's own notebook 3.4 uses), shaped for low-power CPUs. A new **per-site dampening convergence gate** holds dampening neutral while the tuned orientation disagrees with your Solcast site config (with a repair issue prompting you to update it), so shading corrections stay shading corrections. There's now an optional **history retention** setting to prune old SQLite rows on a daily timer (default: keep everything). Plus a multi-site crash fix when OpenWeatherMap is absent, and **translations for 10 new languages** (de, es, fr, it, ja, nl, pl, pt, sk, ur). See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.4) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.6.2:_ the same clear-sky (0% cloud) fix for **PV tuning** — clearest-sky records were being discarded by a falsy-`0` coercion.
+_Previously, in v1.6.3:_ adaptive **dampening** got the same clear-sky (0% cloud) fix as tuning, and OpenWeatherMap was reframed from "optional" to **required** for tuning & dampening, with a **fail-safe** no-cloud path (records stored as *unknown and excluded*, sensors show *unavailable* instead of `0`, and a repair issue prompts for a free OWM key).
+
+_And in v1.6.2:_ the same clear-sky (0% cloud) fix for **PV tuning** — clearest-sky records were being discarded by a falsy-`0` coercion.
 
 _And in v1.6.1:_ the **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors gained **restart resilience** (HA `RestoreSensor`), restoring their last value on startup instead of reading *unknown* until the first half-hour update cycle.
 
@@ -120,13 +122,20 @@ Historical storage powers dampening and PV tuning, and **needs nothing** — the
 
 Storage uses the Python standard library — **nothing to install**.
 
-PV tuning is the only optional extra:
+PV tuning needs **numpy**, which Home Assistant already ships (it's a core HA
+dependency and has Raspberry Pi wheels), so in a normal HA install there is
+nothing to install at all:
 
 ```bash
-pip install numpy>=1.21.0 scipy>=1.7.0  # only for PV tuning
+pip install numpy>=1.21.0  # already present in Home Assistant
 ```
 
-It uses a lazy import — if not installed, tuning is disabled with an informational log message and the integration still runs.
+There is **no scipy dependency** — the optimiser is a pure numpy grid search
+(the same method as Solcast notebook 3.4), specifically so tuning works on a
+Raspberry Pi, where scipy has no prebuilt wheel and fails to build from source
+under HA (see BJReplay/ha-solcast-solar #85). numpy is imported lazily — if it
+were somehow absent, tuning is disabled with an informational log and the
+integration still runs.
 
 ---
 
@@ -155,6 +164,7 @@ The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automa
 | Field | Default | Description |
 |---|---|---|
 | Enable history storage | On | Toggle the built-in store on/off |
+| Keep history for (days) | 0 | `0` keeps everything (default). A positive value prunes rows older than N days on a daily timer to bound the database on low-power devices. Seasonal dampening uses a cross-year window, so keep ≥ ~400 days (≈13 months) if you rely on it — below that you'll get a log warning but it still applies. |
 
 The store lives at `config/solcast_solar_enhanced.db` and needs no further configuration. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path (it uses WAL mode, so leave the `-wal`/`-shm` sidecar files in place).
 
@@ -275,7 +285,7 @@ An earlier roadmap item proposed nudging the next 1–6 hours of forecast from t
 
 ### PV tuning
 
-Uses `scipy.optimize.minimize` (L-BFGS-B) to find the panel tilt and azimuth that minimise RMSE between measured `total_pv` and the geometrically-scaled Solcast estimate. Runs daily in a thread executor. Requires ≥10 clear-sky, non-clipped records.
+Uses a coarse-to-fine numpy **grid search** (full sweep at 5°, then refined to 1° and 0.25° around the best — the same approach as Solcast notebook 3.4, no scipy) to find the panel tilt and azimuth that minimise RMSE between measured `total_pv` and the geometrically-scaled Solcast estimate. Runs daily in a thread executor. Requires ≥10 clear-sky, non-clipped records.
 
 Records are excluded from the tuning dataset if:
 - Cloud cover ≥ cloud threshold (cloudy periods distort the geometry signal)
@@ -393,7 +403,7 @@ python tools/standalone_tuning.py --sqlite config/solcast_solar_enhanced.db --al
 python tools/standalone_tuning.py --csv history.csv --capacity 5
 ```
 
-Requires `numpy` + `scipy`. The SQLite source uses the standard library; CSV mode needs neither. Run `--help` for all options.
+Requires `numpy` (no scipy). The SQLite source uses the standard library; CSV mode needs only numpy. Run `--help` for all options.
 
 ---
 
@@ -401,7 +411,7 @@ Requires `numpy` + `scipy`. The SQLite source uses the standard library; CSV mod
 
 Planned but not yet implemented:
 
-- **Database retention / dampening-scan efficiency.** The store keeps one row per half-hour per site forever (~17.5k rows/site/year), and the seasonal dampening query is a full table scan (its day-of-year filter is a computed expression no index can serve). On a long-lived, multi-site database on a Raspberry Pi this scan gets slower over time. Under consideration: an optional **retention period** (default *keep everything*), and/or a stored, **indexed day-of-year column** to make the seasonal lookup indexed. Deferred — current cost is fine for typical single-site, few-year installs. See the [design document](DESIGN_DOCUMENT.md#roadmap).
+- **Indexed day-of-year column for the seasonal dampening scan.** The seasonal dampening query is a full table scan (its day-of-year filter is a computed expression no index can serve). A stored, indexed day-of-year column would make it an indexed range lookup. Deferred — the new **history retention** option (Storage step; see above) already bounds the row count on long-lived installs, and the scan cost is fine for typical single-site, few-year databases. See the [design document](DESIGN_DOCUMENT.md#roadmap).
 
 ---
 
@@ -412,7 +422,7 @@ Planned but not yet implemented:
 | Home Assistant | 2026.5.4+ |
 | Python | 3.12+ |
 | Storage | stdlib `sqlite3` — no install |
-| scipy / numpy | Optional (PV tuning) — 1.7.0+ / 1.21.0+ |
+| numpy | PV tuning — 1.21.0+ (ships with Home Assistant; no scipy) |
 
 ---
 

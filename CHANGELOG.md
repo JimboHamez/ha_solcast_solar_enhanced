@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-06-06
+
+### Changed
+- **PV tuning no longer depends on scipy — works on a Raspberry Pi out of the
+  box.** The tilt/azimuth optimiser was `scipy.optimize.minimize` (L-BFGS-B);
+  scipy has no prebuilt ARM/Pi wheel and its from-source build fails under Home
+  Assistant's locked-down environment (the meson permission error that broke the
+  base integration in BJReplay/ha-solcast-solar #85). It is replaced by a
+  pure-**numpy** coarse-to-fine grid search (`_minimize_grid`: full 5° sweep,
+  then ±5° at 1°, then ±1° at 0.25° around the running best) — which is in fact
+  the method Solcast notebook 3.4 itself uses. numpy is a core Home Assistant
+  dependency with Pi wheels, so tuning now runs everywhere with nothing to
+  install. Same geometry, same RMSE objective, ≤0.25° resolution; recovers a
+  known synthetic orientation exactly. The grid search is shaped for low-power
+  CPUs: it sweeps azimuth-outer so the one expensive transcendental
+  (`cos(sun_az − panel_az)` over all records) is computed once per azimuth and
+  the tilt sweep is a single vectorised numpy multiply-add, with peak memory
+  bounded to one tilts×records block (≈14 MB even at 20k records). On a typical
+  per-site dataset this is ~2× faster than a naive per-point loop. The record
+  pre-filtering (cloud / clipping / export-limit / geometry exclusions) is also
+  vectorised as numpy boolean masks instead of a Python per-record loop. End to
+  end, tuning a 2,000-record site dropped from ~143 ms to ~63 ms here.
+
+### Added
+- **Optional history retention (cull old SQLite rows).** A new *Keep history for
+  (days)* setting on the Storage step (`CONF_DB_RETENTION_DAYS`, default `0` =
+  keep everything, so existing installs are unchanged) prunes rows older than the
+  window on a daily timer, bounding the database on long-lived / low-power
+  (Raspberry Pi) installs. Uses a plain `DELETE` (no `VACUUM`) so freed pages are
+  reused without a heavy SD-card rewrite. Runs independently of auto-tuning, so it
+  applies to logging-only setups. Seasonal dampening needs a cross-year window, so
+  a value below ~400 days (≈13 months) logs a warning but is still honoured. This
+  lands the retention half of the roadmap's database-efficiency item.
+- **Dampening convergence gate (per-site).** Adaptive dampening is now held neutral
+  (`1.0`, nothing pushed) for any array whose tuner has *confidently* converged on
+  a tilt/azimuth that diverges materially from the orientation its Solcast site is
+  configured with. This enforces the notebook 3.4b "tuned estimate" prerequisite —
+  while the Solcast forecast is built on the wrong geometry, its actual/estimate
+  ratio mixes orientation error with shading, so dampening would bake that error
+  in. Trips when tuning has ≥ 50 clear-sky records **and** `|Δtilt| > 15°` or
+  shortest-circle `|Δazimuth| > 25°`. A `dampening_gated` repair issue prompts the
+  user to apply the *Tuned Panel Tilt/Azimuth* sensor values in their Solcast
+  account; dampening resumes automatically once they agree. The gate is per-site
+  aware (one mis-configured array doesn't freeze the others) and on by default —
+  toggle *"Gate dampening until tuning agrees with Solcast orientation"* in the
+  tuning options to disable.
+- **Translations for 10 additional languages.** German, Spanish, French, Italian,
+  Japanese, Dutch, Polish, Portuguese, Slovak and Urdu (`translations/<lang>.json`),
+  covering the full config/options flow, selector options, entity name and both
+  repair issues. Each mirrors `en.json` key-for-key.
+
+### Fixed
+- **Multi-site crash when OpenWeatherMap is absent.** The 1.6.3 fail-safe weather
+  coercion was applied to the aggregate `_total` DB row but not the per-site rows,
+  so a multi-site setup without OWM wrote `round(None, 2)` (crash) / `None` into
+  the NOT NULL `clouds` column. Both the aggregate and per-site writes now share a
+  single `_weather_for_storage()` helper that coerces unknown weather to the
+  excluded `0 °C / 100 %` sentinel.
+
 ## [1.6.3] - 2026-06-05
 
 ### Fixed
@@ -318,7 +377,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.4...HEAD
+[1.6.4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.0...v1.6.1

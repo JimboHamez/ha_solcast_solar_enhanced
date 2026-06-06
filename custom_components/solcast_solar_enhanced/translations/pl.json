@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Lokalizacja i system",
+        "data": {
+          "latitude": "Szerokość geograficzna",
+          "longitude": "Długość geograficzna",
+          "capacity_kw": "Moc systemu (kW DC)",
+          "tilt": "Kąt nachylenia paneli (°)",
+          "azimuth": "Azymut paneli (°)",
+          "pv_actual_sensor": "Czujnik mocy / produkcji PV",
+          "pv_export_sensor": "Czujnik oddawania PV do sieci",
+          "battery_stat_sensor": "Czujnik średniej 30-min ładowania akumulatora (opcjonalnie)",
+          "pv_actual_input_mode": "Typ czujnika PV",
+          "pv_export_input_mode": "Typ czujnika oddawania PV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego.",
+          "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
+          "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
+          "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii."
+        }
+      },
+      "database": {
+        "title": "Przechowywanie",
+        "description": "Historia jest zapisywana we wbudowanym pliku (config/solcast_solar_enhanced.db) — bez konfiguracji. Pozostaw włączone, aby strojenie i tłumienie działały.",
+        "data": {
+          "db_enabled": "Włącz zapisywanie historii",
+          "db_retention_days": "Przechowuj historię przez (dni, 0 = zachowaj wszystko)"
+        },
+        "data_description": {
+          "db_retention_days": "0 zachowuje całą historię (domyślnie). Wartość ogranicza bazę danych na urządzeniach o małej mocy, codziennie usuwając starsze wiersze — ale tłumienie sezonowe używa okna obejmującego wiele lat, więc zachowaj co najmniej ~400 dni (≈13 miesięcy), jeśli na nim polegasz."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Włącz OpenWeatherMap",
+          "owm_api_key": "Klucz API"
+        }
+      },
+      "battery": {
+        "title": "Magazyn energii (akumulator)",
+        "data": {
+          "battery_enabled": "Włącz surowy tryb awaryjny akumulatora",
+          "battery_mode": "Tryb",
+          "battery_net_sensor": "Czujnik mocy netto akumulatora (ze znakiem)",
+          "battery_charge_sensor": "Czujnik mocy ładowania akumulatora"
+        }
+      },
+      "tuning": {
+        "title": "Strojenie PV i tłumienie",
+        "data": {
+          "auto_tuning": "Automatyczne strojenie PV",
+          "auto_dampening": "Automatyczne tłumienie",
+          "dampening_gate": "Wstrzymaj tłumienie, dopóki strojenie nie zgodzi się z orientacją Solcast",
+          "cloud_threshold": "Próg zachmurzenia (%)",
+          "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
+          "clipping_threshold": "Próg przycinania (ułamek mocy)",
+          "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
+        }
+      },
+      "sites": {
+        "title": "Przypisanie czujników na lokalizację",
+        "description": "Wykryto {count} lokalizacji Solcast. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję. Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, podaj każdemu również jego czujnik DC/MPPT, aby można było rozdzielić produkcję. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Lokalizacja i system",
+        "data": {
+          "latitude": "Szerokość geograficzna",
+          "longitude": "Długość geograficzna",
+          "capacity_kw": "Moc systemu (kW DC)",
+          "tilt": "Kąt nachylenia paneli (°)",
+          "azimuth": "Azymut paneli (°)",
+          "pv_actual_sensor": "Czujnik mocy / produkcji PV",
+          "pv_export_sensor": "Czujnik oddawania PV do sieci",
+          "battery_stat_sensor": "Czujnik średniej 30-min ładowania akumulatora (opcjonalnie)",
+          "pv_actual_input_mode": "Typ czujnika PV",
+          "pv_export_input_mode": "Typ czujnika oddawania PV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego.",
+          "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
+          "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
+          "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii."
+        }
+      },
+      "database": {
+        "title": "Przechowywanie",
+        "description": "Historia jest zapisywana we wbudowanym pliku (config/solcast_solar_enhanced.db) — bez konfiguracji. Pozostaw włączone, aby strojenie i tłumienie działały.",
+        "data": {
+          "db_enabled": "Włącz zapisywanie historii",
+          "db_retention_days": "Przechowuj historię przez (dni, 0 = zachowaj wszystko)"
+        },
+        "data_description": {
+          "db_retention_days": "0 zachowuje całą historię (domyślnie). Wartość ogranicza bazę danych na urządzeniach o małej mocy, codziennie usuwając starsze wiersze — ale tłumienie sezonowe używa okna obejmującego wiele lat, więc zachowaj co najmniej ~400 dni (≈13 miesięcy), jeśli na nim polegasz."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Włącz OpenWeatherMap",
+          "owm_api_key": "Klucz API"
+        }
+      },
+      "battery": {
+        "title": "Magazyn energii (akumulator)",
+        "data": {
+          "battery_enabled": "Włącz surowy tryb awaryjny akumulatora",
+          "battery_mode": "Tryb",
+          "battery_net_sensor": "Czujnik mocy netto akumulatora (ze znakiem)",
+          "battery_charge_sensor": "Czujnik mocy ładowania akumulatora"
+        }
+      },
+      "tuning": {
+        "title": "Strojenie PV i tłumienie",
+        "data": {
+          "auto_tuning": "Automatyczne strojenie PV",
+          "auto_dampening": "Automatyczne tłumienie",
+          "dampening_gate": "Wstrzymaj tłumienie, dopóki strojenie nie zgodzi się z orientacją Solcast",
+          "cloud_threshold": "Próg zachmurzenia (%)",
+          "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
+          "clipping_threshold": "Próg przycinania (ułamek mocy)",
+          "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
+        }
+      },
+      "sites": {
+        "title": "Przypisanie czujników na lokalizację",
+        "description": "Wykryto {count} lokalizacji Solcast. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję. Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, podaj każdemu również jego czujnik DC/MPPT, aby można było rozdzielić produkcję. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Strojenie — wykluczone z powodu limitu oddawania"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Wykrywanie automatyczne (zalecane)",
+        "power_kw": "Uśredniona moc — kW (pomocnik mean_linear)",
+        "power_w": "Uśredniona moc — W (pomocnik mean_linear)",
+        "energy_kwh": "Licznik energii — kWh (zalecane)",
+        "energy_wh": "Licznik energii — Wh (zalecane)",
+        "energy_mwh": "Licznik energii — MWh (zalecane)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap wymagany do strojenia PV i tłumienia",
+      "description": "Strojenie PV i adaptacyjne tłumienie używają zachmurzenia z OpenWeatherMap do wykrywania okresów bezchmurnego nieba — jedynych danych, w których porównanie zmierzone vs prognoza odzwierciedla geometrię paneli i zacienienie, a nie przechodzące chmury. OpenWeatherMap nie jest skonfigurowany, więc zachmurzenie każdego rekordu jest nieznane i pomijane, przez co te funkcje pozostają nieaktywne (tłumienie pozostaje neutralne i nie jest wysyłane do Solcast). Dodaj bezpłatny klucz API OpenWeatherMap w opcjach tej integracji, aby je włączyć, lub zignoruj to, jeśli chcesz tylko rejestrować historię."
+    },
+    "dampening_gated": {
+      "title": "Tłumienie wstrzymane — dostrojona orientacja różni się od Solcast",
+      "description": "Strojenie PV z pewnością zbiegło się do kąta nachylenia/azymutu paneli, który znacząco różni się od orientacji skonfigurowanej dla Twojej lokalizacji Solcast. Dopóki się nie zgadzają, prognoza Solcast opiera się na błędnej geometrii, więc adaptacyjne tłumienie wbudowałoby ten błąd orientacji w swoją korektę zamiast uchwycić rzeczywiste zacienienie. Dlatego tłumienie jest utrzymywane na poziomie neutralnym (1.0) dla danych łańcuchów i nic nie jest wysyłane do Solcast. Odczytaj bieżące wartości z czujników „Dostrojony kąt nachylenia paneli” i „Dostrojony azymut paneli”, zaktualizuj konfigurację lokalizacji Solcast, aby się zgadzała, a tłumienie wznowi się automatycznie. Aby wyłączyć to zabezpieczenie, wyłącz „Wstrzymaj tłumienie…” w opcjach integracji."
+    }
+  }
+}

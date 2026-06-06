@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Local e sistema",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "Capacidade do sistema (kW CC)",
+          "tilt": "Inclinação dos painéis (°)",
+          "azimuth": "Azimute dos painéis (°)",
+          "pv_actual_sensor": "Sensor de potência / geração FV",
+          "pv_export_sensor": "Sensor de exportação FV",
+          "battery_stat_sensor": "Sensor de média de 30 min de carga da bateria (opcional)",
+          "pv_actual_input_mode": "Tipo de sensor FV",
+          "pv_export_input_mode": "Tipo de sensor de exportação FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
+          "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
+          "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
+          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado."
+        }
+      },
+      "database": {
+        "title": "Armazenamento",
+        "description": "O histórico é guardado num ficheiro integrado (config/solcast_solar_enhanced.db) — sem configuração necessária. Deixe ativado para que o ajuste e a atenuação funcionem.",
+        "data": {
+          "db_enabled": "Ativar armazenamento do histórico",
+          "db_retention_days": "Manter o histórico durante (dias, 0 = manter tudo)"
+        },
+        "data_description": {
+          "db_retention_days": "0 mantém todo o histórico (padrão). Um valor limita a base de dados em dispositivos de baixa potência eliminando diariamente as linhas mais antigas — mas a atenuação sazonal usa uma janela plurianual, por isso mantenha pelo menos ~400 dias (≈13 meses) se depender dela."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Ativar OpenWeatherMap",
+          "owm_api_key": "Chave de API"
+        }
+      },
+      "battery": {
+        "title": "Armazenamento por bateria",
+        "data": {
+          "battery_enabled": "Ativar fallback bruto da bateria",
+          "battery_mode": "Modo",
+          "battery_net_sensor": "Sensor de potência líquida da bateria (com sinal)",
+          "battery_charge_sensor": "Sensor de potência de carga da bateria"
+        }
+      },
+      "tuning": {
+        "title": "Ajuste FV e atenuação",
+        "data": {
+          "auto_tuning": "Ajuste FV automático",
+          "auto_dampening": "Atenuação automática",
+          "dampening_gate": "Bloquear a atenuação até o ajuste concordar com a orientação do Solcast",
+          "cloud_threshold": "Limite de nuvens (%)",
+          "cloud_max_include": "Nebulosidade máxima a incluir (%)",
+          "clipping_threshold": "Limite de clipping (fração da capacidade)",
+          "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
+        }
+      },
+      "sites": {
+        "title": "Mapeamento de sensores por local",
+        "description": "{count} locais Solcast detetados. Para cada conjunto, escolha o sensor que mede a sua geração. Se vários conjuntos partilharem uma saída CA do inversor, atribua a cada um também o respetivo sensor CC/MPPT para que a produção possa ser repartida. Deixe um local em branco para o ignorar. 'Tipo de sensor' é geralmente Detecção automática."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Local e sistema",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "capacity_kw": "Capacidade do sistema (kW CC)",
+          "tilt": "Inclinação dos painéis (°)",
+          "azimuth": "Azimute dos painéis (°)",
+          "pv_actual_sensor": "Sensor de potência / geração FV",
+          "pv_export_sensor": "Sensor de exportação FV",
+          "battery_stat_sensor": "Sensor de média de 30 min de carga da bateria (opcional)",
+          "pv_actual_input_mode": "Tipo de sensor FV",
+          "pv_export_input_mode": "Tipo de sensor de exportação FV"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
+          "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
+          "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
+          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado."
+        }
+      },
+      "database": {
+        "title": "Armazenamento",
+        "description": "O histórico é guardado num ficheiro integrado (config/solcast_solar_enhanced.db) — sem configuração necessária. Deixe ativado para que o ajuste e a atenuação funcionem.",
+        "data": {
+          "db_enabled": "Ativar armazenamento do histórico",
+          "db_retention_days": "Manter o histórico durante (dias, 0 = manter tudo)"
+        },
+        "data_description": {
+          "db_retention_days": "0 mantém todo o histórico (padrão). Um valor limita a base de dados em dispositivos de baixa potência eliminando diariamente as linhas mais antigas — mas a atenuação sazonal usa uma janela plurianual, por isso mantenha pelo menos ~400 dias (≈13 meses) se depender dela."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "Ativar OpenWeatherMap",
+          "owm_api_key": "Chave de API"
+        }
+      },
+      "battery": {
+        "title": "Armazenamento por bateria",
+        "data": {
+          "battery_enabled": "Ativar fallback bruto da bateria",
+          "battery_mode": "Modo",
+          "battery_net_sensor": "Sensor de potência líquida da bateria (com sinal)",
+          "battery_charge_sensor": "Sensor de potência de carga da bateria"
+        }
+      },
+      "tuning": {
+        "title": "Ajuste FV e atenuação",
+        "data": {
+          "auto_tuning": "Ajuste FV automático",
+          "auto_dampening": "Atenuação automática",
+          "dampening_gate": "Bloquear a atenuação até o ajuste concordar com a orientação do Solcast",
+          "cloud_threshold": "Limite de nuvens (%)",
+          "cloud_max_include": "Nebulosidade máxima a incluir (%)",
+          "clipping_threshold": "Limite de clipping (fração da capacidade)",
+          "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
+        }
+      },
+      "sites": {
+        "title": "Mapeamento de sensores por local",
+        "description": "{count} locais Solcast detetados. Para cada conjunto, escolha o sensor que mede a sua geração. Se vários conjuntos partilharem uma saída CA do inversor, atribua a cada um também o respetivo sensor CC/MPPT para que a produção possa ser repartida. Deixe um local em branco para o ignorar. 'Tipo de sensor' é geralmente Detecção automática."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Ajuste — excluídos por limite de exportação"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Detecção automática (recomendado)",
+        "power_kw": "Potência média — kW (auxiliar mean_linear)",
+        "power_w": "Potência média — W (auxiliar mean_linear)",
+        "energy_kwh": "Contador de energia — kWh (recomendado)",
+        "energy_wh": "Contador de energia — Wh (recomendado)",
+        "energy_mwh": "Contador de energia — MWh (recomendado)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap necessário para ajuste FV e atenuação",
+      "description": "O ajuste FV e a atenuação adaptativa usam a nebulosidade do OpenWeatherMap para identificar períodos de céu limpo — os únicos dados em que a comparação entre medido e previsto reflete a geometria dos painéis e o sombreamento em vez de nuvens passageiras. O OpenWeatherMap não está configurado, por isso a nebulosidade de cada registo é desconhecida e excluída, deixando estas funcionalidades inativas (a atenuação permanece neutra e não é enviada para o Solcast). Adicione uma chave de API gratuita do OpenWeatherMap nas opções desta integração para as ativar, ou ignore isto se pretender apenas registar o histórico."
+    },
+    "dampening_gated": {
+      "title": "Atenuação em pausa — orientação ajustada difere do Solcast",
+      "description": "O ajuste FV convergiu com confiança para uma inclinação/azimute de painel que difere significativamente da orientação com que o seu local Solcast está configurado. Enquanto não coincidirem, a previsão do Solcast baseia-se na geometria errada, pelo que a atenuação adaptativa incorporaria esse erro de orientação na sua correção em vez de captar o sombreamento real. Por isso, a atenuação é mantida neutra (1.0) para os conjuntos afetados e nada é enviado para o Solcast. Leia os valores atuais dos sensores «Inclinação de painel ajustada» e «Azimute de painel ajustado», atualize a configuração do seu local Solcast em conformidade, e a atenuação será retomada automaticamente. Para desativar esta proteção, desligue «Bloquear a atenuação…» nas opções da integração."
+    }
+  }
+}

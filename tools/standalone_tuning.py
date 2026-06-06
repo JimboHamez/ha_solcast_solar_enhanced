@@ -23,8 +23,8 @@ Examples
     # Tune a CSV export with the same columns instead
     python tools/standalone_tuning.py --csv history.csv --capacity 5
 
-Requirements: numpy + scipy. The SQLite source uses the standard library; CSV
-mode needs neither.
+Requirements: numpy (no scipy — the optimiser is a pure numpy grid search). The
+SQLite source uses the standard library; CSV mode needs only numpy.
 """
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def _tune_and_report(label: str, records: list[dict[str, Any]], args: argparse.N
     print(f"\n=== {label} ===")
     print(f"  records fetched : {len(records)}")
     if not result:
-        print("  result          : (insufficient clear-sky data or scipy missing)")
+        print("  result          : (insufficient clear-sky data or numpy missing)")
         return
     print(f"  tuned tilt      : {result['tilt']:.2f}°")
     print(f"  tuned azimuth   : {result['azimuth']:.2f}°  (0=N, 90=E)")

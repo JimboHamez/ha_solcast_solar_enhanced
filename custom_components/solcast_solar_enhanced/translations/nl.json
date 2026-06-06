@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "site": {
+        "title": "Locatie en systeem",
+        "data": {
+          "latitude": "Breedtegraad",
+          "longitude": "Lengtegraad",
+          "capacity_kw": "Systeemvermogen (kW DC)",
+          "tilt": "Hellingshoek panelen (°)",
+          "azimuth": "Azimut panelen (°)",
+          "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
+          "pv_export_sensor": "Sensor voor PV-teruglevering",
+          "battery_stat_sensor": "Sensor 30-min-gemiddelde batterijlading (optioneel)",
+          "pv_actual_input_mode": "PV-sensortype",
+          "pv_export_input_mode": "Type PV-terugleversensor"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor.",
+          "pv_export_sensor": "Bij voorkeur een cumulatieve teruglever-energiemeter (Wh/kWh); anders een voortschrijdende mean_linear-helper (kW).",
+          "pv_actual_input_mode": "Automatische detectie kiest op basis van de eenheid tussen energiemeter en gemiddeld vermogen (Wh/kWh vs. W/kW).",
+          "pv_export_input_mode": "Automatische detectie op basis van de eenheid. Energiemeter aanbevolen."
+        }
+      },
+      "database": {
+        "title": "Opslag",
+        "description": "De geschiedenis wordt opgeslagen in een ingebouwd bestand (config/solcast_solar_enhanced.db) — geen configuratie nodig. Laat ingeschakeld zodat afstemming en demping werken.",
+        "data": {
+          "db_enabled": "Geschiedenisopslag inschakelen",
+          "db_retention_days": "Geschiedenis bewaren gedurende (dagen, 0 = alles bewaren)"
+        },
+        "data_description": {
+          "db_retention_days": "0 bewaart alle geschiedenis (standaard). Een waarde begrenst de database op apparaten met weinig rekenkracht door dagelijks oudere rijen te verwijderen, maar seizoensgebonden demping gebruikt een venster over meerdere jaren, dus bewaar minstens ~400 dagen (≈13 maanden) als u erop vertrouwt."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "OpenWeatherMap inschakelen",
+          "owm_api_key": "API-sleutel"
+        }
+      },
+      "battery": {
+        "title": "Batterijopslag",
+        "data": {
+          "battery_enabled": "Ruwe batterij-terugval inschakelen",
+          "battery_mode": "Modus",
+          "battery_net_sensor": "Sensor voor netto batterijvermogen (met teken)",
+          "battery_charge_sensor": "Sensor voor batterijlaadvermogen"
+        }
+      },
+      "tuning": {
+        "title": "PV-afstemming en demping",
+        "data": {
+          "auto_tuning": "Automatische PV-afstemming",
+          "auto_dampening": "Automatische demping",
+          "dampening_gate": "Demping blokkeren totdat de afstemming overeenkomt met de Solcast-oriëntatie",
+          "cloud_threshold": "Bewolkingsdrempel (%)",
+          "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
+          "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
+          "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
+        }
+      },
+      "sites": {
+        "title": "Sensortoewijzing per locatie",
+        "description": "{count} Solcast-locaties gedetecteerd. Kies voor elk veld de sensor die de opwekking ervan meet. Als meerdere velden één AC-uitgang van een omvormer delen, geef elk ook zijn DC/MPPT-sensor zodat de opbrengst kan worden verdeeld. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "site": {
+        "title": "Locatie en systeem",
+        "data": {
+          "latitude": "Breedtegraad",
+          "longitude": "Lengtegraad",
+          "capacity_kw": "Systeemvermogen (kW DC)",
+          "tilt": "Hellingshoek panelen (°)",
+          "azimuth": "Azimut panelen (°)",
+          "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
+          "pv_export_sensor": "Sensor voor PV-teruglevering",
+          "battery_stat_sensor": "Sensor 30-min-gemiddelde batterijlading (optioneel)",
+          "pv_actual_input_mode": "PV-sensortype",
+          "pv_export_input_mode": "Type PV-terugleversensor"
+        },
+        "data_description": {
+          "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor.",
+          "pv_export_sensor": "Bij voorkeur een cumulatieve teruglever-energiemeter (Wh/kWh); anders een voortschrijdende mean_linear-helper (kW).",
+          "pv_actual_input_mode": "Automatische detectie kiest op basis van de eenheid tussen energiemeter en gemiddeld vermogen (Wh/kWh vs. W/kW).",
+          "pv_export_input_mode": "Automatische detectie op basis van de eenheid. Energiemeter aanbevolen."
+        }
+      },
+      "database": {
+        "title": "Opslag",
+        "description": "De geschiedenis wordt opgeslagen in een ingebouwd bestand (config/solcast_solar_enhanced.db) — geen configuratie nodig. Laat ingeschakeld zodat afstemming en demping werken.",
+        "data": {
+          "db_enabled": "Geschiedenisopslag inschakelen",
+          "db_retention_days": "Geschiedenis bewaren gedurende (dagen, 0 = alles bewaren)"
+        },
+        "data_description": {
+          "db_retention_days": "0 bewaart alle geschiedenis (standaard). Een waarde begrenst de database op apparaten met weinig rekenkracht door dagelijks oudere rijen te verwijderen, maar seizoensgebonden demping gebruikt een venster over meerdere jaren, dus bewaar minstens ~400 dagen (≈13 maanden) als u erop vertrouwt."
+        }
+      },
+      "owm": {
+        "title": "OpenWeatherMap",
+        "data": {
+          "owm_enabled": "OpenWeatherMap inschakelen",
+          "owm_api_key": "API-sleutel"
+        }
+      },
+      "battery": {
+        "title": "Batterijopslag",
+        "data": {
+          "battery_enabled": "Ruwe batterij-terugval inschakelen",
+          "battery_mode": "Modus",
+          "battery_net_sensor": "Sensor voor netto batterijvermogen (met teken)",
+          "battery_charge_sensor": "Sensor voor batterijlaadvermogen"
+        }
+      },
+      "tuning": {
+        "title": "PV-afstemming en demping",
+        "data": {
+          "auto_tuning": "Automatische PV-afstemming",
+          "auto_dampening": "Automatische demping",
+          "dampening_gate": "Demping blokkeren totdat de afstemming overeenkomt met de Solcast-oriëntatie",
+          "cloud_threshold": "Bewolkingsdrempel (%)",
+          "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
+          "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
+          "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
+        }
+      },
+      "sites": {
+        "title": "Sensortoewijzing per locatie",
+        "description": "{count} Solcast-locaties gedetecteerd. Kies voor elk veld de sensor die de opwekking ervan meet. Als meerdere velden één AC-uitgang van een omvormer delen, geef elk ook zijn DC/MPPT-sensor zodat de opbrengst kan worden verdeeld. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tuning_export_excluded": {
+        "name": "Afstemming — uitgesloten door teruglevergrens"
+      }
+    }
+  },
+  "selector": {
+    "pv_input_mode": {
+      "options": {
+        "auto": "Automatisch detecteren (aanbevolen)",
+        "power_kw": "Gemiddeld vermogen — kW (mean_linear-helper)",
+        "power_w": "Gemiddeld vermogen — W (mean_linear-helper)",
+        "energy_kwh": "Energiemeter — kWh (aanbevolen)",
+        "energy_wh": "Energiemeter — Wh (aanbevolen)",
+        "energy_mwh": "Energiemeter — MWh (aanbevolen)"
+      }
+    }
+  },
+  "issues": {
+    "owm_required": {
+      "title": "OpenWeatherMap nodig voor PV-afstemming en demping",
+      "description": "PV-afstemming en adaptieve demping gebruiken de bewolking van OpenWeatherMap om periodes met heldere hemel te herkennen — de enige gegevens waarbij gemeten versus voorspeld de paneelgeometrie en beschaduwing weergeeft in plaats van overtrekkende wolken. OpenWeatherMap is niet geconfigureerd, dus de bewolking van elk record is onbekend en wordt uitgesloten, waardoor deze functies inactief blijven (demping blijft neutraal en wordt niet naar Solcast gestuurd). Voeg een gratis OpenWeatherMap-API-sleutel toe in de opties van deze integratie om ze in te schakelen, of negeer dit als u alleen de geschiedenis wilt loggen."
+    },
+    "dampening_gated": {
+      "title": "Demping gepauzeerd — afgestemde oriëntatie wijkt af van Solcast",
+      "description": "PV-afstemming is met vertrouwen geconvergeerd naar een paneelhelling/-azimut die wezenlijk afwijkt van de oriëntatie waarmee uw Solcast-locatie is geconfigureerd. Zolang ze niet overeenkomen, is de Solcast-voorspelling gebaseerd op de verkeerde geometrie, waardoor adaptieve demping die oriëntatiefout in haar correctie zou verwerken in plaats van echte beschaduwing vast te leggen. De demping wordt daarom neutraal (1.0) gehouden voor de betrokken velden en er wordt niets naar Solcast gestuurd. Lees de huidige waarden af van de sensoren 'Afgestemde paneelhelling' en 'Afgestemde paneelazimut', werk uw Solcast-locatieconfiguratie bij zodat deze overeenkomt, en de demping wordt automatisch hervat. Schakel 'Demping blokkeren…' uit in de integratie-opties om deze beveiliging uit te zetten."
+    }
+  }
+}

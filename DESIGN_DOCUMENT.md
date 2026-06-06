@@ -15,8 +15,8 @@ Home Assistant integration. The enhancement adds three capabilities:
    solar position, weather and battery data — a single zero-config file
    using the Python standard-library `sqlite3` module (no server, no
    credentials, no extra dependency)
-2. **Automatic Rooftop PV Tuning** — tilt and azimuth optimisation via
-   scipy, based on Solcast SDK notebook 3.4
+2. **Automatic Rooftop PV Tuning** — tilt and azimuth optimisation via a
+   numpy grid search (no scipy), based on Solcast SDK notebook 3.4
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed
    purely from DB-collected actual-vs-forecast history (it never consumes
    the base integration's own dampening factors), ramping from a neutral
@@ -50,7 +50,7 @@ solcast_solar_enhanced/
 ├── const.py                 All constants
 ├── coordinator.py           DataUpdateCoordinator — orchestrates everything
 ├── sqlite_store.py          Built-in stdlib sqlite3 store (executor jobs, WAL)
-├── pv_tuning.py             Tilt/azimuth optimisation (scipy)
+├── pv_tuning.py             Tilt/azimuth optimisation (numpy grid search)
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
 ├── sensor.py                13 HA sensor entities
@@ -74,7 +74,7 @@ solcast_solar_enhanced coordinator
         ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
         ├── fetch OWM weather  (temp °C, clouds 0–100, description text)
         ├── persist records    to SQLite ('_total' + one row per site)
-        ├── run PV tuning      scipy L-BFGS-B (daily, executor thread; per-site)
+        ├── run PV tuning      numpy grid search (daily, executor thread; per-site)
         ├── compute dampening  quality-weighted DB ratio blended toward neutral 1.0
         └── push dampening     → base integration set_dampening service (per-site)
 ```
@@ -360,8 +360,12 @@ Optimises panel tilt and azimuth to minimise RMSE between measured
 5. For each candidate (tilt, azimuth) compute cosine of incidence angle
    relative to nominal geometry (20° tilt, 0° azimuth)
 6. Scale Solcast estimates by the incidence angle ratio
-7. Minimise RMSE via `scipy.optimize.minimize` (L-BFGS-B, bounds
-   0–90° tilt, -180–180° azimuth, max 300 iterations)
+7. Minimise RMSE via a coarse-to-fine numpy grid search (`_minimize_grid`,
+   bounds 0–90° tilt / -180–180° azimuth; full 5° sweep, then ±5° at 1°,
+   then ±1° at 0.25° around the running best). This replaces the former
+   `scipy.optimize.minimize` (L-BFGS-B) — grid search is the method Solcast
+   notebook 3.4 itself uses, and it drops scipy, which has no Raspberry Pi
+   wheel and fails to build from source under Home Assistant (issue #85)
 8. Run in `hass.async_add_executor_job` to avoid blocking the event loop
 9. Requires ≥10 qualifying records; runs daily
 
@@ -460,15 +464,30 @@ tilt/azimuth, updates their **Solcast account** site configuration, and the base
 forecast then becomes the tuned estimate that dampening refines. Consequently our
 dampening is strictly a **residual-bias dampening**, not a pure shading
 correction — it equals "shading" only when the Solcast site is already
-well-configured. On a mis-configured site it will fold orientation/capacity error
+well-configured. On a mis-configured site it would fold orientation/capacity error
 into the dampening curve, the very conflation 3.4b's prerequisite avoids. (Two
 further divergences from 3.4b: we push a single **hourly** curve applied in **all**
 conditions, where 3.4b is a 2-D geometry grid applied on **clear-sky only**.)
 
+**Convergence gate (implemented).** Rather than silently folding that error in,
+the dampening push is *gated* on the tuner agreeing with the configured site. In
+`_run_dampening`, before each push (per-site and the single-site aggregate),
+`_orientation_diverged` compares the latest `run_tuning` result against the
+configured/seed orientation. When tuning is **confident**
+(`n_records ≥ DAMPENING_GATE_MIN_RECORDS`, 50) **and** the tuned tilt or azimuth
+diverges materially (`|Δtilt| > 15°` or shortest-circle `|Δazimuth| > 25°`), that
+target's factors are forced to neutral `1.0` and a `dampening_gated` repair issue
+is raised telling the user to apply the *Tuned Panel Tilt/Azimuth* sensors in
+their Solcast account. The gate is **per-site aware** — each site is judged
+against its own seed (`_site_orientation_seed`) using that site's tuning result,
+so one mis-configured array is held neutral without freezing the others. It is on
+by default (`CONF_DAMPENING_GATE`) and can be disabled in the tuning options. The
+azimuth comparison uses `_angle_diff` (signed shortest distance on the circle) so
+e.g. 350° vs 10° reads as 20° apart, not 340°.
+
 **Guidance:** apply the *Tuned Panel Tilt/Azimuth* values in the Solcast account
-before relying on dampening for accuracy. A future option could gate the
-dampening push on tuning convergence (low RMSE) so orientation error is corrected
-first; see the [roadmap](#roadmap).
+before relying on dampening for accuracy. While they disagree the gate keeps
+dampening neutral so no orientation-contaminated curve is pushed.
 
 ### Why cloud filtering is essential
 
@@ -1032,9 +1051,10 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 - Add tilt/azimuth optimisation (daily, executor thread)
 - Expose tuning results on new sensors and in Settings page
 - Fully optional — guard behind `auto_tuning` toggle
-- Lazy scipy import — feature disabled with informational log if not installed
+- Lazy numpy import (no scipy) — feature disabled with informational log if numpy
+  is somehow absent (it ships with Home Assistant)
 
-**New dependencies:** `numpy>=1.21.0`, `scipy>=1.7.0`
+**New dependencies:** `numpy>=1.21.0` (ships with Home Assistant). No scipy.
 
 ### Phase 4 — Short-range forecast correction (dropped)
 
@@ -1045,13 +1065,11 @@ for the reasoning. No implementation work is planned.
 
 ## Roadmap
 
-Planned work, not yet implemented.
+Planned work, plus recently-landed items kept here with their rationale.
 
-### Database retention / dampening-scan efficiency (low-power devices)
+### Indexed day-of-year column for the seasonal dampening scan
 
-**Problem.** The store accumulates one row per half-hour per site
-(≈17.5k rows/site/year) and never prunes, so the table grows without bound.
-The dampening recalculation runs a seasonal day-of-year query
+**Problem.** The dampening recalculation runs a seasonal day-of-year query
 (`async_get_records_for_dampening`) whose filter is
 `ABS(CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) <= ?`.
 Because the day-of-year is a *computed* expression, no index can serve it — the
@@ -1060,46 +1078,28 @@ Raspberry Pi (SD-card I/O), this scan gets progressively slower. (The 48×
 redundant re-scan per run was already removed — the fetch is hoisted to once per
 `_compute_dampening_slots` call — so what remains is the single O(N) scan.)
 
-**Options under consideration.**
+**Option.** Persist the UTC day-of-year in a stored column at insert time and
+index it, turning the seasonal scan into an indexed range lookup. Requires a
+schema addition and a one-time backfill migration (the `PRAGMA user_version`
+mechanism added for the azimuth repair already provides the gating for this).
 
-1. **Optional retention period.** A config setting (e.g. *Keep history for N
-   years*) that prunes rows older than the window. Default must be *keep
-   everything* so existing behaviour never changes silently. Pruning would run
-   on the same low-frequency timer as tuning/dampening.
-2. **Stored `day_of_year` column + index.** Persist the UTC day-of-year at insert
-   time and index it, turning the seasonal scan into an indexed range lookup.
-   Requires a schema addition and a one-time backfill migration (the
-   `PRAGMA user_version` mechanism added for the azimuth repair already provides
-   the gating for this).
-3. **Both** — retention to bound size, the indexed column to bound per-query cost.
+**Status.** Deferred — the **retention** half of this roadmap item is now
+implemented (see below), which already bounds the row count (and therefore the
+scan) on long-lived installs. The indexed column would additionally bound
+per-query cost when retention is left at *keep everything*; revisit if that
+proves necessary.
 
-**Status.** Deferred. Current scan cost is acceptable for typical single-site,
-few-year databases; this becomes worthwhile for long-lived multi-site Pi
-installs. Tracked here so the reasoning isn't lost.
+### Database retention (implemented)
 
-### Gate dampening on tuning convergence (tuned-estimate prerequisite)
-
-**Problem.** Notebook 3.4b requires a geometry-*tuned* estimate before computing
-shading (see [Feature 3 → the "tuned estimate" prerequisite](#the-tuned-estimate-prerequisite-relationship-to-feature-2--notebook-34)).
-Our `compute_dampening` instead runs on the raw base forecast, and our
-`run_tuning` output is advisory (sensors only, never fed back). On a
-mis-configured Solcast site — wrong tilt/azimuth/capacity — the dampening curve
-silently absorbs that orientation/capacity error as if it were shading.
-
-**Options under consideration.**
-
-1. **Convergence gate.** Suppress (or heavily clamp toward 1.0) the dampening push
-   until tuning has converged — e.g. the latest `run_tuning` RMSE is below a
-   threshold *and* the tuned tilt/azimuth are stable across runs — so orientation
-   error is surfaced for correction before it leaks into dampening.
-2. **Divergence warning.** When the tuned tilt/azimuth differ materially from the
-   site's configured values, raise a repair issue / log prompting the user to
-   update their Solcast account, rather than silently dampening around it.
-3. **Docs-only.** Accept the current behaviour and rely on the Feature 3 guidance
-   (apply the *Tuned Panel Tilt/Azimuth* sensors in the Solcast account first).
-
-**Status.** Deferred — design note captured. Option 3 (documentation) is in place;
-1/2 are the active correctness improvement if mis-configuration proves common.
+`CONF_DB_RETENTION_DAYS` (Storage step; default `0` = keep everything, so existing
+behaviour is unchanged) prunes rows older than the window. `SqliteStore.async_prune`
+runs a plain `DELETE … WHERE period_end_epoch < cutoff` on a **daily** timer in the
+coordinator (independent of auto-tuning, so it applies to logging-only setups). No
+`VACUUM`: in the steady state old rows are deleted as fast as new ones arrive, so
+SQLite reuses freed pages and the file size stabilises without a heavy SD-card
+rewrite. Because seasonal dampening uses a cross-year day-of-year window, a value
+below `DB_RETENTION_MIN_RECOMMENDED_DAYS` (≈13 months) logs a warning but is still
+honoured (not a hard floor).
 
 ---
 
@@ -1109,18 +1109,23 @@ silently absorbs that orientation/capacity error as if it were shading.
 # Storage has no optional dependency — it uses the stdlib sqlite3 module,
 # so the built-in store always works.
 
-# PV tuning is the only optional extra — lazy import, degrades gracefully:
+# PV tuning needs only numpy (a core Home Assistant dependency with Raspberry Pi
+# wheels). It is imported lazily so an unusual env without numpy degrades
+# gracefully rather than failing to load. There is deliberately NO scipy: scipy
+# has no prebuilt ARM/Pi wheel and its from-source build fails under HA's locked
+# environment (BJReplay/ha-solcast-solar #85), so the optimiser is a pure numpy
+# grid search instead (pv_tuning._minimize_grid).
 try:
-    from scipy.optimize import minimize
     import numpy as np
     TUNING_AVAILABLE = True
 except ImportError:
     TUNING_AVAILABLE = False
-    _LOGGER.info("scipy/numpy not installed — PV tuning disabled")
+    _LOGGER.info("numpy not installed — PV tuning disabled")
 ```
 
-Storage adds no dependency at all; users who do not need PV tuning are
-unaffected by the optional scipy/numpy extras.
+`manifest.json` keeps `"requirements": []` — numpy is not pinned there because HA
+already provides it, and adding scipy there is exactly what broke the base
+integration on Raspberry Pi (#85). Storage adds no dependency at all.
 
 ### Base integration (hard dependency)
 
@@ -1206,6 +1211,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.5 | Jun 2026 | Added TuningExportExcludedSensor — exposes count of records dropped by export limit filter from last tuning run; sensor count updated to 14 |
 | 1.6 | Jun 2026 | Fixed total_pv calculation in pv_tuning and shading_dampening — pv_actual is inverter AC output and already includes export and battery; removed double-counting |
 | 1.7 | Jun 2026 | Aligned with the v1.5.0 release: Feature 1 rewritten as built-in stdlib `sqlite3` storage (MySQL/`aiomysql` removed, no migrations, `site` column, `INSERT OR IGNORE`); dampening confidence model re-anchored on a neutral `1.0` (base factors never read; source labels `db_blended`/`no_data`); Feature 4 short-range correction marked dropped; `set_dampening_factor` → `set_dampening`; config Step 2 and options reference updated for the single storage toggle |
+| 1.8 | Jun 2026 | Aligned with the v1.6.4 release: PV tuning optimiser switched from scipy L-BFGS-B to a pure-numpy coarse-to-fine grid search (`_minimize_grid`, azimuth-outer + tilt-batched for Raspberry Pi; scipy dependency removed, issue #85); per-site dampening convergence gate (`CONF_DAMPENING_GATE`, `_orientation_diverged`, `dampening_gated` repair issue); optional history retention (`CONF_DB_RETENTION_DAYS`, `SqliteStore.async_prune`); vectorised tuning record filter; per-site weather-coercion crash fix (`_weather_for_storage`); translations added for de/es/fr/it/ja/nl/pl/pt/sk/ur |
 
 ---
 
