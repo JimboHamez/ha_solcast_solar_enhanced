@@ -285,8 +285,10 @@ def test_site_azimuth_seed(site, expected):
 
 
 def test_site_azimuth_seed_default_when_missing():
+    """Fallback to manual CONF_AZIMUTH converts the Solcast convention
+    (West-positive) into the internal solar frame (East-positive): 12° West → −12."""
     from custom_components.solcast_solar_enhanced.const import CONF_AZIMUTH
-    assert SolcastEnhancedCoordinator._site_azimuth_seed({}, {CONF_AZIMUTH: 12.0}) == 12.0
+    assert SolcastEnhancedCoordinator._site_azimuth_seed({}, {CONF_AZIMUTH: 12.0}) == pytest.approx(-12.0)
 
 
 def test_configured_site_ids_dedup():

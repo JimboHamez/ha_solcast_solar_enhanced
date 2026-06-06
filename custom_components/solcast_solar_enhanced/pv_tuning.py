@@ -39,6 +39,28 @@ def normalize_epoch(epoch: float) -> int:
     return int(value)
 
 
+def panel_azimuth_to_internal(solcast_az: float) -> float:
+    """Panel azimuth: Solcast/base convention → the internal solar frame.
+
+    The base integration (and the Solcast API) express panel azimuth as degrees
+    from North with **West positive, East negative** (0=N, ±180=S, +90=W, −90=E,
+    range −180..180). The internal solar frame used by ``solar_position`` and
+    ``_cos_incidence`` is **East positive** (0=N, 90=E, 270=W). The two mirror on
+    the East-West axis, so the conversion is a sign flip wrapped to [−180, 180].
+    """
+    return ((-float(solcast_az) + 180.0) % 360.0) - 180.0
+
+
+def panel_azimuth_to_solcast(internal_az: float) -> float:
+    """Panel azimuth: internal solar frame → Solcast/base convention.
+
+    Inverse of :func:`panel_azimuth_to_internal` (the mirror is its own inverse),
+    used to report a tuned azimuth in the same convention the user entered and the
+    Solcast site is configured with.
+    """
+    return ((-float(internal_az) + 180.0) % 360.0) - 180.0
+
+
 def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float, float]:
     """Return (azimuth_deg, zenith_deg) for a Unix epoch. Accurate to ±1°."""
     dt = datetime.fromtimestamp(normalize_epoch(epoch), tz=timezone.utc)

@@ -8,9 +8,36 @@ from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
     _cos_incidence,
     _minimize_grid,
+    panel_azimuth_to_internal,
+    panel_azimuth_to_solcast,
     run_tuning,
     solar_position,
 )
+
+
+# ---------------------------------------------------------------------------
+# Panel-azimuth convention conversion (Solcast West-positive <-> internal East-positive)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("solcast, internal", [
+    (0.0, 0.0),       # North
+    (-90.0, 90.0),    # Solcast East -> internal East
+    (90.0, -90.0),    # Solcast West -> internal West
+    (6.0, -6.0),      # 6 deg West of North
+    (-30.0, 30.0),    # 30 deg East of North
+])
+def test_panel_azimuth_to_internal(solcast, internal):
+    assert panel_azimuth_to_internal(solcast) == pytest.approx(internal)
+
+
+def test_panel_azimuth_conversion_is_involution():
+    for a in (-179.0, -90.0, -6.0, 0.0, 13.5, 90.0, 170.0):
+        assert panel_azimuth_to_solcast(panel_azimuth_to_internal(a)) == pytest.approx(a)
+
+
+def test_panel_azimuth_south_maps_to_pm180():
+    # +180 and -180 both mean South; conversion stays on that axis.
+    assert abs(panel_azimuth_to_internal(180.0)) == pytest.approx(180.0)
 
 # ---------------------------------------------------------------------------
 # solar_position

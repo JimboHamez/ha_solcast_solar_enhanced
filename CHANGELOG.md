@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-06-06
+
+### Fixed
+- **Panel azimuth convention mismatch in PV tuning.** The base integration and the
+  Solcast API express panel azimuth as degrees from North with **West positive /
+  East negative** (0=N, +90=W, −90=E, ±180=S), but the tuner's internal solar
+  frame (`solar_position` / `_cos_incidence`) is **East positive** (0=N, 90=E).
+  The manual `CONF_AZIMUTH` seed was fed into the optimiser **without** converting
+  between the two (mirroring East↔West), the tuned result was **displayed** in the
+  internal frame rather than the convention the user entered, and the dampening
+  gate compared the two across mismatched frames. Tuning now converts the seed to
+  the internal frame at every entry point (aggregate + per-site, incl. the
+  manual-seed fallback), reports **Tuned Panel Azimuth** back in the Solcast
+  convention so it is directly comparable to your configured value and your Solcast
+  site, and the convergence gate compares within one frame. Two pure helpers
+  (`panel_azimuth_to_internal` / `panel_azimuth_to_solcast`) make the round-trip
+  explicit and tested. (Shading dampening was unaffected — it only ever compares
+  solar azimuths to each other.) **Re-read the Tuned Panel Tilt/Azimuth sensors
+  after upgrading** — on earlier builds the azimuth was mirrored and the mis-framed
+  seed also distorted the tilt estimate.
+
+### Changed
+- **`tools/import_history.py` recomputes zenith as well as azimuth.** The importer
+  already recomputed `azimuth` from each row's epoch (at the interval midpoint,
+  `period_end_epoch − 900`, using the integration's own `solar_position`); it now
+  recomputes `zenith` the same way. This normalises history collected with a
+  *different* sun-position source — e.g. node-red-contrib-sun-position sampled at
+  the period boundary, which is ~15 min and a few degrees off the midpoint the
+  tuner and dampening expect — so imported rows are consistent with what the live
+  integration writes. The tool also now creates the destination directory if it is
+  missing (instead of a cryptic `unable to open database file`).
+
 ## [1.6.4] - 2026-06-06
 
 ### Changed
@@ -377,7 +409,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.5...HEAD
+[1.6.5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.1...v1.6.2

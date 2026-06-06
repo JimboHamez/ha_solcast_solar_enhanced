@@ -73,7 +73,13 @@ from .const import (
     UPDATE_INTERVAL_MINUTES,
 )
 from .sqlite_store import SqliteStore
-from .pv_tuning import normalize_epoch, run_tuning, solar_position
+from .pv_tuning import (
+    normalize_epoch,
+    panel_azimuth_to_internal,
+    panel_azimuth_to_solcast,
+    run_tuning,
+    solar_position,
+)
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OWMClient
 
@@ -509,7 +515,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)),
             export_limit,
             float(opts.get(CONF_TILT, 20.0)),
-            float(opts.get(CONF_AZIMUTH, 0.0)),
+            # CONF_AZIMUTH is in the Solcast/base convention (West-positive); the
+            # tuner works in the internal solar frame (East-positive). Convert the
+            # seed so the optimiser searches in the right frame.
+            panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
         )
         if result:
             self._tuning_result = result
@@ -591,7 +600,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             az = site.get("azimuth")
             compass = (-float(az)) % 360 if az not in (None, 0, 0.0) else None
         if compass is None:
-            return float(opts.get(CONF_AZIMUTH, 0.0))
+            # Manual CONF_AZIMUTH is in the Solcast convention — convert to the
+            # internal frame, matching the base-derived branch above.
+            return panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0))
         compass = float(compass) % 360
         return compass - 360 if compass > 180 else compass
 
@@ -715,7 +726,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 div = self._orientation_diverged(
                     self._tuning_result,
                     float(opts.get(CONF_TILT, 20.0)),
-                    float(opts.get(CONF_AZIMUTH, 0.0)),
+                    # Compare in the internal frame the tuned result is stored in.
+                    panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
                 )
                 if div:
                     any_gated = True
@@ -1281,7 +1293,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def tuning_azimuth(self) -> float | None:
-        return self._tuning_result["azimuth"] if self._tuning_result else None
+        # Stored internally East-positive; report in the Solcast/base convention
+        # (West-positive) so it matches the configured Panel Azimuth and Solcast.
+        if not self._tuning_result:
+            return None
+        return panel_azimuth_to_solcast(self._tuning_result["azimuth"])
 
     @property
     def tuning_rmse(self) -> float | None:
@@ -1303,7 +1319,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         extra: dict[str, Any] = {}
         if self._tuning_result:
             extra.update({
-                "azimuth": self._tuning_result.get("azimuth"),
+                # Reported in the Solcast/base convention (West-positive).
+                "azimuth": panel_azimuth_to_solcast(self._tuning_result.get("azimuth", 0.0)),
                 "rmse_kw": self._tuning_result.get("rmse_kw"),
                 "n_records": self._tuning_result.get("n_records"),
                 "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
@@ -1314,7 +1331,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "name": r.get("name"),
                     "resource_id": rid,
                     "tilt": round(r.get("tilt", 0.0), 2),
-                    "azimuth": round(r.get("azimuth", 0.0), 2),
+                    "azimuth": round(panel_azimuth_to_solcast(r.get("azimuth", 0.0)), 2),
                     "rmse_kw": round(r.get("rmse_kw", 0.0), 4),
                     "n_records": r.get("n_records"),
                 }
