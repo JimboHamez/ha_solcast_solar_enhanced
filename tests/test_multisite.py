@@ -332,6 +332,53 @@ def test_derive_groups_blank_assignment_ignored():
     assert _derive_groups({"A": {"ac": None, "dc": None, "mode": "auto"}}) == []
 
 
+def test_derive_groups_single_site_carries_mppt_telemetry():
+    """A single-site group keeps its per-MPPT capture list (2 trackers), and the
+    reverse mapping round-trips losslessly."""
+    assignments = {
+        "A": {"ac": "sensor.inv_ac", "dc": None, "mode": "auto", "mppts": [
+            {"voltage_sensor": "sensor.a_v1", "current_sensor": "sensor.a_i1"},
+            {"voltage_sensor": "sensor.a_v2", "current_sensor": "sensor.a_i2"},
+        ]},
+    }
+    groups = _derive_groups(assignments)
+    assert groups == [{
+        "ac_sensor": "sensor.inv_ac", "ac_mode": "auto", "site": "A", "mppts": [
+            {"voltage_sensor": "sensor.a_v1", "current_sensor": "sensor.a_i1"},
+            {"voltage_sensor": "sensor.a_v2", "current_sensor": "sensor.a_i2"},
+        ],
+    }]
+    assert _groups_to_assignments(groups) == assignments
+
+
+def test_derive_groups_strings_carry_mppt_telemetry():
+    """Per-MPPT strings carry their own capture list; absent stays absent."""
+    assignments = {
+        "A": {"ac": "sensor.shared_ac", "dc": "sensor.mppt1", "mode": "auto", "mppts": [
+            {"voltage_sensor": "sensor.mppt1_v", "current_sensor": None},
+        ]},
+        "B": {"ac": "sensor.shared_ac", "dc": "sensor.mppt2", "mode": "auto"},
+    }
+    groups = _derive_groups(assignments)
+    strings = groups[0]["strings"]
+    assert {"site": "A", "dc_sensor": "sensor.mppt1",
+            "mppts": [{"voltage_sensor": "sensor.mppt1_v", "current_sensor": None}]} in strings
+    assert {"site": "B", "dc_sensor": "sensor.mppt2"} in strings  # no mppts leaked
+    assert _groups_to_assignments(groups) == assignments
+
+
+def test_fields_to_mppts_compaction():
+    """Form values → mppts: keeps trackers with a voltage sensor, drops the rest."""
+    from custom_components.solcast_solar_enhanced.config_flow import _fields_to_mppts
+    assert _fields_to_mppts("sensor.v1", "sensor.i1", "sensor.v2", None) == [
+        {"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"},
+        {"voltage_sensor": "sensor.v2", "current_sensor": None},
+    ]
+    # A current with no matching voltage is dropped (voltage is the off-MPP signal).
+    assert _fields_to_mppts(None, "sensor.orphan_i", None, None) == []
+    assert _fields_to_mppts(None, None, None, None) == []
+
+
 # ---------------------------------------------------------------------------
 # base auto_dampen guard
 # ---------------------------------------------------------------------------

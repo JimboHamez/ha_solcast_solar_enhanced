@@ -3,8 +3,10 @@
 A zero-configuration store: a single file in the HA config directory, backed by
 the Python standard-library ``sqlite3`` module (no third-party dependency).
 Blocking calls run in HA's executor, serialised by a lock. The schema is created
-fresh and complete, so there is no migration machinery and ``has_site_col`` /
-``has_battery_col`` are always true.
+fresh and complete (``has_site_col`` / ``has_battery_col`` are always true).
+Columns added in later versions are applied to existing databases in place via an
+additive ``ALTER TABLE`` (see ``_ADDED_COLUMNS`` / ``_ensure_columns``); one-time
+*data* repairs are gated separately on ``PRAGMA user_version`` (``async_migrate``).
 """
 from __future__ import annotations
 
@@ -49,15 +51,32 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   clouds           INTEGER NOT NULL,
   description      TEXT NOT NULL,
   battery_charge   REAL NOT NULL DEFAULT 0,
+  dc_voltage1      REAL NOT NULL DEFAULT 0,
+  dc_current1      REAL NOT NULL DEFAULT 0,
+  dc_voltage2      REAL NOT NULL DEFAULT 0,
+  dc_current2      REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
+
+# Columns introduced after the original schema. On an existing database they are
+# absent, so they're added in place with an additive ALTER (safe + idempotent);
+# the NOT NULL DEFAULT 0 backfills existing rows. Phase-2 per-MPPT DC telemetry
+# (one voltage/current pair per tracker, up to MAX_MPPT_TRACKERS) is the first
+# such addition — captured for later off-MPP curtailment detection.
+_ADDED_COLUMNS = (
+    ("dc_voltage1", "REAL NOT NULL DEFAULT 0"),
+    ("dc_current1", "REAL NOT NULL DEFAULT 0"),
+    ("dc_voltage2", "REAL NOT NULL DEFAULT 0"),
+    ("dc_current2", "REAL NOT NULL DEFAULT 0"),
+)
 
 # Columns written by an insert, in order. Shared by single and bulk inserts.
 _INSERT_COLUMNS = (
     "period_end", "period_end_epoch", "period_start", "site",
     "pv_actual", "pv_export", "pv_estimate", "pv_estimate10", "pv_estimate90",
     "azimuth", "zenith", "temp", "clouds", "description", "battery_charge",
+    "dc_voltage1", "dc_current1", "dc_voltage2", "dc_current2",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -100,6 +119,7 @@ class SqliteStore:
             if not self._readonly:
                 conn.executescript(CREATE_TABLE_SQL)
                 conn.commit()
+                self._ensure_columns(conn)
             self._conn = conn
             # Surface the file path + current row count so users know where the
             # store lives (e.g. to point sqlite-web at it) and that it loaded.
@@ -113,6 +133,24 @@ class SqliteStore:
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite open failed (%s): %s", self._path, exc)
             return False
+
+    def _ensure_columns(self, conn: sqlite3.Connection) -> None:
+        """Additively add any post-original columns missing on an existing DB.
+
+        ``CREATE TABLE IF NOT EXISTS`` leaves an older table untouched, so columns
+        introduced later (``_ADDED_COLUMNS``) must be ALTERed in. The ALTER is
+        idempotent (guarded by the live column set) and cheap; ``DEFAULT 0``
+        backfills existing rows so the NOT NULL constraint holds.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(solcast_data)")}
+        added: list[str] = []
+        for name, decl in _ADDED_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE solcast_data ADD COLUMN {name} {decl}")
+                added.append(name)
+        if added:
+            conn.commit()
+            _LOGGER.info("Added column(s) to store schema: %s", ", ".join(added))
 
     async def async_close(self) -> None:
         """Close the connection."""
@@ -146,6 +184,10 @@ class SqliteStore:
             record["clouds"],
             record["description"],
             record.get("battery_charge", 0.0) or 0.0,
+            record.get("dc_voltage1", 0.0) or 0.0,
+            record.get("dc_current1", 0.0) or 0.0,
+            record.get("dc_voltage2", 0.0) or 0.0,
+            record.get("dc_current2", 0.0) or 0.0,
         )
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:

@@ -13,13 +13,18 @@
           "pv_export_sensor": "Senzor dodávky FV do siete",
           "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
           "pv_actual_input_mode": "Typ senzora FV",
-          "pv_export_input_mode": "Typ senzora dodávky FV"
+          "pv_export_input_mode": "Typ senzora dodávky FV",
+          "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
+          "mppt1_current_sensor": "Snímač jednosmerného prúdu MPPT 1 (voliteľné)",
+          "mppt2_voltage_sensor": "Snímač jednosmerného napätia MPPT 2 (voliteľné)",
+          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
           "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
-          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie."
+          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
+          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny."
         }
       },
       "database": {
@@ -81,13 +86,18 @@
           "pv_export_sensor": "Senzor dodávky FV do siete",
           "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
           "pv_actual_input_mode": "Typ senzora FV",
-          "pv_export_input_mode": "Typ senzora dodávky FV"
+          "pv_export_input_mode": "Typ senzora dodávky FV",
+          "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
+          "mppt1_current_sensor": "Snímač jednosmerného prúdu MPPT 1 (voliteľné)",
+          "mppt2_voltage_sensor": "Snímač jednosmerného napätia MPPT 2 (voliteľné)",
+          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
           "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
-          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie."
+          "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
+          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny."
         }
       },
       "database": {

@@ -1203,16 +1203,22 @@ record is independent of how the flag was derived:
   partial-clip signal). The `export_limit` ceiling is still required for the
   clip-forecast math and for the Tier-2 fallback, so it is stored regardless.
 
-**Storage shape.** Add per-record columns: `dc_voltage` (and `dc_current`) carried
-on each per-site row from that site's MPPT, plus `export_limit` (the active,
-possibly dynamic, limit at that period) and a derived `curtailed` boolean. The
-`_total` aggregate row sets `curtailed = OR` across contributing strings — if any
-string was throttled, the property-wide comparison is compromised for that slot.
+**Storage shape.** Per-record columns capture each tracker's pair, kept
+**per-MPPT (not aggregated)** so a later `Vmp`-band calibrator can learn each
+string: `dc_voltage1` / `dc_current1` / `dc_voltage2` / `dc_current2` (up to
+`MAX_MPPT_TRACKERS = 2`). Each per-site row carries that site's trackers; the
+`_total` row carries the property-wide / single-inverter trackers. Still to add
+when detection lands: `export_limit` (the active, possibly dynamic, limit) and a
+derived `curtailed` boolean (`_total.curtailed = OR` across contributing strings —
+if any was throttled, the property-wide comparison is compromised for that slot).
 All new columns are **forward-only** (not retro-modellable on existing rows; the
-0.890/0.955 figures above stand as the heuristic baseline). Prefer a **mean/min**
-statistics helper over a raw instantaneous DC read, mirroring `pv_actual`: a
-single half-hour-boundary sample can miss intermittent within-slot curtailment, so
-the *minimum current* / *maximum voltage* over the interval is the safer aggregate.
+0.890/0.955 figures above stand as the heuristic baseline). The DC read is
+**aggregated over the slot** — **maximum voltage** (most off-MPP) and **minimum
+current** (most throttled) from recorder history (`_interval_values` →
+`get_significant_states`), so a mid-slot off-MPP excursion is caught rather than
+only what the half-hour-boundary sample happens to show; it falls back to the
+instantaneous state when the recorder is unavailable, so users can point at raw
+per-string sensors (no statistics helper needed).
 
 **Hardware applicability.** The integration consumes HA *entities*, not inverters,
 so this works wherever the upstream integration surfaces per-string DC voltage (+
@@ -1252,19 +1258,45 @@ telemetry," tier-dependent.
    Validated on the 12 k-row reference DB: the high-sun-slot `db_factor` recovers
    0.909 → 0.943 (320 records clipped). Tuning already had the Tier-2/3 guards, so
    it was unchanged. Works on the **existing** database, no new hardware data.
-2. *Forward (Phase 2):* add the `strings` config extension (`dc_voltage_sensor`,
-   `dc_current_sensor` siblings of the existing per-MPPT `dc_sensor`), the schema
-   columns, and the per-string `Vmp`-band calibrator; **begin banking DC telemetry
-   now** (it cannot be backfilled) and promote Tier 1 to primary once enough has
-   accumulated — at which point it supersedes the heuristics and unlocks the
-   variable/emergency-limit robustness.
+2. **Phase 2 — capture started.** The data-banking foundation is implemented,
+   capturing **paired per-MPPT** telemetry (up to `MAX_MPPT_TRACKERS = 2` trackers,
+   voltage + current kept together per tracker so the pairing the `Vmp` calibrator
+   needs survives):
+   - **Schema.** `dc_voltage1` / `dc_current1` / `dc_voltage2` / `dc_current2`
+     columns on `solcast_data`, added to existing databases in place by an additive
+     `ALTER TABLE` (`_ADDED_COLUMNS` / `_ensure_columns`); legacy rows backfill to 0
+     (verified on the 12 k-row reference DB — all four columns added, 12 000 rows
+     intact).
+   - **Config.** Flat per-tracker keys (`CONF_MPPT1_VOLTAGE_SENSOR` /
+     `…1_CURRENT` / `…2_VOLTAGE` / `…2_CURRENT`) on the site step for the
+     property-wide / single-inverter case, and four per-site **MPPT 1/2
+     voltage/current** fields in the multi-site mapping step — derived into an
+     `mppts` list on each `CONF_SITE_GROUPS` single-site group or per-string entry
+     (`_fields_to_mppts` compacts trackers that have a voltage sensor), reversible
+     for prefill.
+   - **Read + store.** Each cycle one batched `get_significant_states`
+     (`_interval_values`) fetches the slot's recorded values for all DC entities
+     (`_collect_dc_entities`); `_interval_extreme` takes **max voltage / min
+     current** over the slot (plus the instantaneous reading), so a mid-slot
+     off-MPP excursion isn't missed. `_read_mppt_telemetry` assembles the flat
+     `(v1, i1, v2, i2)` per tracker (or `None` when nothing is configured),
+     `_read_site_dc_telemetry` maps each site, `_mppt_list_from_opts` builds the
+     property-wide list for the `_total` row. Falls back to the instantaneous state
+     when the recorder is unavailable.
 
-**Status.** Phase 1 **implemented** (dampening clip-forecast). Phase 2 (per-MPPT
-DC telemetry → Tier-1 detection) and *wing-reconstruction* (fit the clear-sky
-curve to a day's unclipped morning/evening points and interpolate the clipped
-midday, to recover curtailed days for tuning rather than discarding them) remain
-proposed — Tier-1 detection perfects the *flag*, but recovering available
-generation from an off-MPP point still needs the curve fit.
+   Still to do before promotion: the per-string **`Vmp`-band calibrator**; the
+   **`curtailed` flag** + `export_limit` column; and wiring detection into the
+   consumers (tuning excludes, dampening clips). These wait on accumulated
+   telemetry.
+
+**Status.** Phase 1 **implemented** (dampening clip-forecast). Phase 2 **capture
+implemented** (DC telemetry schema + config + per-cycle store) — banking data now;
+Tier-1 **detection** (Vmp calibrator, `curtailed` flag, consumer wiring) pending
+data accumulation. *Wing-reconstruction* (fit the clear-sky curve to a day's
+unclipped morning/evening points and interpolate the clipped midday, to recover
+curtailed days for tuning rather than discarding them) remains proposed — Tier-1
+detection perfects the *flag*, but recovering available generation from an off-MPP
+point still needs the curve fit.
 
 ---
 
@@ -1380,6 +1412,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.9 | Jun 2026 | Aligned with the v1.6.5 release: fixed the panel-azimuth convention mismatch — `CONF_AZIMUTH` (Solcast West-positive) is now converted to the internal East-positive solar frame at every tuning seed and the dampening gate, and the tuned azimuth is converted back for display (`panel_azimuth_to_internal` / `panel_azimuth_to_solcast`); `tools/import_history.py` recomputes zenith as well as azimuth from the epoch midpoint and creates the destination directory if missing |
 | 1.10 | Jun 2026 | Aligned with the v1.6.6 release: `async_get_records_for_tuning` applies the clear-sky filter (`clouds < cloud_threshold`) in SQL before the LIMIT, so tuning fits the most recent clear-sky records across seasons rather than a recent cloudy window; dampening factors are clamped to `[0,1]` in `_push_dampening` before the base `set_dampening` call (the base rejects values outside that range), with the unclamped value retained in the dampening sensor attributes |
 | 1.11 | Jun 2026 | Aligned with the v1.6.7 release: curtailment-aware dampening (Phase 1 of the DC-telemetry roadmap) — `compute_dampening` takes `export_limit_kw` and clips the forecast to the achievable ceiling `total_pv + (export_limit − pv_export)`, floored at the delivered output so the ratio ≤ 1.0; curtailed clear-sky records contribute a neutral ≈1.0 ratio instead of a spurious shading penalty, none discarded; `forecast_clipped` count surfaced per hour (`hour_NN_forecast_clipped`); export limit sourced from the base `site_export_limit` (manual fallback, `0` = no-op). Brings dampening to parity with tuning's existing export-limited exclusion |
+| 1.12 | Jun 2026 | Aligned with the v1.6.8 release: Phase 2 **capture** of the DC-telemetry roadmap — paired per-MPPT DC string voltage/current (up to `MAX_MPPT_TRACKERS = 2`, kept per-tracker for a future `Vmp`-band calibrator). New `dc_voltage1/current1/voltage2/current2` columns added to existing DBs by additive `ALTER TABLE` (`_ensure_columns`); config fields on the site step (flat keys) and per-site multi-site mapping step (`mppts` list); reads aggregated over each slot from recorder history as max-voltage/min-current (`_interval_values`/`_interval_extreme`) with an instantaneous fallback. Capture only — no detection acts on it yet; forward-only. Field translations added across all 11 languages |
 
 ---
 

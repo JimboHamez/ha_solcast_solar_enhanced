@@ -61,6 +61,126 @@ async def test_safe_read_sensor_negative_clamped(hass, coordinator):
     assert coordinator._safe_read_sensor("sensor.pv_power_30min") == 0.0
 
 
+# ---------------------------------------------------------------------------
+# Phase-2 DC telemetry capture (read helpers)
+# ---------------------------------------------------------------------------
+
+async def test_read_numeric_state_variants(hass, coordinator):
+    hass.states.async_set("sensor.dc_v", "412.5")
+    hass.states.async_set("sensor.dc_bad", "n/a")
+    hass.states.async_set("sensor.dc_unavail", "unavailable")
+    assert coordinator._read_numeric_state("sensor.dc_v") == pytest.approx(412.5)
+    # Unlike _safe_read_sensor, a non-numeric/absent reading is None (no telemetry),
+    # not 0 — so the caller can distinguish "no sensor" from a real zero.
+    assert coordinator._read_numeric_state("sensor.dc_bad") is None
+    assert coordinator._read_numeric_state("sensor.dc_unavail") is None
+    assert coordinator._read_numeric_state("sensor.missing") is None
+    assert coordinator._read_numeric_state(None) is None
+    assert coordinator._read_numeric_state("") is None
+
+
+async def test_read_mppt_telemetry_pairs_and_padding(hass, coordinator):
+    hass.states.async_set("sensor.v1", "412.0")
+    hass.states.async_set("sensor.i1", "6.0")
+    hass.states.async_set("sensor.v2", "398.0")
+    # Two trackers, second has voltage only → current pads to 0.0. hist={} → the
+    # aggregate falls back to the instantaneous reading.
+    mppts = [
+        {"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"},
+        {"voltage_sensor": "sensor.v2", "current_sensor": "sensor.i2_missing"},
+    ]
+    assert coordinator._read_mppt_telemetry(mppts, {}) == (412.0, 6.0, 398.0, 0.0)
+    # One tracker → second pair zero-filled.
+    assert coordinator._read_mppt_telemetry(
+        [{"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"}], {}
+    ) == (412.0, 6.0, 0.0, 0.0)
+    # Nothing configured → None (so the site stays absent, not a row of zeros).
+    assert coordinator._read_mppt_telemetry([], {}) is None
+    assert coordinator._read_mppt_telemetry(None, {}) is None
+    assert coordinator._read_mppt_telemetry([{"voltage_sensor": None}], {}) is None
+
+
+async def test_read_mppt_telemetry_uses_interval_max_v_min_i(hass, coordinator):
+    """A mid-slot off-MPP excursion (voltage spike, current dip) is caught by the
+    interval max-voltage / min-current even when the boundary sample looks normal."""
+    hass.states.async_set("sensor.v1", "415.0")  # instantaneous (slot boundary)
+    hass.states.async_set("sensor.i1", "5.5")
+    hist = {
+        "sensor.v1": [410.0, 450.0, 420.0],  # spiked to 450 mid-slot
+        "sensor.i1": [6.0, 0.5, 5.0],        # dipped to 0.5 mid-slot
+    }
+    mppts = [{"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"}]
+    # max(410,450,420,415)=450 ; min(6.0,0.5,5.0,5.5)=0.5
+    assert coordinator._read_mppt_telemetry(mppts, hist) == (450.0, 0.5, 0.0, 0.0)
+
+
+async def test_interval_extreme_modes(hass, coordinator):
+    hass.states.async_set("sensor.v", "415.0")
+    hist = {"sensor.v": [410.0, 450.0]}
+    assert coordinator._interval_extreme("sensor.v", "max", hist) == 450.0
+    assert coordinator._interval_extreme("sensor.v", "min", hist) == 410.0
+    # No history, no state → None; unset entity → None.
+    assert coordinator._interval_extreme("sensor.absent", "max", {}) is None
+    assert coordinator._interval_extreme(None, "max", hist) is None
+
+
+async def test_interval_values_empty_without_entities(coordinator):
+    # No configured entities → no recorder query attempted.
+    assert await coordinator._interval_values(set(), 0, 100) == {}
+
+
+async def test_collect_dc_entities(coordinator):
+    opts = {
+        "mppt1_voltage_sensor": "sensor.tv1", "mppt1_current_sensor": "sensor.ti1",
+        "site_groups": [
+            {"site": "A", "mppts": [{"voltage_sensor": "sensor.a_v"}]},
+            {"strings": [{"site": "B", "mppts": [
+                {"voltage_sensor": "sensor.b_v", "current_sensor": "sensor.b_i"}]}]},
+        ],
+    }
+    assert coordinator._collect_dc_entities(opts) == {
+        "sensor.tv1", "sensor.ti1", "sensor.a_v", "sensor.b_v", "sensor.b_i",
+    }
+
+
+async def test_read_site_dc_telemetry_single_site_and_strings(hass, coordinator):
+    hass.states.async_set("sensor.a_v", "405.0")
+    hass.states.async_set("sensor.a_i", "6.0")
+    hass.states.async_set("sensor.m1_v", "398.0")
+    opts = {
+        "site_groups": [
+            {"ac_sensor": "sensor.inv_a", "site": "A", "mppts": [
+                {"voltage_sensor": "sensor.a_v", "current_sensor": "sensor.a_i"},
+            ]},
+            {"ac_sensor": "sensor.shared", "strings": [
+                {"site": "M1", "dc_sensor": "sensor.m1", "mppts": [
+                    {"voltage_sensor": "sensor.m1_v"},
+                ]},
+                {"site": "M2", "dc_sensor": "sensor.m2"},  # no MPPT telemetry → absent
+            ]},
+        ]
+    }
+    out = coordinator._read_site_dc_telemetry(opts, {})
+    assert out == {"A": (405.0, 6.0, 0.0, 0.0), "M1": (398.0, 0.0, 0.0, 0.0)}
+    assert "M2" not in out
+
+
+async def test_read_site_dc_telemetry_empty_when_unconfigured(hass, coordinator):
+    assert coordinator._read_site_dc_telemetry({}, {}) == {}
+    assert coordinator._read_site_dc_telemetry({"site_groups": []}, {}) == {}
+
+
+async def test_mppt_list_from_opts_builds_two_pairs(coordinator):
+    opts = {
+        "mppt1_voltage_sensor": "sensor.v1", "mppt1_current_sensor": "sensor.i1",
+        "mppt2_voltage_sensor": "sensor.v2",
+    }
+    assert coordinator._mppt_list_from_opts(opts) == [
+        {"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"},
+        {"voltage_sensor": "sensor.v2", "current_sensor": None},
+    ]
+
+
 async def test_safe_read_sensor_empty_entity(hass, coordinator):
     assert coordinator._safe_read_sensor("") == 0.0
 

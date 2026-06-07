@@ -56,6 +56,78 @@ async def test_connect_creates_schema_and_is_available(store):
 
 
 # ---------------------------------------------------------------------------
+# Phase-2 per-MPPT DC telemetry capture
+# ---------------------------------------------------------------------------
+
+_DC_COLS = "dc_voltage1, dc_current1, dc_voltage2, dc_current2"
+
+
+async def test_insert_and_read_dc_telemetry(store):
+    await store.async_insert_record(_record(
+        JUNE1, dc_voltage1=412.5, dc_current1=6.2, dc_voltage2=398.0, dc_current2=5.1,
+    ))
+    rows = store._query(f"SELECT {_DC_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{
+        "dc_voltage1": 412.5, "dc_current1": 6.2,
+        "dc_voltage2": 398.0, "dc_current2": 5.1,
+    }]
+
+
+async def test_insert_dc_telemetry_defaults_to_zero(store):
+    # A record without DC fields stores 0 via NOT NULL DEFAULT (no crash).
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_DC_COLS} FROM solcast_data", ())
+    assert rows == [{
+        "dc_voltage1": 0.0, "dc_current1": 0.0, "dc_voltage2": 0.0, "dc_current2": 0.0,
+    }]
+
+
+async def test_connect_adds_dc_columns_to_legacy_db(hass, tmp_path):
+    """An existing DB created before the DC columns gets them ALTERed in, with
+    legacy rows backfilled to 0, and accepts new DC-bearing inserts."""
+    import sqlite3
+
+    path = str(tmp_path / "legacy.db")
+    legacy_sql = """
+        CREATE TABLE solcast_data (
+          "index" INTEGER PRIMARY KEY AUTOINCREMENT,
+          period_end TEXT NOT NULL, period_end_epoch INTEGER NOT NULL,
+          period_start TEXT NOT NULL, site TEXT NOT NULL DEFAULT '_total',
+          pv_actual REAL NOT NULL, pv_export REAL NOT NULL DEFAULT 0,
+          pv_estimate REAL NOT NULL, pv_estimate10 REAL NOT NULL,
+          pv_estimate90 REAL NOT NULL, azimuth REAL NOT NULL, zenith REAL NOT NULL,
+          temp REAL NOT NULL, clouds INTEGER NOT NULL, description TEXT NOT NULL,
+          battery_charge REAL NOT NULL DEFAULT 0,
+          UNIQUE(period_end_epoch, site)
+        );
+    """
+    con = sqlite3.connect(path)
+    con.executescript(legacy_sql)
+    con.execute(
+        'INSERT INTO solcast_data (period_end, period_end_epoch, period_start, site,'
+        " pv_actual, pv_estimate, pv_estimate10, pv_estimate90, azimuth, zenith,"
+        " temp, clouds, description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("x", JUNE1, "y", "_total", 3.0, 4.0, 3.0, 5.0, 180.0, 35.0, 20.0, 10, "clear"),
+    )
+    con.commit()
+    con.close()
+
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    # All four columns now present; the legacy row backfilled to 0.
+    assert s._query(f"SELECT {_DC_COLS} FROM solcast_data", ()) == [{
+        "dc_voltage1": 0.0, "dc_current1": 0.0, "dc_voltage2": 0.0, "dc_current2": 0.0,
+    }]
+    # And a new DC-bearing insert round-trips.
+    await s.async_insert_record(_record(JUNE1 + 1800, dc_voltage1=400.0, dc_current1=5.0))
+    assert s._query(
+        "SELECT dc_voltage1 FROM solcast_data WHERE period_end_epoch = ?",
+        (JUNE1 + 1800,),
+    ) == [{"dc_voltage1": 400.0}]
+    await s.async_close()
+
+
+# ---------------------------------------------------------------------------
 # azimuth repair migration
 # ---------------------------------------------------------------------------
 

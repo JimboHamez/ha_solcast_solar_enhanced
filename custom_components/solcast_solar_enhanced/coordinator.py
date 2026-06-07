@@ -28,6 +28,11 @@ from .const import (
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
+    MAX_MPPT_TRACKERS,
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
@@ -354,6 +359,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # documented property-wide detailedForecast slot; fall back to the base
             # coordinator's in-memory estimate only when the attribute is absent.
             slot_start_epoch = period_epoch - 1800
+
+            # Phase-2 per-MPPT DC telemetry capture (off-MPP curtailment detection
+            # groundwork). Aggregated over the just-completed slot from recorder
+            # history — max voltage (most off-MPP) / min current (most throttled) —
+            # so curtailment that happened mid-slot, not just at the boundary, is
+            # caught; falls back to the instantaneous read when no history exists.
+            # Up to MAX_MPPT_TRACKERS paired trackers, kept per-tracker (not
+            # aggregated across trackers) for a later Vmp-band calibrator. The
+            # '_total' row uses the property-wide trackers; per-site rows use their
+            # own. Banked now (cannot be backfilled); nothing acts on it yet.
+            dc_hist = await self._interval_values(
+                self._collect_dc_entities(opts), slot_start_epoch, period_epoch
+            )
+            site_dc = self._read_site_dc_telemetry(opts, dc_hist)
+            total_dc = self._read_mppt_telemetry(
+                self._mppt_list_from_opts(opts), dc_hist
+            ) or (0.0, 0.0, 0.0, 0.0)
+
             t_est, t_est10, t_est90 = self._total_forecast_for_period(slot_start_epoch)
             if (t_est, t_est10, t_est90) != (0.0, 0.0, 0.0):
                 pv_estimate, pv_est10, pv_est90 = t_est, t_est10, t_est90
@@ -389,6 +412,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "clouds": clouds_db,
                 "description": desc_db,
                 "battery_charge": round(battery_charge, 4),
+                "dc_voltage1": total_dc[0],
+                "dc_current1": total_dc[1],
+                "dc_voltage2": total_dc[2],
+                "dc_current2": total_dc[3],
             }
             await self._db.async_insert_record(record)
 
@@ -399,6 +426,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # site's export-limit clip exclusion. battery stays on '_total' only.
             for site_id, (site_kw, site_start) in site_actuals.items():
                 s_start = site_start if site_start else period_epoch - 1800
+                s_dc = site_dc.get(site_id, (0.0, 0.0, 0.0, 0.0))
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(
@@ -422,6 +450,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "clouds": clouds_db,
                     "description": desc_db,
                     "battery_charge": 0.0,
+                    "dc_voltage1": s_dc[0],
+                    "dc_current1": s_dc[1],
+                    "dc_voltage2": s_dc[2],
+                    "dc_current2": s_dc[3],
                 })
 
             self._db_record_count = await self._db.async_get_record_count()
@@ -983,6 +1015,160 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 site = group.get("site")
                 if site:
                     out[site] = (ac_kw, ac_start)
+        return out
+
+    def _read_numeric_state(self, entity_id: str | None) -> float | None:
+        """Read a plain numeric sensor state (e.g. DC volts / amps).
+
+        Returns ``None`` when the entity is unset, missing, or non-numeric — the
+        caller treats that as "no telemetry" rather than a zero reading.
+        """
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (None, "", "unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _mppt_list_from_opts(opts: dict[str, Any]) -> list[dict[str, Any]]:
+        """Property-wide / single-inverter MPPT pairs from the flat site-step keys."""
+        return [
+            {"voltage_sensor": opts.get(CONF_MPPT1_VOLTAGE_SENSOR),
+             "current_sensor": opts.get(CONF_MPPT1_CURRENT_SENSOR)},
+            {"voltage_sensor": opts.get(CONF_MPPT2_VOLTAGE_SENSOR),
+             "current_sensor": opts.get(CONF_MPPT2_CURRENT_SENSOR)},
+        ]
+
+    def _collect_dc_entities(self, opts: dict[str, Any]) -> set[str]:
+        """Every configured MPPT voltage/current entity (for one batched history
+        query per cycle)."""
+        ids: set[str] = set()
+
+        def _add(mppts: list[dict[str, Any]] | None) -> None:
+            for m in mppts or []:
+                for k in ("voltage_sensor", "current_sensor"):
+                    if m.get(k):
+                        ids.add(m[k])
+
+        _add(self._mppt_list_from_opts(opts))
+        for group in opts.get(CONF_SITE_GROUPS) or []:
+            _add(group.get("mppts"))
+            for s in group.get("strings") or []:
+                _add(s.get("mppts"))
+        return ids
+
+    async def _interval_values(
+        self, entity_ids: set[str], start_epoch: int, end_epoch: int
+    ) -> dict[str, list[float]]:
+        """Recorded numeric values per entity over ``[start, end]`` from the recorder.
+
+        One batched ``get_significant_states`` (all states, no attributes) run on
+        the recorder executor. Returns ``{}`` when the recorder is unavailable or
+        errors — callers then fall back to the instantaneous state, so capture
+        degrades gracefully rather than failing.
+        """
+        ids = [e for e in entity_ids if e]
+        if not ids:
+            return {}
+        try:
+            from homeassistant.components.recorder import get_instance, history
+        except ImportError:
+            return {}
+        start = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
+        end = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
+
+        def _job() -> dict[str, Any]:
+            return history.get_significant_states(
+                self.hass, start, end, entity_ids=ids,
+                significant_changes_only=False, no_attributes=True,
+            )
+
+        try:
+            raw = await get_instance(self.hass).async_add_executor_job(_job)
+        except Exception as exc:  # noqa: BLE001 — recorder may be disabled/not ready
+            _LOGGER.debug("DC interval history unavailable: %s", exc)
+            return {}
+        out: dict[str, list[float]] = {}
+        for eid, states in (raw or {}).items():
+            vals: list[float] = []
+            for st in states:
+                try:
+                    vals.append(float(st.state))
+                except (TypeError, ValueError):
+                    continue  # 'unknown'/'unavailable' between real readings
+            if vals:
+                out[eid] = vals
+        return out
+
+    def _interval_extreme(
+        self, entity_id: str | None, mode: str, hist: dict[str, list[float]]
+    ) -> float | None:
+        """``max`` (voltage) or ``min`` (current) over the interval's recorded
+        values plus the current instantaneous reading; ``None`` if nothing is
+        readable. Max-voltage / min-current catch a mid-slot off-MPP excursion that
+        a single boundary sample would miss."""
+        if not entity_id:
+            return None
+        vals = list(hist.get(entity_id, ()))
+        inst = self._read_numeric_state(entity_id)
+        if inst is not None:
+            vals.append(inst)
+        if not vals:
+            return None
+        return max(vals) if mode == "max" else min(vals)
+
+    def _read_mppt_telemetry(
+        self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]
+    ) -> tuple[float, float, float, float] | None:
+        """Aggregate up to ``MAX_MPPT_TRACKERS`` paired (voltage, current) trackers
+        over the interval (max V / min I per ``hist``).
+
+        Returns a flat ``(v1, i1, v2, i2)`` tuple, zero-filled and padded to
+        ``MAX_MPPT_TRACKERS`` pairs, or ``None`` when no tracker sensor is
+        *configured* at all (so a site without DC telemetry stays absent). A
+        configured-but-unreadable sensor yields 0.0 (e.g. amps at night), a real
+        value — pairs are kept per-tracker (not aggregated across trackers) so a
+        later Vmp-band calibrator can learn each string.
+        """
+        pairs = list(mppts or [])[:MAX_MPPT_TRACKERS]
+        if not any(m.get("voltage_sensor") or m.get("current_sensor") for m in pairs):
+            return None
+        flat: list[float] = []
+        for i in range(MAX_MPPT_TRACKERS):
+            m = pairs[i] if i < len(pairs) else {}
+            v = self._interval_extreme(m.get("voltage_sensor"), "max", hist)
+            c = self._interval_extreme(m.get("current_sensor"), "min", hist)
+            flat.extend([round(v or 0.0, 3), round(c or 0.0, 3)])
+        return tuple(flat)  # type: ignore[return-value]
+
+    def _read_site_dc_telemetry(
+        self, opts: dict[str, Any], hist: dict[str, list[float]]
+    ) -> dict[str, tuple[float, float, float, float]]:
+        """Per-site MPPT DC telemetry for curtailment-detection capture.
+
+        Aggregates each site's ``mppts`` list (paired voltage/current trackers,
+        from its single-site group or apportioned string in ``CONF_SITE_GROUPS``)
+        over the interval via ``hist``. Returns ``site → (v1, i1, v2, i2)``; sites
+        with no configured tracker are absent. Banked now for a later off-MPP
+        detector.
+        """
+        out: dict[str, tuple[float, float, float, float]] = {}
+
+        def _capture(site: str | None, cfg: dict[str, Any]) -> None:
+            if not site:
+                return
+            t = self._read_mppt_telemetry(cfg.get("mppts"), hist)
+            if t is not None:
+                out[site] = t
+
+        for group in opts.get(CONF_SITE_GROUPS) or []:
+            _capture(group.get("site"), group)  # single-site group
+            for s in group.get("strings") or []:  # apportioned per-MPPT strings
+                _capture(s.get("site"), s)
         return out
 
     def _total_forecast_for_period(

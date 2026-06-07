@@ -13,13 +13,18 @@
           "pv_export_sensor": "Capteur d'injection PV",
           "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
           "pv_actual_input_mode": "Type de capteur PV",
-          "pv_export_input_mode": "Type de capteur d'injection PV"
+          "pv_export_input_mode": "Type de capteur d'injection PV",
+          "mppt1_voltage_sensor": "Capteur de tension CC du MPPT 1 (facultatif, pour la détection d'écrêtage)",
+          "mppt1_current_sensor": "Capteur de courant CC du MPPT 1 (facultatif)",
+          "mppt2_voltage_sensor": "Capteur de tension CC du MPPT 2 (facultatif)",
+          "mppt2_current_sensor": "Capteur de courant CC du MPPT 2 (facultatif)"
         },
         "data_description": {
           "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut.",
           "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
           "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
-          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé."
+          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé.",
+          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide."
         }
       },
       "database": {
@@ -81,13 +86,18 @@
           "pv_export_sensor": "Capteur d'injection PV",
           "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
           "pv_actual_input_mode": "Type de capteur PV",
-          "pv_export_input_mode": "Type de capteur d'injection PV"
+          "pv_export_input_mode": "Type de capteur d'injection PV",
+          "mppt1_voltage_sensor": "Capteur de tension CC du MPPT 1 (facultatif, pour la détection d'écrêtage)",
+          "mppt1_current_sensor": "Capteur de courant CC du MPPT 1 (facultatif)",
+          "mppt2_voltage_sensor": "Capteur de tension CC du MPPT 2 (facultatif)",
+          "mppt2_current_sensor": "Capteur de courant CC du MPPT 2 (facultatif)"
         },
         "data_description": {
           "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut.",
           "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
           "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
-          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé."
+          "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé.",
+          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide."
         }
       },
       "database": {

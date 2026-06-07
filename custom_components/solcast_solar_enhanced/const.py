@@ -16,6 +16,19 @@ CONF_PV_EXPORT_SENSOR = "pv_export_sensor"
 CONF_PV_ACTUAL_INPUT_MODE = "pv_actual_input_mode"
 CONF_PV_EXPORT_INPUT_MODE = "pv_export_input_mode"
 CONF_BATTERY_STAT_SENSOR = "battery_stat_sensor"
+# Phase-2 curtailment-detection capture: per-MPPT DC string telemetry. Up to
+# MAX_MPPT_TRACKERS paired (voltage, current) trackers per site/inverter. Voltage
+# rising toward Voc while current collapses is the off-MPP fingerprint of
+# curtailment; pairs are kept per-tracker (not aggregated) so a later Vmp-band
+# calibrator can learn each string. Captured now — it cannot be backfilled.
+# Property-wide / single-inverter trackers use these flat keys on the site step;
+# per-site (multi-site) trackers are stored as an ``mppts`` list inside each
+# CONF_SITE_GROUPS single-site group or per-string entry.
+MAX_MPPT_TRACKERS = 2
+CONF_MPPT1_VOLTAGE_SENSOR = "mppt1_voltage_sensor"
+CONF_MPPT1_CURRENT_SENSOR = "mppt1_current_sensor"
+CONF_MPPT2_VOLTAGE_SENSOR = "mppt2_voltage_sensor"
+CONF_MPPT2_CURRENT_SENSOR = "mppt2_current_sensor"
 
 CONF_DB_ENABLED = "db_enabled"
 # Optional history retention. 0 = keep everything (default, never prunes). When

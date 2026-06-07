@@ -33,6 +33,10 @@ from .const import (
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
     CONF_CAPACITY_KW,
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
@@ -97,19 +101,38 @@ def _input_mode_selector() -> Any:
 # sensor and an input mode. ``CONF_SITE_GROUPS`` is then *derived* by grouping
 # sites that share the same AC sensor (those sharing one are DC-apportioned).
 
+def _fields_to_mppts(
+    v1: Any, i1: Any, v2: Any, i2: Any
+) -> list[dict[str, Any]]:
+    """Form values → compacted ``mppts`` list. A tracker is kept only when it has a
+    voltage sensor (the off-MPP signal); current is the optional disambiguator."""
+    out: list[dict[str, Any]] = []
+    for v, c in ((v1, i1), (v2, i2)):
+        if v:
+            out.append({"voltage_sensor": v, "current_sensor": c or None})
+    return out
+
+
 def _groups_to_assignments(groups: Any) -> dict[str, dict[str, Any]]:
     """Reverse a stored CONF_SITE_GROUPS list into per-site assignments for prefill."""
     out: dict[str, dict[str, Any]] = {}
+
+    def _mppts(src: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+        """Carry the per-MPPT capture list when set (keeps the mapping lossless)."""
+        if src.get("mppts"):
+            base["mppts"] = src["mppts"]
+        return base
+
     for group in groups or []:
         mode = group.get("ac_mode", DEFAULT_PV_INPUT_MODE)
         ac = group.get("ac_sensor")
         site = group.get("site")
         if site:
-            out[site] = {"ac": ac, "dc": None, "mode": mode}
+            out[site] = _mppts(group, {"ac": ac, "dc": None, "mode": mode})
         for s in group.get("strings") or []:
             sid = s.get("site")
             if sid:
-                out[sid] = {"ac": ac, "dc": s.get("dc_sensor"), "mode": mode}
+                out[sid] = _mppts(s, {"ac": ac, "dc": s.get("dc_sensor"), "mode": mode})
     return out
 
 
@@ -128,14 +151,23 @@ def _derive_groups(assignments: dict[str, dict[str, Any]]) -> list[dict[str, Any
             continue
         by_ac.setdefault(ac, []).append((rid, a))
 
+    def _with_mppts(entry: dict[str, Any], a: dict[str, Any]) -> dict[str, Any]:
+        """Attach the optional per-MPPT capture list to a group/string."""
+        if a.get("mppts"):
+            entry["mppts"] = a["mppts"]
+        return entry
+
     groups: list[dict[str, Any]] = []
     for ac, members in by_ac.items():
         mode = members[0][1].get("mode", DEFAULT_PV_INPUT_MODE)
         if len(members) == 1:
-            groups.append({"ac_sensor": ac, "ac_mode": mode, "site": members[0][0]})
+            groups.append(_with_mppts(
+                {"ac_sensor": ac, "ac_mode": mode, "site": members[0][0]},
+                members[0][1],
+            ))
             continue
         strings = [
-            {"site": rid, "dc_sensor": a["dc"]}
+            _with_mppts({"site": rid, "dc_sensor": a["dc"]}, a)
             for rid, a in members
             if a.get("dc")
         ]
@@ -170,13 +202,27 @@ def _build_sites_schema(
         else:
             seen_names[name] = 1
         a = assignments.get(rid, {})
+        mppts = a.get("mppts") or []
+        m0 = mppts[0] if len(mppts) > 0 else {}
+        m1 = mppts[1] if len(mppts) > 1 else {}
         k_ac = f"{name} — generation sensor"
         k_dc = f"{name} — DC/MPPT sensor (optional)"
         k_mode = f"{name} — sensor type"
-        field_map[rid] = {"ac": k_ac, "dc": k_dc, "mode": k_mode}
+        k_v1 = f"{name} — MPPT 1 voltage (optional)"
+        k_i1 = f"{name} — MPPT 1 current (optional)"
+        k_v2 = f"{name} — MPPT 2 voltage (optional)"
+        k_i2 = f"{name} — MPPT 2 current (optional)"
+        field_map[rid] = {
+            "ac": k_ac, "dc": k_dc, "mode": k_mode,
+            "v1": k_v1, "i1": k_i1, "v2": k_v2, "i2": k_i2,
+        }
         schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac")})] = _entity_selector()
         schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
         schema_dict[vol.Required(k_mode, default=a.get("mode", DEFAULT_PV_INPUT_MODE))] = _input_mode_selector()
+        schema_dict[vol.Optional(k_v1, description={"suggested_value": m0.get("voltage_sensor")})] = _entity_selector()
+        schema_dict[vol.Optional(k_i1, description={"suggested_value": m0.get("current_sensor")})] = _entity_selector()
+        schema_dict[vol.Optional(k_v2, description={"suggested_value": m1.get("voltage_sensor")})] = _entity_selector()
+        schema_dict[vol.Optional(k_i2, description={"suggested_value": m1.get("current_sensor")})] = _entity_selector()
     return vol.Schema(schema_dict), field_map
 
 
@@ -194,6 +240,10 @@ def _parse_sites_input(
             "ac": ac,
             "dc": user_input.get(keys["dc"]) or None,
             "mode": user_input.get(keys["mode"], DEFAULT_PV_INPUT_MODE),
+            "mppts": _fields_to_mppts(
+                user_input.get(keys["v1"]), user_input.get(keys["i1"]),
+                user_input.get(keys["v2"]), user_input.get(keys["i2"]),
+            ),
         }
     return assignments
 
@@ -237,6 +287,10 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_PV_EXPORT_SENSOR): _entity_selector(),
             vol.Required(CONF_PV_EXPORT_INPUT_MODE, default=DEFAULT_PV_INPUT_MODE): _input_mode_selector(),
             vol.Optional(CONF_BATTERY_STAT_SENSOR): _entity_selector(),
+            vol.Optional(CONF_MPPT1_VOLTAGE_SENSOR): _entity_selector(),
+            vol.Optional(CONF_MPPT1_CURRENT_SENSOR): _entity_selector(),
+            vol.Optional(CONF_MPPT2_VOLTAGE_SENSOR): _entity_selector(),
+            vol.Optional(CONF_MPPT2_CURRENT_SENSOR): _entity_selector(),
         })
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
@@ -374,6 +428,10 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_PV_EXPORT_SENSOR, description={"suggested_value": current.get(CONF_PV_EXPORT_SENSOR)}): _entity_selector(),
             vol.Required(CONF_PV_EXPORT_INPUT_MODE, default=current.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)): _input_mode_selector(),
             vol.Optional(CONF_BATTERY_STAT_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_STAT_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_MPPT1_VOLTAGE_SENSOR, description={"suggested_value": current.get(CONF_MPPT1_VOLTAGE_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_MPPT1_CURRENT_SENSOR, description={"suggested_value": current.get(CONF_MPPT1_CURRENT_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_MPPT2_VOLTAGE_SENSOR, description={"suggested_value": current.get(CONF_MPPT2_VOLTAGE_SENSOR)}): _entity_selector(),
+            vol.Optional(CONF_MPPT2_CURRENT_SENSOR, description={"suggested_value": current.get(CONF_MPPT2_CURRENT_SENSOR)}): _entity_selector(),
         })
         return self.async_show_form(step_id="site", data_schema=schema)
 

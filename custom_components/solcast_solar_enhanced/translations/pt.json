@@ -13,13 +13,18 @@
           "pv_export_sensor": "Sensor de exportação FV",
           "battery_stat_sensor": "Sensor de média de 30 min de carga da bateria (opcional)",
           "pv_actual_input_mode": "Tipo de sensor FV",
-          "pv_export_input_mode": "Tipo de sensor de exportação FV"
+          "pv_export_input_mode": "Tipo de sensor de exportação FV",
+          "mppt1_voltage_sensor": "Sensor de tensão CC do MPPT 1 (opcional, para deteção de limitação)",
+          "mppt1_current_sensor": "Sensor de corrente CC do MPPT 1 (opcional)",
+          "mppt2_voltage_sensor": "Sensor de tensão CC do MPPT 2 (opcional)",
+          "mppt2_current_sensor": "Sensor de corrente CC do MPPT 2 (opcional)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
           "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
           "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
-          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado."
+          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado.",
+          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco."
         }
       },
       "database": {
@@ -81,13 +86,18 @@
           "pv_export_sensor": "Sensor de exportação FV",
           "battery_stat_sensor": "Sensor de média de 30 min de carga da bateria (opcional)",
           "pv_actual_input_mode": "Tipo de sensor FV",
-          "pv_export_input_mode": "Tipo de sensor de exportação FV"
+          "pv_export_input_mode": "Tipo de sensor de exportação FV",
+          "mppt1_voltage_sensor": "Sensor de tensão CC do MPPT 1 (opcional, para deteção de limitação)",
+          "mppt1_current_sensor": "Sensor de corrente CC do MPPT 1 (opcional)",
+          "mppt2_voltage_sensor": "Sensor de tensão CC do MPPT 2 (opcional)",
+          "mppt2_current_sensor": "Sensor de corrente CC do MPPT 2 (opcional)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
           "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
           "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
-          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado."
+          "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado.",
+          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco."
         }
       },
       "database": {

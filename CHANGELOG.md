@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.8] - 2026-06-07
+
+### Added
+- **Per-MPPT DC telemetry capture (Phase 2 of the curtailment-detection roadmap).**
+  Optional **per-tracker DC string voltage + current** sensors can now be
+  configured — up to two MPPT trackers (`MAX_MPPT_TRACKERS`), with voltage and
+  current kept *paired per tracker*. Voltage climbing toward open-circuit while
+  current collapses is the **direct off-MPP fingerprint of curtailment**,
+  independent of the forecast or the (possibly dynamic) export limit — the ground
+  truth a future detector will use to flag curtailed records reliably (the v1.6.7
+  export-limit heuristic is the fallback). This release **captures and stores** the
+  data only; no detection acts on it yet, and it is **forward-only** (cannot be
+  backfilled), so configuring the sensors now begins banking history.
+  - **Config:** four optional fields on the site step (MPPT 1/2 voltage/current)
+    for the single-inverter / property-wide case, and per-site MPPT fields in the
+    multi-site mapping step. Point them at the **raw** per-string sensors (e.g.
+    Fronius) — no statistics helper needed.
+  - **Reads** are **aggregated over each 30-minute slot from recorder history** —
+    **maximum voltage** (most off-MPP) and **minimum current** (most throttled) —
+    so a mid-slot curtailment excursion is caught, not just whatever the
+    half-hour-boundary sample shows; falls back to the instantaneous reading when
+    the recorder is unavailable.
+  - **Storage:** new `dc_voltage1` / `dc_current1` / `dc_voltage2` / `dc_current2`
+    columns, added to existing databases in place by an additive `ALTER TABLE`
+    (legacy rows backfill to 0; verified on a 12k-row database with all rows
+    intact). Per-site rows carry that site's trackers; the `_total` row carries the
+    property-wide trackers.
+  - Translations for the new fields added across all 11 supported languages.
+
 ## [1.6.7] - 2026-06-07
 
 ### Fixed

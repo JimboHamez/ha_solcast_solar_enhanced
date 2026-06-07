@@ -12,6 +12,10 @@
           "pv_actual_sensor": "PV Power / Generation sensor",
           "pv_export_sensor": "PV Export sensor",
           "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
+          "mppt1_voltage_sensor": "MPPT 1 DC voltage sensor (optional, for curtailment detection)",
+          "mppt1_current_sensor": "MPPT 1 DC current sensor (optional)",
+          "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
+          "mppt2_current_sensor": "MPPT 2 DC current sensor (optional)",
           "pv_actual_input_mode": "PV sensor type",
           "pv_export_input_mode": "PV Export sensor type"
         },
@@ -19,7 +23,8 @@
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
           "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
-          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended."
+          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
+          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank."
         }
       },
       "database": {
@@ -80,6 +85,10 @@
           "pv_actual_sensor": "PV Power / Generation sensor",
           "pv_export_sensor": "PV Export sensor",
           "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
+          "mppt1_voltage_sensor": "MPPT 1 DC voltage sensor (optional, for curtailment detection)",
+          "mppt1_current_sensor": "MPPT 1 DC current sensor (optional)",
+          "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
+          "mppt2_current_sensor": "MPPT 2 DC current sensor (optional)",
           "pv_actual_input_mode": "PV sensor type",
           "pv_export_input_mode": "PV Export sensor type"
         },
@@ -87,7 +96,8 @@
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
           "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
-          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended."
+          "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
+          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank."
         }
       },
       "database": {
