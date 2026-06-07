@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.9] - 2026-06-07
+
+### Added
+- **Diagnostic "MPPT DC Voltage (max)" sensor.** Surfaces the latest captured
+  per-MPPT DC telemetry (from the v1.6.8 capture) so you can confirm your string
+  sensors are wired and data is landing — without waiting weeks then discovering a
+  typo. State is the highest string voltage seen in the cycle (the off-MPP-relevant
+  aggregate); attributes break out each tracker's voltage/current and any per-site
+  values. Entity category *diagnostic*; **unavailable** (not `0`) when no DC sensors
+  are configured, so it cleanly distinguishes "nothing wired" from "wired and
+  reading". Brings the sensor count to 15.
+
 ## [1.6.8] - 2026-06-07
 
 ### Added

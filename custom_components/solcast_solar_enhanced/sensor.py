@@ -11,7 +11,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, UnitOfEnergy, UnitOfTemperature
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -26,6 +32,7 @@ from .const import (
     SENSOR_DB_RECORDS,
     SENSOR_FORECAST_NOW,
     SENSOR_FORECAST_TODAY,
+    SENSOR_MPPT_DC,
     SENSOR_PV_ACTUAL,
     SENSOR_PV_EXPORT,
     SENSOR_TUNING_AZIMUTH,
@@ -54,6 +61,7 @@ async def async_setup_entry(
         TuningRmseSensor(coordinator, entry),
         TuningExportExcludedSensor(coordinator, entry),
         DbRecordsSensor(coordinator, entry),
+        MpptDcSensor(coordinator, entry),
         DampeningSensor(coordinator, entry),
         WeatherTempSensor(coordinator, entry),
         WeatherCloudsSensor(coordinator, entry),
@@ -244,6 +252,38 @@ class DbRecordsSensor(_EnhancedSensorBase):
             "distinct_sites": len(sites),
             "sites": sites,
         }
+
+
+class MpptDcSensor(_EnhancedSensorBase):
+    """Diagnostic: latest captured per-MPPT DC telemetry (Phase 2).
+
+    State is the highest string voltage seen this cycle (the off-MPP-relevant
+    aggregate); attributes break out each tracker's voltage/current and any
+    per-site values, so the user can confirm their string sensors are wired and
+    data is landing. Unavailable (None) when no DC sensors are configured.
+    """
+
+    _attr_name = "MPPT DC Voltage (max)"
+    _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
+    _attr_device_class = SensorDeviceClass.VOLTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:current-dc"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_MPPT_DC)
+
+    @property
+    def native_value(self) -> float | None:
+        dc = (self.coordinator.data or {}).get("dc_telemetry")
+        return dc.get("max_voltage") if dc else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        dc = (self.coordinator.data or {}).get("dc_telemetry")
+        if not dc:
+            return None
+        return {k: v for k, v in dc.items() if k != "max_voltage"}
 
 
 class DampeningSensor(_EnhancedSensorBase):

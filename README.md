@@ -23,11 +23,13 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 
 ---
 
-## 🆕 What's new in v1.6.8
+## 🆕 What's new in v1.6.9
 
-**Optional per-MPPT DC telemetry capture — the groundwork for hardware-based curtailment detection.** A PV string is a current source: to curtail, the inverter walks the operating point *off the maximum-power point toward open-circuit*, so **DC voltage rises while current collapses**. That's a *direct* fingerprint of curtailment — independent of the forecast and of the (possibly dynamic) export limit, and it works the same for a static cap, a variable limit, or an emergency stop. This release lets you configure **per-tracker DC voltage + current sensors** (up to two MPPTs, kept paired) and **captures** them so a future detector has ground-truth history. Point them at your **raw** per-string sensors (e.g. Fronius) — no statistics helper needed: reads are **aggregated over each 30-minute slot from history as max-voltage / min-current**, so a mid-slot curtailment dip isn't missed. Nothing acts on the data yet and it **can't be backfilled**, so configuring the sensors now starts banking history. Stored in new `dc_voltage1/current1/voltage2/current2` columns (added to existing databases automatically). New field translations across all 11 languages. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.8) and [CHANGELOG](CHANGELOG.md).
+**A diagnostic sensor to verify the new DC telemetry capture is working.** v1.6.8 began *capturing* per-MPPT DC voltage/current; this adds a **"MPPT DC Voltage (max)"** diagnostic sensor so you can see it landing. Point your MPPT voltage/current fields at your inverter's per-string sensors, then glance at this entity: its state is the **highest string voltage** seen this cycle, and its attributes break out each tracker's voltage/current (and any per-site values). It stays **unavailable** until per-string DC sensors are configured — so it cleanly tells you "nothing wired" vs "wired and reading", rather than confusingly showing `0`. This lets you confirm the wiring up front instead of discovering a typo weeks into banking history. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.9) and [CHANGELOG](CHANGELOG.md).
 
-_Previously, in v1.6.7:_ export curtailment no longer looks like shading to the **dampening** calculation — it **clips the forecast to the achievable ceiling** (`delivered output + remaining export headroom`, floored so the ratio never exceeds 1.0) so a curtailed clear-sky record contributes a neutral ≈1.0 instead of a false penalty, with no record discarded (the export limit comes from the base `site_export_limit`).
+_Previously, in v1.6.8:_ optional **per-MPPT DC telemetry capture** — configure per-tracker DC voltage + current sensors (up to two MPPTs, kept paired) and the integration banks them (aggregated each 30-min slot from history as max-voltage / min-current) as the ground truth for a future hardware-based curtailment detector. Capture only; forward-only (can't be backfilled), so configuring now starts the history.
+
+_And in v1.6.7:_ export curtailment no longer looks like shading to the **dampening** calculation — it **clips the forecast to the achievable ceiling** so a curtailed clear-sky record contributes a neutral ≈1.0 instead of a false penalty, with no record discarded.
 
 _And in v1.6.6:_ PV tuning fits the most recent **clear-sky** records across all seasons (the clear-sky filter runs in SQL before the row limit, instead of after), and the **dampening push no longer fails** when a factor exceeds 1.0 — factors are clamped to the `[0,1]` range the base `set_dampening` requires, with the true value kept in the sensor attributes.
 
@@ -308,7 +310,7 @@ When the base integration has more than one rooftop site, the enhanced integrati
 
 ---
 
-## Sensors (14 total)
+## Sensors (15 total)
 
 | Sensor | Unit | Description |
 |---|---|---|
@@ -319,6 +321,7 @@ When the base integration has more than one rooftop site, the enhanced integrati
 | Tuning RMSE | kW | Goodness of fit for tuned geometry |
 | Tuning Export Limited Excluded | — | Records dropped from last tuning run due to export limit filter |
 | Database Records | — | Total records in the store (attributes: `latest_period_end`, `distinct_sites`, `sites`) |
+| MPPT DC Voltage (max) | V | Diagnostic — latest captured per-MPPT DC telemetry (highest string voltage; per-tracker voltage/current and per-site values in attributes). Unavailable until per-string DC sensors are configured |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active |
 | Weather Temperature | °C | OWM current temperature |
 | Cloud Cover | % | OWM cloud cover |

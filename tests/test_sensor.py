@@ -12,6 +12,7 @@ from custom_components.solcast_solar_enhanced.sensor import (
     DbRecordsSensor,
     ForecastNowSensor,
     ForecastTodaySensor,
+    MpptDcSensor,
     PvActualSensor,
     PvExportSensor,
     TuningAzimuthSensor,
@@ -64,6 +65,36 @@ def test_forecast_today_returns_value():
     coord = _make_coordinator({"forecast_today": 18.0})
     s = _make_sensor(ForecastTodaySensor, coord)
     assert s.native_value == pytest.approx(18.0)
+
+
+# ---------------------------------------------------------------------------
+# MpptDcSensor (diagnostic DC telemetry)
+# ---------------------------------------------------------------------------
+
+def test_mppt_dc_state_is_max_voltage_with_breakdown_attrs():
+    dc = {
+        "mppt1_voltage": 412.0, "mppt1_current": 6.0,
+        "mppt2_voltage": 398.0, "mppt2_current": 5.1,
+        "max_voltage": 412.0,
+        "sites": {"A": {"mppt1_voltage": 412.0, "mppt1_current": 6.0,
+                        "mppt2_voltage": 398.0, "mppt2_current": 5.1}},
+    }
+    s = _make_sensor(MpptDcSensor, _make_coordinator({"dc_telemetry": dc}))
+    assert s.native_value == pytest.approx(412.0)
+    attrs = s.extra_state_attributes
+    assert "max_voltage" not in attrs  # state already carries it
+    assert attrs["mppt1_voltage"] == 412.0 and attrs["mppt2_current"] == 5.1
+    assert attrs["sites"]["A"]["mppt1_voltage"] == 412.0
+
+
+def test_mppt_dc_unavailable_when_not_configured():
+    # dc_telemetry None (no DC sensors) → entity stays unavailable, not 0.
+    s = _make_sensor(MpptDcSensor, _make_coordinator({"dc_telemetry": None}))
+    assert s.native_value is None
+    assert s.extra_state_attributes is None
+    # And when coordinator has no data at all.
+    s2 = _make_sensor(MpptDcSensor, _make_coordinator(None))
+    assert s2.native_value is None
 
 
 # ---------------------------------------------------------------------------

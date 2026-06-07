@@ -167,6 +167,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._db_sites: list[str] = []
         self._base_status: str = "not_detected"
         self._auto_dampen_warned: bool = False
+        # Latest captured per-MPPT DC telemetry (Phase 2), surfaced on a diagnostic
+        # sensor so users can confirm their string sensors are wired and data is
+        # landing. None until a cycle with DC sensors configured runs.
+        self._dc_telemetry: dict[str, Any] | None = None
         # True while the dampening push is held neutral because a tuned orientation
         # diverges materially from the configured (Solcast) one. Per-site aware:
         # set if *any* target is gated this cycle. Surfaced on the Dampening sensor.
@@ -369,13 +373,18 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # aggregated across trackers) for a later Vmp-band calibrator. The
             # '_total' row uses the property-wide trackers; per-site rows use their
             # own. Banked now (cannot be backfilled); nothing acts on it yet.
+            dc_entities = self._collect_dc_entities(opts)
             dc_hist = await self._interval_values(
-                self._collect_dc_entities(opts), slot_start_epoch, period_epoch
+                dc_entities, slot_start_epoch, period_epoch
             )
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
             total_dc = self._read_mppt_telemetry(
                 self._mppt_list_from_opts(opts), dc_hist
             ) or (0.0, 0.0, 0.0, 0.0)
+            # Surface the latest reading on the diagnostic sensor (None when no DC
+            # sensors are configured, so the entity stays unavailable rather than
+            # reporting a misleading 0).
+            self._dc_telemetry = self._dc_telemetry_summary(total_dc, site_dc) if dc_entities else None
 
             t_est, t_est10, t_est90 = self._total_forecast_for_period(slot_start_epoch)
             if (t_est, t_est10, t_est90) != (0.0, 0.0, 0.0):
@@ -519,6 +528,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "db_latest_period_end": self._db_latest_period_end,
             "db_sites": self._db_sites,
             "base_status": self._base_status,
+            "dc_telemetry": self._dc_telemetry,
         }
 
     # ------------------------------------------------------------------
@@ -1144,6 +1154,23 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             c = self._interval_extreme(m.get("current_sensor"), "min", hist)
             flat.extend([round(v or 0.0, 3), round(c or 0.0, 3)])
         return tuple(flat)  # type: ignore[return-value]
+
+    @staticmethod
+    def _dc_telemetry_summary(
+        total: tuple[float, float, float, float],
+        sites: dict[str, tuple[float, float, float, float]],
+    ) -> dict[str, Any]:
+        """Shape the captured DC telemetry for the diagnostic sensor."""
+        def _pairs(t: tuple[float, float, float, float]) -> dict[str, float]:
+            return {
+                "mppt1_voltage": t[0], "mppt1_current": t[1],
+                "mppt2_voltage": t[2], "mppt2_current": t[3],
+            }
+        return {
+            **_pairs(total),
+            "max_voltage": max(total[0], total[2]),
+            "sites": {s: _pairs(t) for s, t in sites.items()},
+        }
 
     def _read_site_dc_telemetry(
         self, opts: dict[str, Any], hist: dict[str, list[float]]

@@ -124,6 +124,17 @@ async def test_interval_extreme_modes(hass, coordinator):
     assert coordinator._interval_extreme(None, "max", hist) is None
 
 
+async def test_dc_telemetry_summary_shape(coordinator):
+    summary = coordinator._dc_telemetry_summary(
+        (412.0, 6.0, 398.0, 5.1),
+        {"A": (412.0, 6.0, 398.0, 5.1)},
+    )
+    assert summary["mppt1_voltage"] == 412.0
+    assert summary["mppt2_current"] == 5.1
+    assert summary["max_voltage"] == 412.0  # max(412, 398)
+    assert summary["sites"]["A"]["mppt2_voltage"] == 398.0
+
+
 async def test_interval_values_empty_without_entities(coordinator):
     # No configured entities → no recorder query attempted.
     assert await coordinator._interval_values(set(), 0, 100) == {}

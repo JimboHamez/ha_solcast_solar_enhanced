@@ -24,7 +24,7 @@ Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search
 |---|---|
 | `__init__.py` | Entry point — sets up coordinator, registers 3 services, handles load/unload |
 | `coordinator.py` | `SolcastEnhancedCoordinator` (DataUpdateCoordinator) — half-hour-aligned update loop; orchestrates store writes, PV tuning (24 h), dampening push (6 h), OWM fetch |
-| `sensor.py` | 14 `CoordinatorEntity` sensors; all read from coordinator data/properties. The three 30-min average sensors (PV Power/Export, Battery Charge) also extend `RestoreSensor` via `_RestoringSensorBase` to survive restarts |
+| `sensor.py` | 15 `CoordinatorEntity` sensors; all read from coordinator data/properties. The three 30-min average sensors (PV Power/Export, Battery Charge) also extend `RestoreSensor` via `_RestoringSensorBase` to survive restarts. The diagnostic `MpptDcSensor` surfaces the latest captured per-MPPT DC telemetry |
 | `config_flow.py` | UI wizard (`site → database → owm → battery → tuning`), plus mirrored options flow |
 | `const.py` | All config keys, defaults, domain names, sensor keys, service names, timing constants |
 | `sqlite_store.py` | `SqliteStore` — the built-in, zero-config stdlib `sqlite3` store (executor jobs, WAL, serialising lock); insert + 2 query methods + sites/count/lifecycle + `async_migrate` (one-time data repairs, `PRAGMA user_version`-gated) |

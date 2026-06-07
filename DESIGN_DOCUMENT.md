@@ -862,7 +862,7 @@ with `--site` / `--all-sites`, for offline validation.
 
 ---
 
-## Sensors (14 total)
+## Sensors (15 total)
 
 | Sensor class | `_attr_name` | Unit | Description |
 |---|---|---|---|
@@ -873,6 +873,7 @@ with `--site` / `--all-sites`, for offline validation.
 | `TuningRmseSensor` | Tuning RMSE | kW | Goodness of fit |
 | `TuningExportExcludedSensor` | Tuning Export Limited Excluded | — | Records dropped by export limit filter in last tuning run |
 | `DbRecordsSensor` | Database Records | — | Total DB record count |
+| `MpptDcSensor` | MPPT DC Voltage (max) | V | Diagnostic: latest captured per-MPPT DC telemetry (max string voltage; per-tracker V/I + per-site in attributes). Unavailable when no DC sensors configured |
 | `DampeningSensor` | Dampening Hours with DB Data | — | Hours with DB-derived factors |
 | `WeatherTempSensor` | Weather Temperature | °C | OWM current temperature |
 | `WeatherCloudsSensor` | Cloud Cover | % | OWM cloud cover |
@@ -1413,6 +1414,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.10 | Jun 2026 | Aligned with the v1.6.6 release: `async_get_records_for_tuning` applies the clear-sky filter (`clouds < cloud_threshold`) in SQL before the LIMIT, so tuning fits the most recent clear-sky records across seasons rather than a recent cloudy window; dampening factors are clamped to `[0,1]` in `_push_dampening` before the base `set_dampening` call (the base rejects values outside that range), with the unclamped value retained in the dampening sensor attributes |
 | 1.11 | Jun 2026 | Aligned with the v1.6.7 release: curtailment-aware dampening (Phase 1 of the DC-telemetry roadmap) — `compute_dampening` takes `export_limit_kw` and clips the forecast to the achievable ceiling `total_pv + (export_limit − pv_export)`, floored at the delivered output so the ratio ≤ 1.0; curtailed clear-sky records contribute a neutral ≈1.0 ratio instead of a spurious shading penalty, none discarded; `forecast_clipped` count surfaced per hour (`hour_NN_forecast_clipped`); export limit sourced from the base `site_export_limit` (manual fallback, `0` = no-op). Brings dampening to parity with tuning's existing export-limited exclusion |
 | 1.12 | Jun 2026 | Aligned with the v1.6.8 release: Phase 2 **capture** of the DC-telemetry roadmap — paired per-MPPT DC string voltage/current (up to `MAX_MPPT_TRACKERS = 2`, kept per-tracker for a future `Vmp`-band calibrator). New `dc_voltage1/current1/voltage2/current2` columns added to existing DBs by additive `ALTER TABLE` (`_ensure_columns`); config fields on the site step (flat keys) and per-site multi-site mapping step (`mppts` list); reads aggregated over each slot from recorder history as max-voltage/min-current (`_interval_values`/`_interval_extreme`) with an instantaneous fallback. Capture only — no detection acts on it yet; forward-only. Field translations added across all 11 languages |
+| 1.13 | Jun 2026 | Aligned with the v1.6.9 release: diagnostic `MpptDcSensor` ("MPPT DC Voltage (max)") surfaces the latest captured per-MPPT DC telemetry (`coordinator.data["dc_telemetry"]` via `_dc_telemetry_summary`) for wiring verification — state = max string voltage, attributes = per-tracker V/I + per-site; entity category diagnostic, unavailable when no DC sensors configured. Sensor count 14 → 15 |
 
 ---
 

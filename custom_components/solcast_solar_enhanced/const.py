@@ -148,6 +148,7 @@ SENSOR_BATTERY_CHARGE = "battery_charge"
 SENSOR_PV_ACTUAL = "pv_actual"
 SENSOR_PV_EXPORT = "pv_export"
 SENSOR_BASE_STATUS = "base_status"
+SENSOR_MPPT_DC = "mppt_dc"
 
 # Services
 SERVICE_RUN_PV_TUNING = "run_pv_tuning"
