@@ -1,6 +1,7 @@
 {
   "domain": "solcast_solar_enhanced",
   "name": "Solcast Solar Enhanced",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@jimbohamez"],
   "config_flow": true,
   "dependencies": ["solcast_solar"],
