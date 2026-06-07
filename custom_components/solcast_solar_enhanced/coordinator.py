@@ -779,6 +779,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
+        # Export limit for curtailment-aware forecast clipping — prefer the base's
+        # site_export_limit, fall back to the manual option (0 = disabled). Same
+        # source the tuner uses, so dampening and tuning agree on the ceiling.
+        export_limit = self._read_base_export_limit()
+        if export_limit is None:
+            export_limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
 
         tz = dt_util.get_time_zone(self.hass.config.time_zone) or timezone.utc
         now_local = datetime.fromtimestamp(now_epoch, tz=tz)
@@ -812,6 +818,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "quality_records": 0.0,
                     "avg_quality": 0.0,
                     "clipped_excluded": 0,
+                    "forecast_clipped": 0,
                 })
                 continue
 
@@ -823,6 +830,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 clipping_threshold=clipping_threshold,
                 target_zenith=zen_slot,
                 target_azimuth=az_slot,
+                export_limit_kw=export_limit,
             )
             slot_results.append(slot_result)
 
@@ -1386,6 +1394,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 clipped = slot_a.get("clipped_excluded", 0) + slot_b.get("clipped_excluded", 0)
                 if clipped:
                     attrs[f"{key}_clipped_excluded"] = clipped
+                fclip = slot_a.get("forecast_clipped", 0) + slot_b.get("forecast_clipped", 0)
+                if fclip:
+                    attrs[f"{key}_forecast_clipped"] = fclip
         sources = [s.get("source") for s in self._dampening_table if s.get("source") != "night"]
         if sources:
             from collections import Counter

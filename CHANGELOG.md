@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.7] - 2026-06-07
+
+### Fixed
+- **Export curtailment no longer reads as shading in the dampening calculation.**
+  When clear-sky PV output exceeds household load plus the grid export limit, the
+  inverter curtails — it holds output below what the panels could make — so
+  `pv_actual` falls short of the forecast for a reason that has nothing to do with
+  shading. The dampening side previously had only an inverter-clip guard (the
+  tuning side already excluded export-limited records), so these curtailed
+  clear-sky records pulled the dampening factor spuriously low on exactly the days
+  it relies on. `compute_dampening` now clips the forecast to the achievable
+  ceiling `total_pv + (export_limit − pv_export)`, floored at the delivered output
+  so the ratio can never exceed 1.0: a curtailed record contributes a neutral ≈1.0
+  ratio instead of a false penalty, and **no record is discarded** (unlike tuning,
+  which excludes them). The export limit is taken from the base integration's
+  `site_export_limit` (falling back to the manual `export_limit_kw` option; `0` =
+  disabled, in which case this is a no-op, so existing behaviour is unchanged). A
+  per-hour `forecast_clipped` count is surfaced on the Dampening sensor
+  (`hour_NN_forecast_clipped`). Validated on a 12 k-row reference database: the
+  high-sun-slot ratio recovers 0.909 → 0.943.
+
 ## [1.6.6] - 2026-06-06
 
 ### Changed

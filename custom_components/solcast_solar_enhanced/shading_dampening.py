@@ -53,6 +53,7 @@ def compute_dampening(
     clipping_threshold: float,
     target_zenith: float,
     target_azimuth: float,
+    export_limit_kw: float = 0.0,
 ) -> dict[str, Any]:
     """
     Compute a single half-hour slot's dampening from database-collected records only.
@@ -61,19 +62,26 @@ def compute_dampening(
     DB-measured actual/estimate ratio; no values from the base solcast_solar
     integration are consulted.
 
-    Returns dict with: factor, alpha, source, quality_records, avg_quality, clipped_excluded
+    When ``export_limit_kw > 0`` the forecast is clipped to the achievable ceiling
+    for export-curtailed records (see the loop below) so curtailment is not
+    mistaken for shading.
+
+    Returns dict with: factor, alpha, source, quality_records, avg_quality,
+    clipped_excluded, forecast_clipped
     """
     clip_kw = capacity_kw * clipping_threshold
 
     total_weight = 0.0
     weighted_ratio_sum = 0.0
     clipped_excluded = 0
+    forecast_clipped = 0
     n_records = 0
 
     for r in records:
         pv_actual = float(r.get("pv_actual", 0) or 0)
         total_pv = pv_actual  # inverter AC output already includes export and battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
+        pv_export = float(r.get("pv_export", 0) or 0)
         # Distinguish a genuine 0% (clearest sky — the highest-quality records for
         # a shading ratio) from a missing value. A bare `or 100` would coerce a
         # falsy 0 to 100, so `_cloud_weight` would score the clearest sky in its
@@ -100,7 +108,24 @@ def compute_dampening(
         if combined < 1e-6:
             continue
 
-        ratio = total_pv / pv_est
+        # Export-curtailment forecast clipping. When grid export is pegged at the
+        # limit the inverter holds total output below pv_estimate, so the raw
+        # actual/estimate ratio reads spuriously low — curtailment masquerading as
+        # shading. Clip the forecast to the achievable ceiling (the delivered
+        # output plus whatever export headroom remained) so a curtailed clear-sky
+        # record contributes a valid ~1.0 ratio instead of a false penalty. The
+        # clip only ever lowers the forecast, never below the delivered output
+        # (so ratio ≤ 1.0), and is a no-op when export_limit_kw <= 0 or there was
+        # export headroom (i.e. the inverter was not curtailing).
+        effective_est = pv_est
+        if export_limit_kw > 0:
+            ceiling = total_pv + (export_limit_kw - pv_export)
+            clipped = max(total_pv, min(pv_est, ceiling))
+            if clipped < pv_est - 1e-9:
+                effective_est = clipped
+                forecast_clipped += 1
+
+        ratio = total_pv / effective_est
         weighted_ratio_sum += combined * ratio
         total_weight += combined
         n_records += 1
@@ -115,6 +140,7 @@ def compute_dampening(
             "quality_records": 0.0,
             "avg_quality": 0.0,
             "clipped_excluded": clipped_excluded,
+            "forecast_clipped": forecast_clipped,
         }
 
     db_factor = weighted_ratio_sum / total_weight
@@ -145,6 +171,7 @@ def compute_dampening(
         "quality_records": round(total_weight, 2),
         "avg_quality": round(avg_quality, 3),
         "clipped_excluded": clipped_excluded,
+        "forecast_clipped": forecast_clipped,
     }
 
 

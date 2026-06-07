@@ -1101,6 +1101,171 @@ rewrite. Because seasonal dampening uses a cross-year day-of-year window, a valu
 below `DB_RETENTION_MIN_RECOMMENDED_DAYS` (≈13 months) logs a warning but is still
 honoured (not a hard floor).
 
+### Curtailment-aware actual/forecast filtering (DC-telemetry off-MPP detection)
+
+**Problem.** When clear-sky PV output exceeds the combination of household load
+and the grid export limit, the inverter *curtails* — it holds output below what
+the panels could make. The resulting `pv_actual` no longer measures available
+generation, so the actual-vs-forecast comparison that drives **both** tuning and
+dampening is corrupted on exactly the clear-sky days those features depend on.
+This already affects sites with an export limit below their array's clear-sky
+peak (most residential self-consumption sites), and will become near-universal as
+**variable export limits** and **emergency-stop / curtailment** schemes roll out.
+
+Measured on a 12 k-row Melbourne database (single 5 kW-export site): the export
+meter pegs at a hard ~5 kW ceiling, household load sits at p50 ≈ 0.53 kW, and
+**~50 % of high-sun clear-sky records (Oct–Apr) are curtailed** — clustering in
+the high-irradiance shoulder/summer months and vanishing in deep winter (May:
+0 %), the inverse of the "clearer = faster convergence" intuition. The raw
+clear-sky `actual/forecast` ratio reads **0.890** — an apparent 11 % shading
+penalty that is mostly curtailment, not shading. Two independent corrections
+(clip-the-forecast and headroom-only) both recover **≈0.955**, i.e. the true
+unshaded ratio, confirming ~5 % real shading masked by ~6 % spurious curtailment.
+
+**Current state.** Detection is a *heuristic*; both consumers now handle export
+curtailment (Phase 1 landed it on the dampening side — see Rollout below):
+
+| Consumer | Inverter-clip guard | Export-cap handling | Method |
+|---|---|---|---|
+| Tuning (`pv_tuning.run_tuning`) | yes (`total_pv ≥ capacity×threshold`) | yes (`pv_export ≥ export_limit×threshold`, `export_limited_excluded`) | excludes curtailed records |
+| Dampening (`shading_dampening.compute_dampening`) | yes (`clipped_excluded`) | yes (`export_limit_kw`, `forecast_clipped`) | clips the forecast to the achievable ceiling |
+
+Both guards remain heuristics — they infer curtailment from the AC side (output
+flat, export pegged) and so are forecast-/limit-dependent, blind to the cause, and
+miss the `battery-full + export-capped` double-curtailment case. Tier-1 DC
+telemetry (below) removes those limitations.
+
+**The off-MPP signal (why DC voltage is the ground truth).** Curtailment *is* a
+DC-side phenomenon. A PV string is a current source; to deliver less power the
+inverter cannot lower current at fixed voltage — it walks the operating point off
+the maximum-power point **up the I-V curve toward open-circuit**: voltage rises
+toward `Voc`, current collapses. So an elevated DC string voltage is a *direct
+measurement* of curtailment, independent of the forecast, independent of the
+(possibly dynamic) export limit, and identical regardless of cause (static cap,
+variable limit, emergency stop, frequency-watt, battery-full). It also unifies
+the two heuristics above: inverter AC clipping and export curtailment are the
+*same* off-MPP excursion on the DC side, so one measured flag subsumes both.
+
+**Tiered detection (graceful degradation).** Because per-string DC telemetry is
+opt-in and brand-dependent, detection is a ladder; nothing is removed, it is
+ranked, and the best available tier is used:
+
+| Tier | Signal | Catches | Applies to |
+|---|---|---|---|
+| 1 (best) | per-MPPT DC voltage (+ current) → off-MPP | export curtailment **and** inverter clip, cause-agnostic, limit-independent | most local-Modbus inverters with DC entities |
+| 2 | `pv_export ≥ export_limit × threshold` (ideally the *dynamic* limit) | export curtailment only | SolarEdge, cloud-only, no DC sensors |
+| 3 | `total_pv ≥ capacity × clipping_threshold` (existing) | inverter AC clip only | last resort |
+
+**Effectiveness scales with how much DC data is provided — and why.** Within
+Tier 1 the detector's accuracy is a function of the channels it is given. Each
+extra channel removes a specific, physically-identifiable failure mode, so more
+DC data buys strictly higher effectiveness:
+
+| DC data provided | Detection level | What it resolves | Residual blind spot |
+|---|---|---|---|
+| None (AC heuristics only) | baseline | export-pegged + AC-clip | cause-blind, forecast-dependent, misses battery-full+capped & unknown/dynamic limits |
+| Per-string **voltage** | direct off-MPP | curtailment seen as a measurement, not an inference; limit-independent | cold-clear mornings sit at genuinely high `Vmp` *at* MPP → false positive |
+| Voltage **+ current** | disambiguated | the cold-morning case: curtailment is high-V **and** low-I; MPP is high-V **and** high-I | a static voltage threshold still drifts with temperature |
+| Per-**MPPT** (not inverter-aggregate) | per-site | *asymmetric* curtailment — one string pushed off-MPP while another (past its own peak) stays at MPP | — matches the per-site tuning/dampening granularity |
+| + DC power / multi-MPPT + `temp` | self-calibrating | learns each string's `Vmp` band from high-current intervals, tracking the temperature drift of `Vmp`/`Voc`; no hand-set threshold | (enables future *wing-reconstruction* to recover curtailed days for tuning) |
+
+The physical reasons, in order:
+
+- **Voltage alone works** because curtailment is, definitionally, an excursion in
+  voltage toward `Voc` — it is the single most informative channel.
+- **Current is needed** because voltage is ambiguous at the cold/clear extreme:
+  a string genuinely at MPP on a cold morning sits at a naturally high `Vmp`,
+  which looks like the start of an off-MPP excursion. Current resolves it — at MPP
+  the current is high (tracking irradiance); off-MPP it collapses. High-V+low-I is
+  curtailment; high-V+high-I is just a cold clear morning.
+- **Per-MPPT matters** because curtailment is enforced at the inverter's AC
+  setpoint but distributes *unequally* across trackers — each string is pulled off
+  MPP according to its own instantaneous position on its own power curve. Only
+  per-string voltage sees *which* strings were actually throttled, which is the
+  granularity per-site tuning and per-site dampening already operate at.
+- **Power + temperature context matters** because `Vmp`/`Voc` shift with cell
+  temperature (~−0.3 %/°C on `Voc`), so any *fixed* voltage line is a
+  climate-specific fit. Learning the `Vmp` band from high-current (provably-at-MPP)
+  intervals gives a *relative*, temperature-tracking threshold that needs no user
+  input and stays correct across seasons.
+
+**Consumer wiring (unchanged by tier).** What each feature does with a flagged
+record is independent of how the flag was derived:
+
+- **Tuning → exclude** the record (a flat-topped clipped peak has no geometry to
+  fit; it cannot be tuned on). Costs ~50 % of high-sun clear-sky records at an
+  export-limited site, hence the convergence-timeline caveat below.
+- **Dampening → clip the forecast** to the achievable ceiling
+  (`min(pv_estimate, load + export_limit)`) so the record still contributes a
+  valid ≈1.0 ratio instead of a spurious penalty (recovers 0.890 → 0.954 with **no
+  record discarded**); or, with a hard Tier-1 flag, simply **neutralise** the
+  record (treat like `no_data` for the shading signal — simpler, but forgoes the
+  partial-clip signal). The `export_limit` ceiling is still required for the
+  clip-forecast math and for the Tier-2 fallback, so it is stored regardless.
+
+**Storage shape.** Add per-record columns: `dc_voltage` (and `dc_current`) carried
+on each per-site row from that site's MPPT, plus `export_limit` (the active,
+possibly dynamic, limit at that period) and a derived `curtailed` boolean. The
+`_total` aggregate row sets `curtailed = OR` across contributing strings — if any
+string was throttled, the property-wide comparison is compromised for that slot.
+All new columns are **forward-only** (not retro-modellable on existing rows; the
+0.890/0.955 figures above stand as the heuristic baseline). Prefer a **mean/min**
+statistics helper over a raw instantaneous DC read, mirroring `pv_actual`: a
+single half-hour-boundary sample can miss intermittent within-slot curtailment, so
+the *minimum current* / *maximum voltage* over the interval is the safer aggregate.
+
+**Hardware applicability.** The integration consumes HA *entities*, not inverters,
+so this works wherever the upstream integration surfaces per-string DC voltage (+
+current). **SunSpec Model 160** ("Multiple MPPT Inverter Extension") over Modbus
+TCP/RTU is the common denominator — SMA, Huawei (`huawei_solar`), Sungrow, GoodWe,
+SolaX, Victron (via GX → Modbus/MQTT) and Fronius (Solar API + Modbus) all expose
+it. **Cloud APIs** (Growatt cloud, SolarEdge monitoring, Fronius Solar.web) are
+unsuitable — latency/rate-limits break per-half-hour sampling. **CAN bus** is a
+non-path: in solar it is the inverter↔battery-BMS link, not PV-string telemetry
+(Victron VE.Can data reaches HA re-published as Modbus/MQTT). The structural
+exception is **SolarEdge**: per-panel optimizers hold the string at a fixed DC-bus
+voltage, so the inverter never walks voltage toward `Voc` to curtail — the off-MPP
+fingerprint does not exist, and SolarEdge is therefore **Tier-2 only**.
+
+**Effect on the convergence documentation.** The "time to full confidence" tables
+(README / DESIGN) assume every clear-sky record is usable, which is false under an
+export limit — and the clearest, sunniest sites curtail *most*, inverting the
+table's "clearer = faster" ordering. With curtailment-aware filtering the honest
+statement is: dampening's broad clear-sky pool loses only ~22 % (≈1.3× slower, or
+*unchanged* if clip-forecast keeps the records), while tuning's high-sun subset
+loses ~50 % (**≈2× slower** for export-limited sites). The quality-weighted
+*record-count* tables are the climate- and curtailment-independent truth and
+should lead; the *weeks* tables should be framed as illustrative for an
+unconstrained site, with an export-limit caveat. With a Tier-1 flag the caveat
+strengthens from "heuristically inferred" to "reliably detected via inverter DC
+telemetry," tier-dependent.
+
+**Rollout (two phases).**
+1. **Implemented (Phase 1, data-only).** Export-aware handling on the **dampening**
+   side: `compute_dampening` takes `export_limit_kw` (sourced from the base
+   `site_export_limit`, falling back to `CONF_EXPORT_LIMIT_KW`) and clips the
+   forecast to the achievable ceiling `total_pv + (export_limit − pv_export)`,
+   floored at the delivered output so the ratio never exceeds 1.0. A curtailed
+   clear-sky record now contributes a neutral ≈1.0 ratio instead of a spurious
+   penalty, with **no record discarded**; a `forecast_clipped` counter is returned
+   and surfaced per hour on the Dampening sensor (`hour_NN_forecast_clipped`).
+   Validated on the 12 k-row reference DB: the high-sun-slot `db_factor` recovers
+   0.909 → 0.943 (320 records clipped). Tuning already had the Tier-2/3 guards, so
+   it was unchanged. Works on the **existing** database, no new hardware data.
+2. *Forward (Phase 2):* add the `strings` config extension (`dc_voltage_sensor`,
+   `dc_current_sensor` siblings of the existing per-MPPT `dc_sensor`), the schema
+   columns, and the per-string `Vmp`-band calibrator; **begin banking DC telemetry
+   now** (it cannot be backfilled) and promote Tier 1 to primary once enough has
+   accumulated — at which point it supersedes the heuristics and unlocks the
+   variable/emergency-limit robustness.
+
+**Status.** Phase 1 **implemented** (dampening clip-forecast). Phase 2 (per-MPPT
+DC telemetry → Tier-1 detection) and *wing-reconstruction* (fit the clear-sky
+curve to a day's unclipped morning/evening points and interpolate the clipped
+midday, to recover curtailed days for tuning rather than discarding them) remain
+proposed — Tier-1 detection perfects the *flag*, but recovering available
+generation from an off-MPP point still needs the curve fit.
+
 ---
 
 ## Dependency handling
@@ -1214,6 +1379,7 @@ mocking patterns) and what coverage expectations exist for new features?
 | 1.8 | Jun 2026 | Aligned with the v1.6.4 release: PV tuning optimiser switched from scipy L-BFGS-B to a pure-numpy coarse-to-fine grid search (`_minimize_grid`, azimuth-outer + tilt-batched for Raspberry Pi; scipy dependency removed, issue #85); per-site dampening convergence gate (`CONF_DAMPENING_GATE`, `_orientation_diverged`, `dampening_gated` repair issue); optional history retention (`CONF_DB_RETENTION_DAYS`, `SqliteStore.async_prune`); vectorised tuning record filter; per-site weather-coercion crash fix (`_weather_for_storage`); translations added for de/es/fr/it/ja/nl/pl/pt/sk/ur |
 | 1.9 | Jun 2026 | Aligned with the v1.6.5 release: fixed the panel-azimuth convention mismatch — `CONF_AZIMUTH` (Solcast West-positive) is now converted to the internal East-positive solar frame at every tuning seed and the dampening gate, and the tuned azimuth is converted back for display (`panel_azimuth_to_internal` / `panel_azimuth_to_solcast`); `tools/import_history.py` recomputes zenith as well as azimuth from the epoch midpoint and creates the destination directory if missing |
 | 1.10 | Jun 2026 | Aligned with the v1.6.6 release: `async_get_records_for_tuning` applies the clear-sky filter (`clouds < cloud_threshold`) in SQL before the LIMIT, so tuning fits the most recent clear-sky records across seasons rather than a recent cloudy window; dampening factors are clamped to `[0,1]` in `_push_dampening` before the base `set_dampening` call (the base rejects values outside that range), with the unclamped value retained in the dampening sensor attributes |
+| 1.11 | Jun 2026 | Aligned with the v1.6.7 release: curtailment-aware dampening (Phase 1 of the DC-telemetry roadmap) — `compute_dampening` takes `export_limit_kw` and clips the forecast to the achievable ceiling `total_pv + (export_limit − pv_export)`, floored at the delivered output so the ratio ≤ 1.0; curtailed clear-sky records contribute a neutral ≈1.0 ratio instead of a spurious shading penalty, none discarded; `forecast_clipped` count surfaced per hour (`hour_NN_forecast_clipped`); export limit sourced from the base `site_export_limit` (manual fallback, `0` = no-op). Brings dampening to parity with tuning's existing export-limited exclusion |
 
 ---
 

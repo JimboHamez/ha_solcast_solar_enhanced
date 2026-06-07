@@ -166,6 +166,49 @@ def test_compute_dampening_clipping_excluded_counted():
     assert result["clipped_excluded"] == 10
 
 
+def test_compute_dampening_clip_forecast_recovers_curtailed_ratio():
+    """Export-curtailed clear-sky record: raw ratio reads low (curtailment looks
+    like shading); clipping the forecast to the achievable ceiling recovers it
+    toward a neutral ~1.0. Mirrors the real signature (export pegged at ~5 kW,
+    actual held below a 7.6 kW estimate on an 8 kW array)."""
+    rec = {"pv_actual": 5.9, "pv_export": 4.98, "battery_charge": 0.0,
+           "pv_estimate": 7.62, "clouds": 5, "zenith": 30.0, "azimuth": 0.0}
+    # export disabled → the spurious penalty stands
+    raw = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0)
+    # export limit known → forecast clipped to load+limit, penalty removed
+    clipped = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0,
+                                export_limit_kw=5.0)
+    assert raw["forecast_clipped"] == 0
+    assert clipped["forecast_clipped"] == 200
+    assert clipped["factor"] > raw["factor"]
+    if clipped["alpha"] > 0.9:
+        assert clipped["factor"] == pytest.approx(0.997, abs=0.01)  # 5.9/5.92
+        assert raw["factor"] == pytest.approx(0.774, abs=0.01)      # 5.9/7.62
+
+
+def test_compute_dampening_clip_forecast_noop_with_export_headroom():
+    """Not curtailed (export well below the limit): forecast is not clipped, so
+    genuine shading is preserved and the result matches the export-disabled case."""
+    rec = {"pv_actual": 3.0, "pv_export": 1.0, "battery_charge": 0.0,
+           "pv_estimate": 3.1, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
+    raw = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 45.0, 180.0)
+    with_limit = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 45.0, 180.0,
+                                   export_limit_kw=5.0)
+    assert with_limit["forecast_clipped"] == 0
+    assert with_limit["factor"] == pytest.approx(raw["factor"])
+
+
+def test_compute_dampening_clip_forecast_never_exceeds_unity():
+    """Measured export slightly over the configured limit must not push the ratio
+    above 1.0 — the clip floors the effective estimate at the delivered output."""
+    rec = {"pv_actual": 5.0, "pv_export": 5.1, "battery_charge": 0.0,
+           "pv_estimate": 7.0, "clouds": 5, "zenith": 30.0, "azimuth": 0.0}
+    result = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0,
+                               export_limit_kw=5.0)
+    assert result["forecast_clipped"] == 200
+    assert result["factor"] <= 1.0 + 1e-6
+
+
 def test_compute_dampening_early_clamp_applies_below_half_alpha():
     """When alpha < 0.5, factor is clamped to within 15% of the neutral 1.0 anchor."""
     neutral = 1.0
