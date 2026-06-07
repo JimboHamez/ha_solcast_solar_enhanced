@@ -162,12 +162,13 @@ The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automa
 | Latitude / Longitude | Your site coordinates |
 | System capacity (kW DC) | Total panel DC capacity |
 | Panel tilt | 0° = flat, 90° = vertical |
-| Panel azimuth | 0° = North, 90° = East, −90° = West |
+| Panel azimuth | Solcast convention — 0° = North, **positive = West** (up to +180°), **negative = East** (down to −179°). E.g. +6 = 6° West of North |
 | PV Generation sensor | Cumulative energy counter (Wh/kWh/MWh) — recommended; or a rolling `mean_linear` power helper (kW) |
 | PV sensor type | `Auto-detect` (default, by unit), `Energy counter (kWh/Wh/MWh)`, or `Averaged power (kW/W)` |
 | PV Export sensor | Cumulative export energy counter (Wh/kWh) — recommended; or a rolling `mean_linear` helper |
 | PV Export sensor type | As above, for the export sensor |
 | Battery Charge sensor | Generation/power or energy-counter sensor for battery charge (optional) |
+| MPPT 1/2 DC voltage + current | Optional, for curtailment-detection capture. Point at your inverter's **raw instantaneous** per-string voltage (V) / current (A) sensors (e.g. Fronius) — **not** energy counters; the integration aggregates max-voltage / min-current over each slot itself. MPPT 2 blank for single-tracker inverters |
 
 ### Step 2 — Storage
 
@@ -216,8 +217,9 @@ Shown automatically when more than one Solcast site is detected. Sites are auto-
 | Field | Description |
 |---|---|
 | `<site>` — generation sensor | The sensor that measures this array's output. Several arrays may share one inverter AC sensor |
-| `<site>` — DC/MPPT sensor (optional) | The per-string DC sensor, when arrays share an AC output and the inverter exposes per-MPPT DC (e.g. Fronius) |
+| `<site>` — DC/MPPT sensor (optional) | The per-string DC **power** sensor, used only as a ratio to split shared AC across arrays (e.g. Fronius) |
 | `<site>` — sensor type | Auto-detect / power / energy counter |
+| `<site>` — MPPT 1/2 voltage + current (optional) | Per-string **instantaneous** DC voltage/current for that site, captured for curtailment detection (separate from the DC power ratio above) |
 
 How the mapping is interpreted:
 

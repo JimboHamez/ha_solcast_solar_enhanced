@@ -820,13 +820,19 @@ seeds per-site tuning; `resource_id` keys storage and targets `set_dampening`.
     {"site": "<rid>", "dc_sensor": "sensor.mppt1"},
     {"site": "<rid>", "dc_sensor": "sensor.mppt2"},
   ],
+  # Optional per-MPPT capture (Phase 2), on a single-site group or per string:
+  "mppts": [{"voltage_sensor": "sensor.mppt1_v", "current_sensor": "sensor.mppt1_i"}],
 }
 ```
 
 The config-flow `sites` step collects, per discovered site, a generation sensor,
-an optional DC/MPPT sensor and a mode; `_derive_groups()` then groups sites that
-share an AC sensor (shared → DC-apportioned; alone → single-site; shared-without-DC
-→ omitted). `_groups_to_assignments()` reverses this for options-flow prefill.
+an optional DC/MPPT (power) sensor, a mode, and optional per-tracker DC
+voltage/current capture sensors; `_derive_groups()` then groups sites that share an
+AC sensor (shared → DC-apportioned; alone → single-site; shared-without-DC →
+omitted) and attaches each site's `mppts` list. `_groups_to_assignments()` reverses
+this for options-flow prefill. Note the two DC roles are distinct: `dc_sensor` is
+**power**, used only as an apportionment ratio; `mppts` is **instantaneous
+voltage/current**, captured for curtailment detection.
 
 ### Storage and the aggregate guard
 
@@ -926,12 +932,13 @@ chooses. See [PV Sensor Input](#pv-sensor-input). (A legacy HA Statistics
 | Longitude | Number | Site longitude (-180 to 180) |
 | Capacity (kW) | Number | System DC capacity |
 | Tilt | Number | Panel tilt 0° (flat) to 90° (vertical) |
-| Azimuth | Number | 0°=North, 90°=East, -90°=West |
+| Azimuth | Number | Solcast convention — 0°=North, positive=West (→+180°), negative=East (→−179°). Converted to the internal East-positive frame for tuning (`panel_azimuth_to_internal`) |
 | PV Power / Generation sensor | Entity selector* | Energy counter or power sensor for generation |
 | PV sensor type | Select | Auto-detect / power / energy counter |
 | PV Export sensor | Entity selector* | Energy counter or power sensor for export |
 | PV Export sensor type | Select | Auto-detect / power / energy counter |
 | Battery sensor | Entity selector* | Energy counter or power sensor for battery charge |
+| MPPT 1/2 voltage + current | Entity selector* | Optional per-tracker **instantaneous** DC voltage/current for curtailment-detection capture (raw per-string sensors; the integration aggregates max-V/min-I over each slot) |
 
 A final **Per-site sensor mapping** step appears automatically when more than
 one Solcast site is detected (see [Feature 6](#feature-6--multi-site-support)).
@@ -1005,6 +1012,10 @@ Raw battery sensor fallback for systems without a dedicated battery sensor mappe
 | `CONF_PV_ACTUAL_SENSOR` | pv\_actual\_sensor | "" |
 | `CONF_PV_EXPORT_SENSOR` | pv\_export\_sensor | "" |
 | `CONF_BATTERY_STAT_SENSOR` | battery\_stat\_sensor | "" |
+| `CONF_MPPT1_VOLTAGE_SENSOR` | mppt1\_voltage\_sensor | "" |
+| `CONF_MPPT1_CURRENT_SENSOR` | mppt1\_current\_sensor | "" |
+| `CONF_MPPT2_VOLTAGE_SENSOR` | mppt2\_voltage\_sensor | "" |
+| `CONF_MPPT2_CURRENT_SENSOR` | mppt2\_current\_sensor | "" |
 | `CONF_DB_ENABLED` | db\_enabled | True |
 | `CONF_OWM_ENABLED` | owm\_enabled | False |
 | `CONF_OWM_API_KEY` | owm\_api\_key | "" |
