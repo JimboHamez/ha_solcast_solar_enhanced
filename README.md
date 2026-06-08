@@ -18,8 +18,17 @@ A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
 4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
 5. **Energy-counter PV input** — reads cumulative energy counters (Wh/kWh/MWh) as the recommended input, deriving average kW from the energy delta over each interval (race-free); a rolling `mean_linear` power helper is supported as a fallback, with unit-first auto-detection
+6. **Export-curtailment awareness** — periods where the inverter is curtailed against the grid export limit are detected so they don't masquerade as shading: such records are clipped to the achievable ceiling for dampening and excluded from tuning, keeping the correction honest. Per-MPPT DC telemetry is banked as ground truth for a hardware-based curtailment detector
 
 **Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
+
+---
+
+## Why this exists
+
+**Solcast discontinued PV Tuning for hobbyist (free) accounts.** Home users can no longer POST their measured generation back to the Solcast API to tune forecasts — and so can't drive Solcast's own dampening from real site data either (see Solcast's [PV Tuning discontinued](https://kb.solcast.com.au/pv-tuning-discontinued) notice; site-measurement tuning remains a commercial/utility-tier feature).
+
+This integration **restores that service entirely on-device.** It banks your actual-vs-forecast history locally and computes its own tilt/azimuth tuning and adaptive dampening, never depending on Solcast's server-side tuning. And because it folds in signals the old hobbyist tuning never had — [local cloud cover](#4-openweathermap-api-key-required-for-tuning--dampening) for a clear-sky filter, per-site panel geometry, multi-array DC apportionment, and [export-curtailment handling](#export-curtailment--dynamic-export-limits) — the resulting correction should be **more accurate** than the discontinued service, not merely a like-for-like replacement.
 
 ---
 
@@ -309,6 +318,19 @@ In **multi-site** mode each individually-measured site is tuned separately again
 ### Multi-site
 
 When the base integration has more than one rooftop site, the enhanced integration discovers them automatically and stores one row per site (keyed by Solcast `resource_id`) alongside the property-wide aggregate (`_total`). Aggregate tuning/dampening continue to use the `_total` rows, so single-site behaviour is unchanged; per-site tuning and dampening are layered on top. See [Step 6](#step-6--per-site-sensor-mapping-multi-site-only) for how generation is mapped to sites.
+
+### Export curtailment & dynamic export limits
+
+When clear-sky PV output exceeds household load plus your grid export limit, the inverter **curtails** — it holds output below what the panels could make, so `pv_actual` stops measuring available generation. Left unhandled, that curtailment looks like shading and biases both tuning and dampening on exactly the clear-sky days they rely on.
+
+**Today (export-limit aware).** Records pegged at the export ceiling are detected from the AC side and handled so they stay honest: tuning **excludes** them, and dampening **clips the forecast to the achievable ceiling** so a curtailed clear-sky record contributes a neutral ≈1.0 instead of a false penalty (no record discarded). The export limit is read automatically from the base integration's `site_export_limit` (with a manual fallback). v1.6.8 additionally began banking per-MPPT DC voltage/current as the ground truth for a forthcoming hardware-based curtailment detector.
+
+**In the works:**
+
+- **Emergency stop / emergency backstop** — recognising AEMO/ARENA emergency-backstop curtailment events (the market-operator mechanism to remotely throttle distributed rooftop PV during minimum-demand / system-security periods) so those intervals are flagged rather than mistaken for shading.
+- **Variable (dynamic) export limits** — honouring the time-varying export limit set by your local DNSP (distribution network), instead of a single fixed cap, so the curtailment filter tracks the limit that actually applied in each interval.
+
+Both build on the per-MPPT DC telemetry now being captured: an elevated DC string voltage is a direct, cause-agnostic measurement of curtailment, independent of the (possibly dynamic) export limit. See the [design document](DESIGN_DOCUMENT.md#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection) for the detection ladder.
 
 ---
 

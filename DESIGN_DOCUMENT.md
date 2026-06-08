@@ -36,6 +36,23 @@ and pushes improved dampening values back via the base integration's
 The goal is to merge this enhancement into the main repository so all
 users benefit from a single, unified integration.
 
+### Why this exists — Solcast discontinued hobbyist PV tuning
+
+Solcast **discontinued PV Tuning for hobbyist (free) accounts** (see Solcast's
+[PV Tuning discontinued](https://kb.solcast.com.au/pv-tuning-discontinued)
+notice). Home users can no longer POST measured generation back to the Solcast
+API to tune their forecasts — and therefore can't drive Solcast's own dampening
+from real site data either; site-measurement tuning is now a commercial/utility
+tier feature.
+
+This enhancement **restores that service on-device**: it banks actual-vs-forecast
+history locally and computes its own tilt/azimuth tuning and adaptive dampening,
+never depending on Solcast's server-side tuning. Because it additionally folds in
+signals the discontinued hobbyist tuning never had — per-record local cloud cover
+(clear-sky filter), per-site panel geometry, multi-array DC apportionment, and
+export-curtailment handling — the resulting correction should be **more accurate**
+than the discontinued service, not merely a like-for-like replacement.
+
 ---
 
 ## Architecture
@@ -1122,7 +1139,21 @@ generation, so the actual-vs-forecast comparison that drives **both** tuning and
 dampening is corrupted on exactly the clear-sky days those features depend on.
 This already affects sites with an export limit below their array's clear-sky
 peak (most residential self-consumption sites), and will become near-universal as
-**variable export limits** and **emergency-stop / curtailment** schemes roll out.
+two distinct schemes roll out, each owned by a different party:
+
+- **Variable (dynamic) export limits** — set by the local **DNSP** (distribution
+  network service provider): a time-varying export ceiling replacing the single
+  fixed cap, so the limit that applied differs interval-to-interval.
+- **Emergency stop / emergency backstop** — operated at the market/system level
+  (**AEMO/ARENA** emergency-backstop programs): the ability to remotely throttle
+  or shut down distributed rooftop PV during minimum-demand / system-security
+  events.
+
+Explicit handling of both is **on the roadmap** (in the works). They differ only
+in *who* sets the constraint and *how often* it changes; on the DC side they are
+the **same** off-MPP excursion, which is exactly why the Tier-1 DC-voltage signal
+below subsumes them cause-agnostically (a measured curtailment flag needs no
+knowledge of the dynamic limit or the backstop signal).
 
 Measured on a 12 k-row Melbourne database (single 5 kW-export site): the export
 meter pegs at a hard ~5 kW ceiling, household load sits at p50 ≈ 0.53 kW, and
