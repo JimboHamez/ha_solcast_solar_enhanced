@@ -448,8 +448,14 @@ Requires `numpy` (no scipy). The SQLite source uses the standard library; CSV mo
 
 ## Roadmap
 
-Planned but not yet implemented:
+Planned and in-progress work:
 
+- **Curtailment detector (DC-telemetry off-MPP detection).** Tells genuine curtailment apart from shading on the DC side, so neither tuning nor dampening is fooled by curtailed clear-sky days. Progress:
+  - ✅ **Phase 1 — dampening clip-forecast** (v1.6.7): export-limited records are clipped to the achievable ceiling instead of being penalised as shading.
+  - ✅ **Phase 2 — per-MPPT DC telemetry capture** (v1.6.8) + **diagnostic sensor** (v1.6.9): per-string DC voltage/current is banked each slot (max-V / min-I). Now **confirmed logging real production data** on configured hardware — a full clear day yields a clean Vmp band (with Voc at first light) and resolves per-string partial shading on the DC side, the *provably-at-MPP* reference the calibrator needs.
+  - ⏳ **Tier-1 detection** (next, as telemetry accumulates): a self-calibrating per-string Vmp-band model, a `curtailed` flag + `export_limit` column, and wiring the flag into tuning (exclude) and dampening (clip/neutralise). An elevated DC voltage near Voc with collapsed current is a direct, cause-agnostic curtailment measurement — independent of the (possibly dynamic) export limit, and the same signal that will back the [emergency-stop and variable-export-limit work](#export-curtailment--dynamic-export-limits).
+
+  See the [design document](DESIGN_DOCUMENT.md#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection) for the full detection ladder and storage shape.
 - **Indexed day-of-year column for the seasonal dampening scan.** The seasonal dampening query is a full table scan (its day-of-year filter is a computed expression no index can serve). A stored, indexed day-of-year column would make it an indexed range lookup. Deferred — the new **history retention** option (Storage step; see above) already bounds the row count on long-lived installs, and the scan cost is fine for typical single-site, few-year databases. See the [design document](DESIGN_DOCUMENT.md#roadmap).
 
 ---
