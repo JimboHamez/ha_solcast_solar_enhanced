@@ -8,6 +8,7 @@ htmlcov/
 # Local working docs
 *.docx
 COMMUNITY_ANNOUNCEMENT.md
+COMMUNITY_REPLY.md
 
 # Local-only PV-tuning / notebook-comparison sandbox (never pushed)
 testing/
