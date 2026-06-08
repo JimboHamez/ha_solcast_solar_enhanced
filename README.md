@@ -401,11 +401,15 @@ CREATE TABLE solcast_data (
   clouds           INTEGER NOT NULL,                -- OWM cloud cover (0–100)
   description      TEXT NOT NULL,                   -- OWM weather description
   battery_charge   REAL NOT NULL DEFAULT 0,         -- 30-min avg battery charge (kW)
+  dc_voltage1      REAL NOT NULL DEFAULT 0,         -- MPPT 1 DC voltage, slot max (V)
+  dc_current1      REAL NOT NULL DEFAULT 0,         -- MPPT 1 DC current, slot min (A)
+  dc_voltage2      REAL NOT NULL DEFAULT 0,         -- MPPT 2 DC voltage, slot max (V)
+  dc_current2      REAL NOT NULL DEFAULT 0,         -- MPPT 2 DC current, slot min (A)
   UNIQUE(period_end_epoch, site)
 );
 ```
 
-The complete schema is created on first run (WAL mode), so there are no *schema* migrations. The `UNIQUE(period_end_epoch, site)` constraint enforces one row per slot per site; repeated writes within a slot are coalesced with `INSERT OR IGNORE`. One-time *data* repairs (e.g. recomputing historical `azimuth` after the hour-angle fix) run silently once, gated by SQLite's `PRAGMA user_version`.
+The base schema is created on first run (WAL mode). The per-MPPT DC telemetry columns (`dc_voltage1`/`dc_current1`/`dc_voltage2`/`dc_current2`, added in v1.6.8) are the one exception to "no migrations": they're applied to pre-existing databases by an additive `ALTER TABLE`, with legacy rows backfilled to `0` (forward-only — they can't be reconstructed). They're kept **per-tracker** (not aggregated) so a future per-string Vmp-band calibrator can learn each string; per-site rows carry that site's trackers, the `_total` row the property-wide ones. The `UNIQUE(period_end_epoch, site)` constraint enforces one row per slot per site; repeated writes within a slot are coalesced with `INSERT OR IGNORE`. One-time *data* repairs (e.g. recomputing historical `azimuth` after the hour-angle fix) run silently once, gated by SQLite's `PRAGMA user_version`.
 
 ---
 

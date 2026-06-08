@@ -267,10 +267,12 @@ state for use by the shading dampening and PV tuning calculations. Storage is
 
 `SqliteStore` (`sqlite_store.py`) wraps stdlib `sqlite3`: every call runs via
 `async_add_executor_job` and is serialised by a lock, the connection uses WAL
-mode (`synchronous=NORMAL`), and the complete schema is created on first run —
-so the `site` and `battery_charge` columns are always present (no *schema*
-migrations). Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`.
-The store logs its file path and row count at startup.
+mode (`synchronous=NORMAL`), and the core schema is created on first run — so the
+`site` and `battery_charge` columns are always present. The only schema evolution
+is **additive**: the per-MPPT `dc_*` columns (v1.6.8) are `ALTER TABLE`d into
+older databases (`_ensure_columns`), backfilled to `0`. Writes use
+`INSERT OR IGNORE` on `(period_end_epoch, site)`. The store logs its file path
+and row count at startup.
 
 **Data repairs.** One-time, in-place data fixes are gated by SQLite's built-in
 `PRAGMA user_version` (`SCHEMA_VERSION`), so they run silently once and are a
@@ -301,9 +303,22 @@ CREATE TABLE solcast_data (
   clouds           INTEGER NOT NULL,               -- OWM cloud cover (0–100)
   description      TEXT NOT NULL,                  -- OWM weather description
   battery_charge   REAL NOT NULL DEFAULT 0,        -- 30-min avg battery charge (kW)
+  dc_voltage1      REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC voltage, slot max (V)
+  dc_current1      REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC current, slot min (A)
+  dc_voltage2      REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC voltage, slot max (V)
+  dc_current2      REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC current, slot min (A)
   UNIQUE(period_end_epoch, site)
 );
 ```
+
+The four `dc_*` columns (per-MPPT DC telemetry, v1.6.8) are the one **additive
+migration**: created up front on a fresh DB, and `ALTER TABLE`d into pre-existing
+databases (`_ADDED_COLUMNS` / `_ensure_columns`), with legacy rows backfilled to
+`0`. They are kept **per-tracker** (not aggregated) up to `MAX_MPPT_TRACKERS = 2`
+so a future per-string Vmp-band calibrator can learn each string; per-site rows
+carry that site's trackers, the `_total` row the property-wide ones. Forward-only
+— they can't be reconstructed on rows written before capture began. See the
+[curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web)
 at it (WAL mode, so leave the `-wal`/`-shm` sidecar files in place).
@@ -330,14 +345,15 @@ diagnostics and reference, but are not summed into `total_pv`.
 
 ### Schema initialisation
 
-On first run the store creates the complete `solcast_data` table (and its
+On first run the store creates the `solcast_data` table (and its
 `UNIQUE(period_end_epoch, site)` constraint) in one `CREATE TABLE IF NOT
-EXISTS`, with WAL mode enabled. Because the full schema — including the `site`
-and `battery_charge` columns — is created up front, there are **no schema
-migrations** and no `ALTER TABLE`/`information_schema` probing; the
-`has_site_col` / `has_battery_col` flags are always true. One-time *data*
-repairs (not schema changes) are handled separately via `async_migrate`, gated
-by `PRAGMA user_version` — see [Implementation](#implementation).
+EXISTS`, with WAL mode enabled. The `site` and `battery_charge` columns are part
+of that base schema (so `has_site_col` / `has_battery_col` are always true). The
+only schema migration is **additive and column-only**: `_ensure_columns` `ALTER
+TABLE`s the per-MPPT `dc_*` columns (v1.6.8) into databases created before them,
+backfilling to `0` — no `information_schema` probing, no table rebuilds. One-time
+*data* repairs (not schema changes) are handled separately via `async_migrate`,
+gated by `PRAGMA user_version` — see [Implementation](#implementation).
 
 ### Battery charge safety layers
 
