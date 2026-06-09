@@ -16,15 +16,25 @@ from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhanced
 from custom_components.solcast_solar_enhanced.pv_tuning import panel_azimuth_to_solcast
 from custom_components.solcast_solar_enhanced.const import (
     BASE_DOMAIN,
+    CONF_AUTO_DAMPENING,
+    CONF_AUTO_TUNING,
     CONF_AZIMUTH,
     CONF_BATTERY_CHARGE_SENSOR,
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
+    CONF_CAPACITY_KW,
+    CONF_DB_ENABLED,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    CONF_PV_ACTUAL_SENSOR,
+    CONF_PV_EXPORT_SENSOR,
     CONF_SITE_GROUPS,
     CONF_TILT,
     DAMPENING_GATE_MIN_RECORDS,
+    DEFAULT_SITE_ID,
+    DOMAIN,
     UPDATE_INTERVAL_MINUTES,
 )
 
@@ -456,3 +466,138 @@ async def test_async_force_fetch_weather_uses_owm(hass, coordinator):
 def test_snap_to_half_hour():
     assert SolcastEnhancedCoordinator._snap_to_half_hour(1800 + 901) == 1800 * 2
     assert SolcastEnhancedCoordinator._snap_to_half_hour(1800 + 899) == 1800
+
+
+# ---------------------------------------------------------------------------
+# _do_update — end-to-end orchestration (read → persist → return)
+# ---------------------------------------------------------------------------
+
+class _FakeStore:
+    """Minimal SqliteStore stand-in capturing inserted rows."""
+
+    def __init__(self):
+        self.records: list[dict] = []
+        self.prune_calls = 0
+
+    async def async_insert_record(self, rec):
+        self.records.append(rec)
+
+    async def async_get_record_count(self):
+        return len(self.records)
+
+    async def async_get_sites(self):
+        return sorted({r["site"] for r in self.records})
+
+    async def async_prune(self, days):
+        self.prune_calls += 1
+        return 0
+
+
+_ORCH_CONFIG = {
+    CONF_LATITUDE: -37.9,
+    CONF_LONGITUDE: 145.0,
+    CONF_CAPACITY_KW: 5.0,
+    CONF_TILT: 20.0,
+    CONF_AZIMUTH: 0.0,
+    CONF_PV_ACTUAL_SENSOR: "sensor.pv_power_30min",
+    CONF_PV_EXPORT_SENSOR: "sensor.pv_export_30min",
+    CONF_AUTO_TUNING: False,
+    CONF_AUTO_DAMPENING: False,
+}
+
+
+def _orch_coordinator(hass, options=None):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=_ORCH_CONFIG,
+        options=options or {},
+        entry_id="orch",
+        title="orch",
+    )
+    entry.add_to_hass(hass)
+    return SolcastEnhancedCoordinator(hass, entry)
+
+
+def _set_pv(hass, actual="3.5", export="1.2"):
+    hass.states.async_set("sensor.pv_power_30min", actual, {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.pv_export_30min", export, {"unit_of_measurement": "kW"})
+
+
+async def test_do_update_persists_total_row_and_returns(hass, mock_base_coordinator):
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+
+    result = await coord._do_update()
+
+    # Return payload reflects the reads.
+    assert result["pv_actual"] == pytest.approx(3.5)
+    assert result["pv_export"] == pytest.approx(1.2)
+    assert result["forecast_now"] == pytest.approx(2.5)   # from base coordinator
+    assert result["forecast_today"] == pytest.approx(18.0)
+    assert result["base_status"] == "connected"
+    assert result["db_records"] == 1
+    assert result["dc_telemetry"] is None                 # no DC sensors configured
+
+    # Exactly one aggregate '_total' row was written, carrying the base estimate.
+    assert len(coord._db.records) == 1
+    row = coord._db.records[0]
+    assert row["site"] == DEFAULT_SITE_ID
+    assert row["pv_actual"] == pytest.approx(3.5)
+    assert row["pv_estimate"] == pytest.approx(3.0)       # base pv_estimate (no detailedForecast)
+    assert coord._db_sites == [DEFAULT_SITE_ID]
+
+
+async def test_do_update_no_base_no_db(hass):
+    # No base integration in hass.data, DB disabled → no writes, status reflects it.
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: False})
+    _set_pv(hass, actual="2.0", export="0.0")
+
+    result = await coord._do_update()
+
+    assert result["base_status"] == "not_detected"
+    assert result["pv_actual"] == pytest.approx(2.0)
+    assert result["forecast_now"] == 0.0                  # fallback, no forecast sensor
+    assert result["db_records"] == 0
+
+
+async def test_do_update_fires_tuning_and_dampening_timers(hass, mock_base_coordinator):
+    # Auto tuning + dampening on with zeroed last-run timestamps → both fire.
+    coord = _orch_coordinator(hass, {
+        CONF_DB_ENABLED: False,
+        CONF_AUTO_TUNING: True,
+        CONF_AUTO_DAMPENING: True,
+    })
+    _set_pv(hass)
+
+    with patch.object(coord, "_run_tuning", new=AsyncMock()) as tune, \
+         patch.object(coord, "_run_dampening", new=AsyncMock()) as damp:
+        await coord._do_update()
+        tune.assert_awaited_once()
+        damp.assert_awaited_once()
+
+    assert coord._last_tuning_ts > 0
+    assert coord._last_dampening_ts > 0
+
+
+async def test_do_update_prefers_detailed_forecast_slot(hass, mock_base_coordinator):
+    # A detailedForecast slot for the current period overrides the base estimate.
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+
+    # The DB forecast lookup keys off period_epoch − 1800; replicate the snap so
+    # the entry lands exactly on the slot the update will query.
+    slot_start = coord._snap_to_half_hour(int(time.time())) - 1800
+    start_dt = datetime.fromtimestamp(slot_start, tz=timezone.utc)
+    hass.states.async_set(FORECAST_SENSOR, "20.0", {
+        "detailedForecast": [
+            {"period_start": start_dt, "pv_estimate": 6.6,
+             "pv_estimate10": 5.0, "pv_estimate90": 7.0},
+        ],
+    })
+
+    await coord._do_update()
+    row = coord._db.records[0]
+    assert row["pv_estimate"] == pytest.approx(6.6)       # detailedForecast wins over base 3.0
+    assert row["pv_estimate90"] == pytest.approx(7.0)
