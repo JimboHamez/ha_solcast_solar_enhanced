@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,6 +28,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_CAPACITY_KW,
     CONF_DAMPENING_GATE,
     CONF_DB_ENABLED,
+    CONF_DB_RETENTION_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_PV_ACTUAL_SENSOR,
@@ -796,3 +798,83 @@ async def test_run_dampening_gates_diverged_site(hass):
 
     assert coord._dampening_gated is True
     assert pushed[rid] and all(f == 1.0 for f in pushed[rid])
+
+
+# ---------------------------------------------------------------------------
+# _interval_values — recorder-backed DC history
+# ---------------------------------------------------------------------------
+
+async def test_interval_values_empty_ids(coordinator):
+    assert await coordinator._interval_values(set(), 1000, 2000) == {}
+
+
+async def test_interval_values_reads_recorder(hass, coordinator):
+    states = {"sensor.v1": [
+        SimpleNamespace(state="414.0"),
+        SimpleNamespace(state="unknown"),  # non-numeric → skipped
+        SimpleNamespace(state="410.5"),
+    ]}
+    rec = MagicMock()
+    rec.async_add_executor_job = AsyncMock(side_effect=lambda f, *a: f(*a))
+    with patch("homeassistant.components.recorder.get_instance", return_value=rec), \
+         patch("homeassistant.components.recorder.history.get_significant_states",
+               return_value=states):
+        out = await coordinator._interval_values({"sensor.v1"}, 1000, 2000)
+    assert out == {"sensor.v1": [414.0, 410.5]}
+
+
+async def test_interval_values_recorder_error_degrades(hass, coordinator):
+    rec = MagicMock()
+    rec.async_add_executor_job = AsyncMock(side_effect=RuntimeError("recorder down"))
+    with patch("homeassistant.components.recorder.get_instance", return_value=rec), \
+         patch("homeassistant.components.recorder.history.get_significant_states",
+               return_value={}):
+        assert await coordinator._interval_values({"sensor.v1"}, 1000, 2000) == {}
+
+
+# ---------------------------------------------------------------------------
+# _do_update — history retention prune
+# ---------------------------------------------------------------------------
+
+async def test_do_update_prunes_history(hass, mock_base_coordinator):
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True, CONF_DB_RETENTION_DAYS: 7})
+    store = _FakeStore()
+    store.async_prune = AsyncMock(return_value=3)  # report 3 rows removed
+    coord._db = store
+    _set_pv(hass)
+
+    await coord._do_update()
+
+    store.async_prune.assert_awaited_once_with(7)
+    assert coord._last_prune_ts > 0
+
+
+async def test_do_update_no_prune_when_retention_zero(hass, mock_base_coordinator):
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True, CONF_DB_RETENTION_DAYS: 0})
+    store = _FakeStore()
+    store.async_prune = AsyncMock(return_value=0)
+    coord._db = store
+    _set_pv(hass)
+
+    await coord._do_update()
+
+    store.async_prune.assert_not_awaited()
+    assert coord._last_prune_ts == 0.0
+
+
+async def test_run_site_tuning_skips_site_without_records(hass):
+    # Two configured sites; only r1 has rows → r2 hits the `continue` and is absent.
+    coord = _orch_coordinator(hass, {CONF_SITE_GROUPS: [
+        {"ac_sensor": "sensor.a", "site": "r1"},
+        {"ac_sensor": "sensor.b", "site": "r2"},
+    ]})
+    coord._sites = [{"resource_id": "r1", "name": "A"}]
+    coord._db = _TuningStore({"r1": [{"row": 1}]})  # r2 absent
+
+    fake = MagicMock(return_value={"tilt": 20.0, "azimuth": 0.0, "rmse_kw": 0.1, "n_records": 10})
+    opts = {**coord._entry.data, **coord._entry.options}
+    with patch("custom_components.solcast_solar_enhanced.coordinator.run_tuning", fake):
+        await coord._run_site_tuning(opts, export_limit=5.0)
+
+    assert "r1" in coord._site_tuning_results
+    assert "r2" not in coord._site_tuning_results
