@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,6 +25,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
+    CONF_DAMPENING_GATE,
     CONF_DB_ENABLED,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -601,3 +602,197 @@ async def test_do_update_prefers_detailed_forecast_slot(hass, mock_base_coordina
     row = coord._db.records[0]
     assert row["pv_estimate"] == pytest.approx(6.6)       # detailedForecast wins over base 3.0
     assert row["pv_estimate90"] == pytest.approx(7.0)
+
+
+# ---------------------------------------------------------------------------
+# _read_site_actuals — multi-site measurement
+# ---------------------------------------------------------------------------
+
+async def test_read_site_actuals_single_site_group(hass, coordinator):
+    hass.states.async_set("sensor.inv_ac", "4.0", {"unit_of_measurement": "kW"})
+    opts = {CONF_SITE_GROUPS: [{"ac_sensor": "sensor.inv_ac", "site": "r1"}]}
+    out = coordinator._read_site_actuals(opts, 1000)
+    assert out["r1"][0] == pytest.approx(4.0)
+
+
+async def test_read_site_actuals_dc_apportionment(hass, coordinator):
+    # AC split across two strings by their DC share (3:1 → 0.75 / 0.25).
+    hass.states.async_set("sensor.inv_ac", "5.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt1", "3.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt2", "1.0", {"unit_of_measurement": "kW"})
+    opts = {CONF_SITE_GROUPS: [{
+        "ac_sensor": "sensor.inv_ac",
+        "strings": [
+            {"site": "r1", "dc_sensor": "sensor.mppt1"},
+            {"site": "r2", "dc_sensor": "sensor.mppt2"},
+        ],
+    }]}
+    out = coordinator._read_site_actuals(opts, 1000)
+    assert out["r1"][0] == pytest.approx(5.0 * 0.75)
+    assert out["r2"][0] == pytest.approx(5.0 * 0.25)
+
+
+async def test_read_site_actuals_zero_dc_yields_zero(hass, coordinator):
+    # Σ dc == 0 → guarded, each string gets 0 (no divide-by-zero).
+    hass.states.async_set("sensor.inv_ac", "5.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt1", "0", {"unit_of_measurement": "kW"})
+    opts = {CONF_SITE_GROUPS: [{
+        "ac_sensor": "sensor.inv_ac",
+        "strings": [{"site": "r1", "dc_sensor": "sensor.mppt1"}],
+    }]}
+    assert coordinator._read_site_actuals(opts, 1000)["r1"][0] == 0.0
+
+
+async def test_read_site_actuals_no_groups(coordinator):
+    assert coordinator._read_site_actuals({}, 1000) == {}
+
+
+async def test_read_site_actuals_skips_group_without_ac(hass, coordinator):
+    opts = {CONF_SITE_GROUPS: [{"site": "r1"}]}  # no ac_sensor
+    assert coordinator._read_site_actuals(opts, 1000) == {}
+
+
+# ---------------------------------------------------------------------------
+# _do_update — per-site rows
+# ---------------------------------------------------------------------------
+
+async def test_do_update_writes_per_site_rows(hass, mock_base_coordinator):
+    rid = "abcd-1234"
+    groups = [{"ac_sensor": "sensor.inv_ac", "site": rid}]
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True, CONF_SITE_GROUPS: groups})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+    hass.states.async_set("sensor.inv_ac", "4.0", {"unit_of_measurement": "kW"})
+
+    slot_start = coord._snap_to_half_hour(int(time.time())) - 1800
+    start_dt = datetime.fromtimestamp(slot_start, tz=timezone.utc)
+    hass.states.async_set(FORECAST_SENSOR, "20.0", {
+        f"detailedForecast-{rid}": [{"period_start": start_dt, "pv_estimate": 2.2}],
+    })
+
+    await coord._do_update()
+
+    rows = {r["site"]: r for r in coord._db.records}
+    assert set(rows) == {DEFAULT_SITE_ID, rid}
+    # Per-site row carries the apportioned actual, its own forecast, and no battery.
+    assert rows[rid]["pv_actual"] == pytest.approx(4.0)
+    assert rows[rid]["pv_estimate"] == pytest.approx(2.2)
+    assert rows[rid]["battery_charge"] == 0.0
+    assert set(coord._db_sites) == {DEFAULT_SITE_ID, rid}
+
+
+# ---------------------------------------------------------------------------
+# _run_tuning / _run_site_tuning
+# ---------------------------------------------------------------------------
+
+class _TuningStore(_FakeStore):
+    """Fake store that also serves tuning queries per site."""
+
+    def __init__(self, records_by_site):
+        super().__init__()
+        self._by_site = records_by_site
+
+    async def async_get_records_for_tuning(self, site, cloud_max):
+        return self._by_site.get(site, [])
+
+
+async def test_run_tuning_no_db_noop(hass, coordinator):
+    coordinator._db = None
+    await coordinator._run_tuning({**coordinator._entry.data})
+    assert coordinator._tuning_result is None
+
+
+async def test_run_tuning_no_records_skips(hass, coordinator):
+    coordinator._db = _TuningStore({})  # no rows for any site
+    await coordinator._run_tuning({**coordinator._entry.data})
+    assert coordinator._tuning_result is None
+
+
+async def test_run_tuning_sets_aggregate_and_per_site(hass):
+    rid = "abcd-1234"
+    groups = [{"ac_sensor": "sensor.inv_ac", "site": rid}]
+    coord = _orch_coordinator(hass, {CONF_SITE_GROUPS: groups})
+    coord._sites = [
+        {"resource_id": rid, "name": "Home", "capacity": 8, "tilt": 24.75, "azimuth": 7},
+    ]
+    recs = [{"row": 1}]
+    coord._db = _TuningStore({DEFAULT_SITE_ID: recs, rid: recs})
+
+    fake = MagicMock(return_value={
+        "tilt": 22.0, "azimuth": -10.0, "rmse_kw": 0.3, "n_records": 40,
+    })
+    opts = {**coord._entry.data, **coord._entry.options}
+    with patch("custom_components.solcast_solar_enhanced.coordinator.run_tuning", fake):
+        await coord._run_tuning(opts)
+
+    assert coord._tuning_result["tilt"] == 22.0
+    assert rid in coord._site_tuning_results
+    assert coord._site_tuning_results[rid]["name"] == "Home"
+    assert coord._site_tuning_results[rid]["resource_id"] == rid
+
+
+async def test_run_site_tuning_no_site_ids_noop(hass, coordinator):
+    coordinator._db = _TuningStore({DEFAULT_SITE_ID: [{"row": 1}]})
+    await coordinator._run_site_tuning({}, export_limit=5.0)  # no CONF_SITE_GROUPS
+    assert coordinator._site_tuning_results == {}
+
+
+# ---------------------------------------------------------------------------
+# _run_dampening — multi-site push + convergence gate
+# ---------------------------------------------------------------------------
+
+async def test_run_dampening_pushes_per_site(hass):
+    # Configured site → a per-site push; the conflicting global push is skipped.
+    rid = "abcd-1234"
+    coord = _orch_coordinator(hass, {
+        CONF_SITE_GROUPS: [{"ac_sensor": "sensor.inv_ac", "site": rid}],
+        CONF_DAMPENING_GATE: False,
+    })
+    coord._db = _FakeStore()
+    slots = [{"factor": 0.9} for _ in range(48)]
+    pushed: list = []
+
+    async def fake_compute(opts, now, lat, lon, site):
+        return slots
+
+    async def fake_push(hourly, site=None):
+        pushed.append(site)
+
+    with patch.object(coord, "_compute_dampening_slots", side_effect=fake_compute), \
+         patch.object(coord, "_push_dampening", side_effect=fake_push):
+        opts = {**coord._entry.data, **coord._entry.options}
+        await coord._run_dampening(opts, 1000, -37.9, 145.0)
+
+    assert pushed == [rid]
+    assert coord._dampening_gated is False
+
+
+async def test_run_dampening_gates_diverged_site(hass):
+    # A confident tuned orientation that diverges from the configured site holds
+    # that site's push at neutral 1.0 and sets the gated flag.
+    rid = "abcd-1234"
+    coord = _orch_coordinator(hass, {
+        CONF_SITE_GROUPS: [{"ac_sensor": "sensor.inv_ac", "site": rid}],
+        CONF_DAMPENING_GATE: True,
+    })
+    coord._db = _FakeStore()
+    coord._sites = [{"resource_id": rid, "tilt": 20.0, "azimuth": 0.0}]
+    coord._site_tuning_results = {
+        rid: {"tilt": 55.0, "azimuth": 80.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 10},
+    }
+    slots = [{"factor": 0.8} for _ in range(48)]
+    pushed: dict = {}
+
+    async def fake_compute(opts, now, lat, lon, site):
+        return slots
+
+    async def fake_push(hourly, site=None):
+        pushed[site] = hourly
+
+    with patch.object(coord, "_compute_dampening_slots", side_effect=fake_compute), \
+         patch.object(coord, "_push_dampening", side_effect=fake_push):
+        opts = {**coord._entry.data, **coord._entry.options}
+        await coord._run_dampening(opts, 1000, -37.9, 145.0)
+
+    assert coord._dampening_gated is True
+    assert pushed[rid] and all(f == 1.0 for f in pushed[rid])
