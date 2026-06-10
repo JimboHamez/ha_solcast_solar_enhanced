@@ -11,52 +11,34 @@
 [![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
 [![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
 
-A standalone Home Assistant companion integration for [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that adds:
+A companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that learns from your own generation history to make your Solcast forecasts more accurate — automatically, and entirely on your device.
 
-1. **Built-in history storage** of PV power averages, forecasts, solar position, weather and battery data — a zero-config SQLite file (no server, no credentials, no dependency)
-2. **Automatic Rooftop PV Tuning** — daily tilt/azimuth optimisation via a numpy grid search (no scipy, so it works on a Raspberry Pi)
-3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from your stored actual-vs-forecast history (it never consumes the base integration's own dampening factors), ramping from a neutral no-op toward the measured correction as historical data accumulates
-4. **Multi-site support** — multiple Solcast rooftop arrays on one property, auto-discovered from the base integration; per-site storage, tuning and dampening, including DC-ratio apportionment for string inverters (e.g. Fronius) that expose per-MPPT DC
-5. **Energy-counter PV input** — reads cumulative energy counters (Wh/kWh/MWh) as the recommended input, deriving average kW from the energy delta over each interval (race-free); a rolling `mean_linear` power helper is supported as a fallback, with unit-first auto-detection
-6. **Export-curtailment awareness** — periods where the inverter is curtailed against the grid export limit are detected so they don't masquerade as shading: such records are clipped to the achievable ceiling for dampening and excluded from tuning, keeping the correction honest. Per-MPPT DC telemetry is banked as ground truth for a hardware-based curtailment detector
+It adds:
 
-**Zero additional Solcast API calls.** All forecast data is read from the base integration's coordinator.
+- **History storage** — keeps your PV, forecast, weather and battery data in a built-in SQLite file. No server, no setup.
+- **Automatic panel tuning** — works out your real panel tilt and azimuth from generation data and corrects the forecast geometry.
+- **Adaptive dampening** — learns where your forecast runs high or low (shading, local conditions) and pushes a correction back to Solcast. Starts neutral and gets stronger as it gathers data.
+- **Multi-site** — handles multiple rooftop arrays on one property, discovered automatically.
+- **Flexible inputs** — reads energy counters (recommended) or power sensors, with auto-detection.
+- **Curtailment-aware** — knows when your inverter is export-limited so curtailed output isn't mistaken for shading.
+
+**No extra Solcast API calls** — it reads forecast data straight from the base integration.
 
 ---
 
 ## Why this exists
 
-**Solcast discontinued PV Tuning for hobbyist (free) accounts.** Home users can no longer POST their measured generation back to the Solcast API to tune forecasts — and so can't drive Solcast's own dampening from real site data either (see Solcast's [PV Tuning discontinued](https://kb.solcast.com.au/pv-tuning-discontinued) notice; site-measurement tuning remains a commercial/utility-tier feature).
+Solcast [discontinued PV Tuning for free accounts](https://kb.solcast.com.au/pv-tuning-discontinued), so home users can no longer feed their real generation back to Solcast to sharpen forecasts.
 
-This integration **restores that service entirely on-device.** It banks your actual-vs-forecast history locally and computes its own tilt/azimuth tuning and adaptive dampening, never depending on Solcast's server-side tuning. And because it folds in signals the old hobbyist tuning never had — [local cloud cover](#4-openweathermap-api-key-required-for-tuning--dampening) for a clear-sky filter, per-site panel geometry, multi-array DC apportionment, and [export-curtailment handling](#export-curtailment--dynamic-export-limits) — the resulting correction should be **more accurate** than the discontinued service, not merely a like-for-like replacement.
+This integration brings that back, on your own hardware. It records your actual-vs-forecast history locally and computes its own tuning and dampening — and because it also folds in local cloud cover, per-array geometry and export-limit handling, the result can be *better* than the old service, not just a replacement.
 
 ---
 
 ## 🆕 What's new in v1.6.9
 
-**A diagnostic sensor to verify the new DC telemetry capture is working.** v1.6.8 began *capturing* per-MPPT DC voltage/current; this adds a **"MPPT DC Voltage (max)"** diagnostic sensor so you can see it landing. Point your MPPT voltage/current fields at your inverter's per-string sensors, then glance at this entity: its state is the **highest string voltage** seen this cycle, and its attributes break out each tracker's voltage/current (and any per-site values). It stays **unavailable** until per-string DC sensors are configured — so it cleanly tells you "nothing wired" vs "wired and reading", rather than confusingly showing `0`. This lets you confirm the wiring up front instead of discovering a typo weeks into banking history. See the [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.9) and [CHANGELOG](CHANGELOG.md).
+A new **MPPT DC Voltage** diagnostic sensor lets you confirm that per-string DC telemetry capture (added in v1.6.8) is actually wired up and reading — it shows your highest string voltage with per-tracker detail in the attributes, and stays *unavailable* until you point it at per-string sensors.
 
-_Previously, in v1.6.8:_ optional **per-MPPT DC telemetry capture** — configure per-tracker DC voltage + current sensors (up to two MPPTs, kept paired) and the integration banks them (aggregated each 30-min slot from history as max-voltage / min-current) as the ground truth for a future hardware-based curtailment detector. Capture only; forward-only (can't be backfilled), so configuring now starts the history.
-
-_And in v1.6.7:_ export curtailment no longer looks like shading to the **dampening** calculation — it **clips the forecast to the achievable ceiling** so a curtailed clear-sky record contributes a neutral ≈1.0 instead of a false penalty, with no record discarded.
-
-_And in v1.6.6:_ PV tuning fits the most recent **clear-sky** records across all seasons (the clear-sky filter runs in SQL before the row limit, instead of after), and the **dampening push no longer fails** when a factor exceeds 1.0 — factors are clamped to the `[0,1]` range the base `set_dampening` requires, with the true value kept in the sensor attributes.
-
-_And in v1.6.5:_ fixed the **panel azimuth convention** mismatch — the configured azimuth (Solcast West-positive) is now converted to the tuner's internal frame at every seed point and the tuned azimuth is reported back in your convention; `tools/import_history.py` also recomputes zenith as well as azimuth. **Re-read your Tuned Panel Tilt/Azimuth sensors after upgrading from ≤1.6.4.**
-
-_And in v1.6.4:_ PV tuning **dropped the scipy dependency** for a pure-**numpy grid search** so it works on a Raspberry Pi, gained a **per-site dampening convergence gate**, an optional **history retention** setting, a multi-site crash fix when OpenWeatherMap is absent, and **translations for 10 new languages**.
-
-_And in v1.6.3:_ adaptive **dampening** got the same clear-sky (0% cloud) fix as tuning, and OpenWeatherMap was reframed from "optional" to **required** for tuning & dampening, with a **fail-safe** no-cloud path (records stored as *unknown and excluded*, sensors show *unavailable* instead of `0`, and a repair issue prompts for a free OWM key).
-
-_And in v1.6.2:_ the same clear-sky (0% cloud) fix for **PV tuning** — clearest-sky records were being discarded by a falsy-`0` coercion.
-
-_And in v1.6.1:_ the **PV Power**, **PV Export** and **Battery Charge** 30-min average sensors gained **restart resilience** (HA `RestoreSensor`), restoring their last value on startup instead of reading *unknown* until the first half-hour update cycle.
-
-_And in v1.6.0:_ a solar-azimuth **east↔west flip** fix (with in-place repair of existing databases), forecast columns **no longer silently zero-filled**, low-power **performance** work (vectorised tuning, fewer dampening scans, shared HTTP session), the base integration made a **hard dependency**, **single-instance** enforcement, the **OWM API key redacted from logs**, and licensing standardised on **Apache-2.0**.
-
-_Previously, in v1.5.0:_ **zero-config storage** — history moved to a **built-in SQLite store** (a single file, `config/solcast_solar_enhanced.db`, stdlib `sqlite3` — no server, no credentials, no extra dependency), enabled out of the box; **MySQL support was removed** (the storage step is now just an *Enable history storage* toggle).
-
-> **Upgrading from a MySQL setup (pre-1.5.0)?** The built-in store starts fresh and rebuilds as data accumulates. To carry forward old history, export your MySQL `solcast_data` table to CSV before upgrading.
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.9).
 
 ---
 
@@ -64,25 +46,23 @@ _Previously, in v1.5.0:_ **zero-config storage** — history moved to a **built-
 
 ### 1. Base integration
 
-[BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) must be installed and configured before adding this integration. It is a **hard dependency** — Home Assistant will refuse to set up Solcast Solar Enhanced if the base integration is absent.
-
-> **Single instance.** This integration can only be added **once** — there is one base integration, one property and one shared database, so a second attempt to add it is rejected.
+[BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) must be installed and configured first. It's a hard dependency — Home Assistant won't set this up without it. You can only add this integration **once** (one property, one database).
 
 ### 2. Generation / export sensors
 
-Point the integration at your inverter's sensors directly. `Auto-detect` (the default) picks the read mode from the sensor's **unit** (see [PV sensor input modes](#pv-sensor-input-modes)):
+Point the integration at your inverter's sensors. Two kinds work:
 
-- **Best practice — cumulative energy counter** (`Wh`/`kWh`/`MWh`, ideally `state_class: total_increasing`), e.g. your inverter's lifetime/daily generation total and your grid-export total. The integration derives the period's average kW from the **energy delta over the actual elapsed interval**. This is exact, needs no helper, and is immune to the `:00`/`:30` reset race that a boundary-windowed averaging sensor introduces.
-- **Fallback — rolling `mean_linear` power helper** (`W`/`kW`). If you can't expose an energy counter, feed a **continuous sliding-window** `mean_linear` statistics helper (below). The same applies to per-MPPT **DC** sensors when tracking multiple arrays facing different directions (Step 6), where the value is only used as a ratio.
+- **Best — an energy counter** (`Wh`/`kWh`/`MWh`, e.g. your lifetime or daily generation total, and your grid-export total). The integration works out average power from how much the counter moved over each interval. Exact, and no helper needed.
+- **Fallback — a rolling power helper** (`W`/`kW`). If you can't expose an energy counter, wrap your power sensor in a `mean_linear` statistics helper (below).
 
-> ⚠️ **Don't point this at a raw, instantaneous power sensor.** A single spot reading at the poll instant is not the half-hour average and will bias dampening and tuning. Use an energy counter, or wrap the power sensor in the rolling helper below.
+> ⚠️ **Don't use a raw instantaneous power sensor.** A single spot reading isn't the half-hour average and will skew the results. Use an energy counter, or the helper below.
 
-You map these in the setup wizard (Step 1); battery is optional. For multi-site systems each array is mapped in Step 6.
+You map these in the setup wizard (Step 1). Battery is optional; multi-site arrays are mapped in Step 6.
 
 <details>
 <summary>Rolling mean_linear power helper (only if you have no energy counter)</summary>
 
-A **continuous sliding-window** statistics sensor — it recomputes on every source update and never resets at the half-hour boundary, so it has no reset race:
+A continuous sliding-window sensor that never resets at the half-hour mark:
 
 ```yaml
 sensor:
@@ -92,33 +72,31 @@ sensor:
     state_characteristic: mean_linear   # time-weighted mean (not plain "mean")
     max_age:
       minutes: 30
-    sampling_size: 1800                  # default is tiny — raise it so samples aren't dropped
+    sampling_size: 1800                  # raise it so samples aren't dropped
 ```
 
-(Repeat for export and per-MPPT DC as needed.) Accuracy depends on how often the source sensor updates. The old **boundary-resetting** 30-minute Statistics approach is no longer recommended — it can be read mid-reset at the `:00`/`:30` border.
+(Repeat for export and per-MPPT DC as needed.)
 </details>
 
 ### 3. History storage
 
-Historical storage powers dampening and PV tuning, and **needs nothing** — the integration creates a built-in SQLite file (`config/solcast_solar_enhanced.db`) with no server, credentials or extra dependency. It is enabled by default.
+Powers dampening and tuning, and needs nothing — a built-in SQLite file (`config/solcast_solar_enhanced.db`) is created automatically. On by default.
 
 ### 4. OpenWeatherMap API key (required for tuning & dampening)
 
-> **Without OpenWeatherMap, the two headline features — PV tuning and adaptive dampening — stay inactive.** History storage still records data, but with no cloud information every record is treated as *unknown and excluded*: tuning produces no result and dampening stays neutral (1.0, nothing pushed to Solcast). A **repair issue** appears in *Settings → Repairs* until you add a key. Treat OWM as required unless you only want raw history logging.
+> **Without OpenWeatherMap, tuning and dampening stay inactive.** They only learn from *clear-sky* periods (the cloudy ones tell you nothing about your panels), and the cloud-cover reading that finds those periods comes only from OWM. History is still recorded, but with no cloud data every record is treated as overcast and skipped. A repair issue prompts you until a key is added.
 
-**Why it's required.** Tuning and dampening isolate *clear-sky* records — the only periods where `pv_actual / pv_estimate` reflects panel geometry and local shading rather than passing clouds (which Solcast already models). The per-record cloud-cover percentage that drives that filter comes **only** from OpenWeatherMap. With OWM disabled (or on a failed fetch) the cloud cover is stored as *unknown*, which the clear-sky filter treats as fully overcast and excludes — so the features have no clear-sky data to work from and remain inert (fail-safe: they never fit to or push out a cloud-contaminated correction).
+It's free and easy:
 
-**What you need:**
-
-| Requirement | Detail |
+| What | Detail |
 |---|---|
-| Account | A free account at [openweathermap.org](https://openweathermap.org/api) |
-| API key | Created under **API keys** in your OWM account. New keys can take up to ~2 hours to activate |
-| Plan / endpoint | The free **Current Weather Data** API (`api.openweathermap.org/data/2.5/weather`). No paid plan needed |
-| Quota | Free tier allows 60 calls/min and ~1 M calls/month; this integration makes **one call per 30-min cycle (~48/day)** — comfortably within the free limit |
-| Enable it | OWM is **off by default** — in setup **Step 3** toggle *Enable OWM* on and paste the key |
+| Account | Free at [openweathermap.org](https://openweathermap.org/api) |
+| API key | Created under **API keys**. New keys can take up to ~2 hours to activate |
+| Plan | The free **Current Weather Data** API — no paid plan |
+| Usage | One call per 30-min cycle (~48/day), far under the free limit |
+| Enable | Off by default — turn it on in setup **Step 3** and paste the key |
 
-**Verify it's working** after setup: the **Cloud Cover** sensor should show a real percentage (not *unavailable*), the log should be free of `OWM fetch failed` warnings, and the *OpenWeatherMap needed…* repair issue should be gone. A bad or not-yet-active key reads as *unavailable* (unknown) — records are then excluded, so the features stay inert until the key works.
+**Check it's working** after setup: the **Cloud Cover** sensor should show a real percentage, the log should be free of `OWM fetch failed`, and the repair issue should be gone.
 
 ---
 
@@ -134,27 +112,10 @@ Historical storage powers dampening and PV tuning, and **needs nothing** — the
 
 ### Manual
 
-1. Copy the `custom_components/solcast_solar_enhanced` folder to your HA `config/custom_components/` directory.
+1. Copy `custom_components/solcast_solar_enhanced` into your HA `config/custom_components/` directory.
 2. Restart Home Assistant.
 
-### Python dependencies
-
-Storage uses the Python standard library — **nothing to install**.
-
-PV tuning needs **numpy**, which Home Assistant already ships (it's a core HA
-dependency and has Raspberry Pi wheels), so in a normal HA install there is
-nothing to install at all:
-
-```bash
-pip install numpy>=1.21.0  # already present in Home Assistant
-```
-
-There is **no scipy dependency** — the optimiser is a pure numpy grid search
-(the same method as Solcast notebook 3.4), specifically so tuning works on a
-Raspberry Pi, where scipy has no prebuilt wheel and fails to build from source
-under HA (see BJReplay/ha-solcast-solar #85). numpy is imported lazily — if it
-were somehow absent, tuning is disabled with an informational log and the
-integration still runs.
+Storage uses the Python standard library, so there's nothing to install. PV tuning uses **numpy**, which Home Assistant already ships (and which runs on a Raspberry Pi) — so a normal HA install needs nothing extra.
 
 ---
 
@@ -162,7 +123,7 @@ integration still runs.
 
 Go to **Settings → Devices & Services → Add Integration → Solcast Solar Enhanced**.
 
-The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automatically only when more than one Solcast site is detected):
+The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when more than one Solcast site is detected).
 
 ### Step 1 — Site & System
 
@@ -171,35 +132,35 @@ The setup wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears automa
 | Latitude / Longitude | Your site coordinates |
 | System capacity (kW DC) | Total panel DC capacity |
 | Panel tilt | 0° = flat, 90° = vertical |
-| Panel azimuth | Solcast convention — 0° = North, **positive = West** (up to +180°), **negative = East** (down to −179°). E.g. +6 = 6° West of North |
-| PV Generation sensor | Cumulative energy counter (Wh/kWh/MWh) — recommended; or a rolling `mean_linear` power helper (kW) |
-| PV sensor type | `Auto-detect` (default, by unit), `Energy counter (kWh/Wh/MWh)`, or `Averaged power (kW/W)` |
-| PV Export sensor | Cumulative export energy counter (Wh/kWh) — recommended; or a rolling `mean_linear` helper |
-| PV Export sensor type | As above, for the export sensor |
-| Battery Charge sensor | Generation/power or energy-counter sensor for battery charge (optional) |
-| MPPT 1/2 DC voltage + current | Optional, for curtailment-detection capture. Point at your inverter's **raw instantaneous** per-string voltage (V) / current (A) sensors (e.g. Fronius) — **not** energy counters; the integration aggregates max-voltage / min-current over each slot itself. MPPT 2 blank for single-tracker inverters |
+| Panel azimuth | Solcast convention — 0° = North, **positive = West**, **negative = East**. E.g. +6 = 6° West of North |
+| PV Generation sensor | Energy counter (recommended) or a rolling power helper |
+| PV sensor type | `Auto-detect` (default), `Energy counter`, or `Averaged power` |
+| PV Export sensor | Export energy counter (recommended) or a rolling helper |
+| PV Export sensor type | As above, for export |
+| Battery Charge sensor | Battery charge sensor (optional) |
+| MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters |
 
 ### Step 2 — Storage
 
 | Field | Default | Description |
 |---|---|---|
 | Enable history storage | On | Toggle the built-in store on/off |
-| Keep history for (days) | 0 | `0` keeps everything (default). A positive value prunes rows older than N days on a daily timer to bound the database on low-power devices. Seasonal dampening uses a cross-year window, so keep ≥ ~400 days (≈13 months) if you rely on it — below that you'll get a log warning but it still applies. |
+| Keep history for (days) | 0 | `0` keeps everything. A positive value prunes older rows daily to save space. Seasonal dampening works best with ≥ ~400 days |
 
-The store lives at `config/solcast_solar_enhanced.db` and needs no further configuration. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path (it uses WAL mode, so leave the `-wal`/`-shm` sidecar files in place).
+The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path.
 
 ### Step 3 — OpenWeatherMap
 
-**Required for tuning & dampening** (see [§4 above](#4-openweathermap-api-key-required-for-tuning--dampening)). Off by default — enable it and supply a key, or tuning/dampening will run on unfiltered data.
+Required for tuning & dampening (see [§4 above](#4-openweathermap-api-key-required-for-tuning--dampening)). Off by default.
 
 | Field | Default | Description |
 |---|---|---|
-| Enable OWM | **Off** | Turn on to fetch per-cycle cloud cover (needed for the clear-sky filter) |
-| OWM API key | — | Free key from openweathermap.org (Current Weather Data API) |
+| Enable OWM | **Off** | Turn on to fetch cloud cover |
+| OWM API key | — | Free key from openweathermap.org |
 
 ### Step 4 — Battery Storage
 
-Raw sensor fallback for systems without a dedicated battery sensor mapped in Step 1:
+A fallback for systems without a battery sensor mapped in Step 1.
 
 | Field | Description |
 |---|---|
@@ -214,158 +175,54 @@ Raw sensor fallback for systems without a dedicated battery sensor mapped in Ste
 |---|---|---|
 | Auto PV tuning | On | Run tilt/azimuth optimisation daily |
 | Auto dampening | On | Recalculate and push dampening every 6 hours |
-| Cloud threshold % | 20 | Records below this are treated as clear-sky |
-| Max cloud % to include | 60 | Records above this are excluded entirely |
+| Cloud threshold % | 20 | Records below this count as clear-sky |
+| Max cloud % to include | 60 | Records above this are excluded |
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
-| Grid export limit (kW) | 0 | Exclude records where export is at or near this ceiling; 0 = disabled. If the base integration has a `site_export_limit` set, it is used automatically and this field is the fallback |
+| Grid export limit (kW) | 0 | Exclude records pegged at this ceiling; 0 = disabled. Read automatically from the base integration if set |
 
 ### Step 6 — Per-site sensor mapping (multi-site only)
 
-Shown automatically when more than one Solcast site is detected. Sites are auto-discovered from the base integration's rooftop sensors (orientation and capacity are read from Solcast, so per-site tuning is seeded automatically). For each site you provide:
+Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors. See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 
-| Field | Description |
-|---|---|
-| `<site>` — generation sensor | The sensor that measures this array's output. Several arrays may share one inverter AC sensor |
-| `<site>` — DC/MPPT sensor (optional) | The per-string DC **power** sensor, used only as a ratio to split shared AC across arrays (e.g. Fronius) |
-| `<site>` — sensor type | Auto-detect / power / energy counter |
-| `<site>` — MPPT 1/2 voltage + current (optional) | Per-string **instantaneous** DC voltage/current for that site, captured for curtailment detection (separate from the DC power ratio above) |
-
-How the mapping is interpreted:
-
-- **One array → its own sensor** (e.g. Enphase per-array AC): tuned and dampened individually.
-- **Several arrays → one AC sensor + per-MPPT DC**: the measured AC is split between arrays by each string's share of DC (`ac × dcᵢ / Σ dc`), giving per-array generation in the AC domain. Each array is then tuned/dampened individually.
-- **Several arrays → one AC sensor, no DC**: cannot be separated, so those sites are left unmapped (per-array output isn't observable).
-
-Leave a site blank to skip it. With no mapping (or a single site), the integration behaves exactly as a single-site install.
+> **Heads up:** the base integration's own **automatic dampening** must be **disabled** (Solcast PV Forecast → Configure). While it's on, the base rejects manual dampening, so this integration can't apply its factors — it detects this, skips the push, and logs a warning.
 
 ---
 
 ## How it works
 
-### PV sensor input modes
+- **PV tuning** runs daily: it searches for the panel tilt and azimuth that best explain your clear-sky generation, and reports them on the **Tuned Panel Tilt/Azimuth** sensors. Needs at least ~10 clear-sky, non-clipped records.
+- **Adaptive dampening** compares your actual output to the forecast across a ±14-day seasonal window, weighting each record by how clear the sky was and how close the sun was to the same position. It starts at a neutral no-op and ramps toward the measured correction as data builds, then pushes 24 hourly factors to Solcast via `set_dampening`. The base integration's own dampening factors are never read into this — the correction is learned purely from your history.
+- **Curtailment** — when your inverter is export-limited, that capped output is detected and handled so it doesn't look like shading: tuning excludes it, and dampening clips it to the achievable ceiling so a curtailed clear day stays neutral.
 
-Each PV sensor (generation and export) is read in one of two ways, chosen per sensor (default `Auto-detect`):
-
-- **Energy counter** (`kWh`/`Wh`/`MWh`) — **recommended.** The average power for the interval is derived from the energy delta over the *actual* elapsed time: `avg_kW = ΔkWh / hours`. Using the real elapsed time (not a hard-coded 30 min) makes it robust to polling drift, and it never depends on a value being correct at the `:00`/`:30` boundary. Counter resets/rollovers (negative delta), the first reading after a restart, and abnormally long gaps are detected and excluded. Baselines are persisted across restarts.
-- **Averaged power** (`kW`/`W`) — the value is used directly (converted to kW). Intended for a **rolling `mean_linear` statistics helper**, *not* a raw instantaneous sensor (a single spot read isn't the half-hour average). Also used for per-MPPT DC sensors in multi-array setups, where the value only feeds a `dcᵢ/Σdc` ratio.
-
-`Auto-detect` is **unit-first**: a `Wh`/`kWh`/`MWh` unit is treated as an energy counter and a `W`/`kW` unit as averaged power — `state_class` is only a fallback when the unit is missing. (Previously the energy-vs-power decision keyed on `state_class`, so a counter that omitted it was silently read as instantaneous power — a lifetime `kWh` total interpreted as a huge `kW` value.)
-
-### Energy balance
-
-```
-total_pv = pv_actual
-```
-
-`pv_actual` is the inverter's total AC output — it already includes the self-consumption, grid export, and battery charging portions. `pv_export` and `battery_charge` are recorded in the DB for diagnostics but are not added to `total_pv`. Whether read from an energy counter (average kW over the interval) or a power sensor, `pv_actual` is in the same unit as Solcast's `pv_estimate` (average kW over the period), so the two are directly comparable.
-
-### Adaptive dampening
-
-Dampening is computed at 48 half-hour slots per day. For each slot:
-
-1. Historical records within ±14 calendar days (across all years) are fetched from the DB
-2. Each record is weighted by **cloud quality** (three-band: 1.0 / 0.6 / 0.3) and **geometric proximity** (Gaussian on zenith and azimuth distance)
-3. The quality-weighted average `total_pv / pv_estimate` ratio becomes the DB-derived dampening factor
-4. A **confidence blend** mixes this with a neutral `1.0` anchor (the base integration's own dampening factors are **never** read into the calculation):
-
-```
-final = (1 − α) × 1.0 + α × db_factor
-```
-
-α grows as more quality-weighted records accumulate, so with little data the factor sits near a no-op `1.0` and ramps toward the DB-measured ratio as confidence builds:
-
-| Quality-weighted records | α (20% threshold) |
-|---|---|
-| 0 | 0.00 |
-| 30 | 0.50 |
-| 60 | 0.80 |
-| 100 | 0.92 |
-
-When α < 0.5, the result is clamped to ±15% of `1.0` (i.e. 0.85–1.15) to prevent early instability. A slot with no usable DB data stays at a neutral `1.0`.
-
-Adjacent half-hour slot pairs are averaged into 24 hourly values and pushed to the base integration via the `solcast_solar.set_dampening` service (`damp_factor` as a comma-separated string). In multi-site mode a dampening set is pushed **per site** (`set_dampening` with the site's `resource_id`), which overrides the base's global dampening for that site.
-
-> **Important:** the base integration's own **automatic dampening** must be **disabled** (Solcast PV Forecast → Configure). While it is on, the base rejects all manual `set_dampening` calls, so this integration cannot apply its factors — it detects this, skips the push, and logs a one-time warning.
-
-**Convergence time by climate:**
-
-| Climate | Threshold | Time to full confidence |
-|---|---|---|
-| Clear (Perth, inland QLD) | 20% | 4–6 weeks |
-| Mixed (Melbourne, Sydney) | 20–25% | 8–12 weeks |
-| Overcast (Hobart, coastal) | 30–35% | 6–10 weeks |
-
-### Short-range forecast correction (considered and dropped)
-
-An earlier roadmap item proposed nudging the next 1–6 hours of forecast from the recent `pv_actual / pv_estimate` ratio (an exponentially-decaying, cloud-driven correction). **It was evaluated and dropped** — recorded here so the reasoning isn't lost:
-
-- **The signal decays too fast to be worth it.** Near-term deviation is cloud-driven, where persistence has very short skill: actual at `t` strongly predicts `t+1`, but that correlation falls off within an hour or two. So the nudge would do something only for the very next period and approach a no-op by +3 — exactly where forecast error is largest.
-- **It would second-guess Solcast with a cruder model.** Solcast's near-term product already incorporates recent imagery; a single-inverter ratio plus coarse OWM cloud cover is a blunt instrument against it.
-- **It would fork the forecast.** A now-relative, decaying, per-horizon correction can't go through `set_dampening` (that array is indexed by local time-of-day and applied every day), so it would have to be exposed as separate "corrected" sensors — forcing users to rewire automations and live with two forecasts that disagree.
-- **The durable, predictable part is already captured** by the DB-driven [dampening](#adaptive-dampening), whose ±14-day seasonal window also covers individual missing slots — so there's little residual left for a short-range term to chase.
-
-### PV tuning
-
-Uses a coarse-to-fine numpy **grid search** (full sweep at 5°, then refined to 1° and 0.25° around the best — the same approach as Solcast notebook 3.4, no scipy) to find the panel tilt and azimuth that minimise RMSE between measured `total_pv` and the geometrically-scaled Solcast estimate. Runs daily in a thread executor. Requires ≥10 clear-sky, non-clipped records.
-
-Records are excluded from the tuning dataset if:
-- Cloud cover ≥ cloud threshold (cloudy periods distort the geometry signal)
-- Both `total_pv` and `pv_estimate` exceed the clipping threshold (inverter AC clipping)
-- `pv_export` is at or near the configured grid export limit (curtailed output would pull the optimiser toward a lower tilt/azimuth than reality)
-
-In **multi-site** mode each individually-measured site is tuned separately against its own rows, seeded from that array's Solcast tilt/azimuth. The property-wide export limit still applies to every site's exclusion (one export meter for the whole property). Per-site results appear as a `per_site` attribute on the **Tuned Panel Tilt** sensor.
+Full detail — the confidence model, the weighting maths, convergence timelines by climate, and design decisions — lives in the [design document](DESIGN_DOCUMENT.md).
 
 ### Multi-site
 
-When the base integration has more than one rooftop site, the enhanced integration discovers them automatically and stores one row per site (keyed by Solcast `resource_id`) alongside the property-wide aggregate (`_total`). Aggregate tuning/dampening continue to use the `_total` rows, so single-site behaviour is unchanged; per-site tuning and dampening are layered on top. See [Step 6](#step-6--per-site-sensor-mapping-multi-site-only) for how generation is mapped to sites.
+When the base integration has more than one rooftop array, each is stored, tuned and dampened separately (keyed by its Solcast `resource_id`) alongside the property-wide aggregate. Single-site behaviour is unchanged.
 
-### Export curtailment & dynamic export limits
-
-When clear-sky PV output exceeds household load plus your grid export limit, the inverter **curtails** — it holds output below what the panels could make, so `pv_actual` stops measuring available generation. Left unhandled, that curtailment looks like shading and biases both tuning and dampening on exactly the clear-sky days they rely on.
-
-**Today (export-limit aware).** Records pegged at the export ceiling are detected from the AC side and handled so they stay honest: tuning **excludes** them, and dampening **clips the forecast to the achievable ceiling** so a curtailed clear-sky record contributes a neutral ≈1.0 instead of a false penalty (no record discarded). The export limit is read automatically from the base integration's `site_export_limit` (with a manual fallback). v1.6.8 additionally began banking per-MPPT DC voltage/current as the ground truth for a forthcoming hardware-based curtailment detector.
-
-**In the works:**
-
-- **Emergency stop / emergency backstop** — recognising AEMO/ARENA emergency-backstop curtailment events (the market-operator mechanism to remotely throttle distributed rooftop PV during minimum-demand / system-security periods) so those intervals are flagged rather than mistaken for shading.
-- **Variable (dynamic) export limits** — honouring the time-varying export limit set by your local DNSP (distribution network), instead of a single fixed cap, so the curtailment filter tracks the limit that actually applied in each interval.
-
-Both build on the per-MPPT DC telemetry now being captured: an elevated DC string voltage is a direct, cause-agnostic measurement of curtailment, independent of the (possibly dynamic) export limit. See the [design document](DESIGN_DOCUMENT.md#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection) for the detection ladder.
+If several arrays share one AC sensor, the integration splits the measured AC between them using each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Arrays sharing one AC sensor with no DC sensors can't be separated and are left unmapped.
 
 ---
 
-## Sensors (15 total)
+## Sensors
 
 | Sensor | Unit | Description |
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast (from base integration) |
 | Forecast Today | kWh | Total forecast for today (from base integration) |
-| Tuned Panel Tilt | ° | Optimised tilt from PV tuning |
+| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries a `per_site` attribute in multi-site mode) |
 | Tuned Panel Azimuth | ° | Optimised azimuth from PV tuning |
-| Tuning RMSE | kW | Goodness of fit for tuned geometry |
-| Tuning Export Limited Excluded | — | Records dropped from last tuning run due to export limit filter |
-| Database Records | — | Total records in the store (attributes: `latest_period_end`, `distinct_sites`, `sites`) |
-| MPPT DC Voltage (max) | V | Diagnostic — latest captured per-MPPT DC telemetry (highest string voltage; per-tracker voltage/current and per-site values in attributes). Unavailable until per-string DC sensors are configured |
-| Dampening Hours with DB Data | — | Hours where DB-derived factors are active |
+| Tuning RMSE | kW | Goodness of fit for the tuned geometry |
+| Tuning Export Limited Excluded | — | Records dropped from the last tuning run by the export-limit filter |
+| Database Records | — | Total records in the store |
+| MPPT DC Voltage (max) | V | Diagnostic — highest captured string voltage this cycle (per-tracker detail in attributes). Unavailable until per-string DC sensors are configured |
+| Dampening Hours with DB Data | — | Hours where DB-derived factors are active (per-hour diagnostics in attributes) |
 | Weather Temperature | °C | OWM current temperature |
 | Cloud Cover | % | OWM cloud cover |
-| Battery Charge 30min Average | kW | Value read from the configured battery sensor (restored across restarts) |
-| PV Power 30min Average | kW | Average generation for the period from the configured sensor (restored across restarts) |
-| PV Export 30min Average | kW | Average export for the period from the configured sensor (restored across restarts) |
+| Battery Charge 30min Average | kW | From the configured battery sensor (restored across restarts) |
+| PV Power 30min Average | kW | Average generation for the period (restored across restarts) |
+| PV Export 30min Average | kW | Average export for the period (restored across restarts) |
 | Base Integration Status | — | `connected` or `not_detected` |
-
-The **Dampening Hours with DB Data** sensor exposes per-hour diagnostics as attributes:
-
-```yaml
-hour_14_factor:           0.847      # final blended value pushed to base integration
-hour_14_alpha:            0.72       # DB confidence (0 = neutral 1.0, 1 = pure DB)
-hour_14_source:           db_blended # db_history | db_blended | no_data | night
-hour_14_quality_records:  31.4       # quality-weighted record count
-hour_14_avg_quality:      0.81       # mean combined weight of contributing records
-overall_source:           db_blended
-```
-
-In multi-site mode the **Tuned Panel Tilt** sensor additionally carries a `per_site` attribute — a list of `{name, resource_id, tilt, azimuth, rmse_kw, n_records}` for each individually-tuned array.
 
 ---
 
@@ -379,53 +236,9 @@ In multi-site mode the **Tuned Panel Tilt** sensor additionally carries a `per_s
 
 ---
 
-## Database schema
-
-The built-in store holds one row per half-hour per site in a single `solcast_data` table:
-
-```sql
-CREATE TABLE solcast_data (
-  "index"          INTEGER PRIMARY KEY AUTOINCREMENT,
-  period_end       TEXT NOT NULL,
-  period_end_epoch INTEGER NOT NULL,
-  period_start     TEXT NOT NULL,
-  site             TEXT NOT NULL DEFAULT '_total',  -- Solcast resource_id, or '_total' aggregate
-  pv_actual        REAL NOT NULL,                   -- 30-min avg generation (kW)
-  pv_export        REAL NOT NULL DEFAULT 0,         -- 30-min avg export (kW)
-  pv_estimate      REAL NOT NULL,                   -- Solcast p50 estimate
-  pv_estimate10    REAL NOT NULL,                   -- Solcast p10
-  pv_estimate90    REAL NOT NULL,                   -- Solcast p90
-  azimuth          REAL NOT NULL,                   -- solar azimuth at period midpoint (°)
-  zenith           REAL NOT NULL,                   -- solar zenith at period midpoint (°)
-  temp             REAL NOT NULL,                   -- OWM temperature (°C)
-  clouds           INTEGER NOT NULL,                -- OWM cloud cover (0–100)
-  description      TEXT NOT NULL,                   -- OWM weather description
-  battery_charge   REAL NOT NULL DEFAULT 0,         -- 30-min avg battery charge (kW)
-  dc_voltage1      REAL NOT NULL DEFAULT 0,         -- MPPT 1 DC voltage, slot max (V)
-  dc_current1      REAL NOT NULL DEFAULT 0,         -- MPPT 1 DC current, slot min (A)
-  dc_voltage2      REAL NOT NULL DEFAULT 0,         -- MPPT 2 DC voltage, slot max (V)
-  dc_current2      REAL NOT NULL DEFAULT 0,         -- MPPT 2 DC current, slot min (A)
-  UNIQUE(period_end_epoch, site)
-);
-```
-
-The base schema is created on first run (WAL mode). The per-MPPT DC telemetry columns (`dc_voltage1`/`dc_current1`/`dc_voltage2`/`dc_current2`, added in v1.6.8) are the one exception to "no migrations": they're applied to pre-existing databases by an additive `ALTER TABLE`, with legacy rows backfilled to `0` (forward-only — they can't be reconstructed). They're kept **per-tracker** (not aggregated) so a future per-string Vmp-band calibrator can learn each string; per-site rows carry that site's trackers, the `_total` row the property-wide ones. The `UNIQUE(period_end_epoch, site)` constraint enforces one row per slot per site; repeated writes within a slot are coalesced with `INSERT OR IGNORE`. One-time *data* repairs (e.g. recomputing historical `azimuth` after the hour-angle fix) run silently once, gated by SQLite's `PRAGMA user_version`.
-
----
-
-## Sensor mapping guidance
-
-```
-total_pv = pv_actual   (inverter AC output — includes all loads, export, and battery)
-```
-
-`pv_export` and `battery_charge` sensors are recorded in the DB for reference and diagnostics but are not used in the `total_pv` calculation. Configure `pv_actual` to read from the inverter's generation meter (total AC output), not a self-consumption-only meter.
-
----
-
 ## Standalone tuning tool
 
-`tools/standalone_tuning.py` runs the **same** tilt/azimuth optimisation outside Home Assistant, against the built-in SQLite store or a CSV export — handy for experimenting with parameters or validating a site without waiting for the daily run. It imports the integration's tuning functions, so results match the running integration.
+`tools/standalone_tuning.py` runs the same tilt/azimuth optimisation outside Home Assistant, against the SQLite store or a CSV export — handy for experimenting without waiting for the daily run.
 
 ```bash
 # Whole-property tuning from the built-in store
@@ -437,26 +250,18 @@ python tools/standalone_tuning.py --sqlite config/solcast_solar_enhanced.db \
 
 # Every site in the table
 python tools/standalone_tuning.py --sqlite config/solcast_solar_enhanced.db --all-sites
-
-# Tune a CSV with the same columns instead
-python tools/standalone_tuning.py --csv history.csv --capacity 5
 ```
 
-Requires `numpy` (no scipy). The SQLite source uses the standard library; CSV mode needs only numpy. Run `--help` for all options.
+Requires `numpy`. Run `--help` for all options.
 
 ---
 
 ## Roadmap
 
-Planned and in-progress work:
+- **Curtailment detector (DC-telemetry).** Tells real curtailment apart from shading on the DC side. Phase 1 (dampening clip-forecast) and Phase 2 (per-string DC capture + diagnostic sensor) are done; a self-calibrating per-string voltage model is next as telemetry accumulates.
+- **Emergency-backstop and variable export limits** — recognising market-operator and dynamic DNSP curtailment so those intervals aren't mistaken for shading.
 
-- **Curtailment detector (DC-telemetry off-MPP detection).** Tells genuine curtailment apart from shading on the DC side, so neither tuning nor dampening is fooled by curtailed clear-sky days. Progress:
-  - ✅ **Phase 1 — dampening clip-forecast** (v1.6.7): export-limited records are clipped to the achievable ceiling instead of being penalised as shading.
-  - ✅ **Phase 2 — per-MPPT DC telemetry capture** (v1.6.8) + **diagnostic sensor** (v1.6.9): per-string DC voltage/current is banked each slot (max-V / min-I). Now **confirmed logging real production data** on configured hardware — a full clear day yields a clean Vmp band (with Voc at first light) and resolves per-string partial shading on the DC side, the *provably-at-MPP* reference the calibrator needs.
-  - ⏳ **Tier-1 detection** (next, as telemetry accumulates): a self-calibrating per-string Vmp-band model, a `curtailed` flag + `export_limit` column, and wiring the flag into tuning (exclude) and dampening (clip/neutralise). An elevated DC voltage near Voc with collapsed current is a direct, cause-agnostic curtailment measurement — independent of the (possibly dynamic) export limit, and the same signal that will back the [emergency-stop and variable-export-limit work](#export-curtailment--dynamic-export-limits).
-
-  See the [design document](DESIGN_DOCUMENT.md#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection) for the full detection ladder and storage shape.
-- **Indexed day-of-year column for the seasonal dampening scan.** The seasonal dampening query is a full table scan (its day-of-year filter is a computed expression no index can serve). A stored, indexed day-of-year column would make it an indexed range lookup. Deferred — the new **history retention** option (Storage step; see above) already bounds the row count on long-lived installs, and the scan cost is fine for typical single-site, few-year databases. See the [design document](DESIGN_DOCUMENT.md#roadmap).
+See the [design document](DESIGN_DOCUMENT.md#roadmap) for the full plan and the database schema.
 
 ---
 
@@ -467,7 +272,7 @@ Planned and in-progress work:
 | Home Assistant | 2026.5.4+ |
 | Python | 3.12+ |
 | Storage | stdlib `sqlite3` — no install |
-| numpy | PV tuning — 1.21.0+ (ships with Home Assistant; no scipy) |
+| numpy | PV tuning — 1.21.0+ (ships with Home Assistant) |
 
 ---
 
