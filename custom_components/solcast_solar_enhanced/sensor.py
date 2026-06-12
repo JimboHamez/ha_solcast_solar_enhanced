@@ -33,6 +33,7 @@ from .const import (
     SENSOR_FORECAST_NOW,
     SENSOR_FORECAST_TODAY,
     SENSOR_MPPT_DC,
+    SENSOR_ORIENTATION_RECOMMENDATION,
     SENSOR_PV_ACTUAL,
     SENSOR_PV_EXPORT,
     SENSOR_TUNING_AZIMUTH,
@@ -60,6 +61,7 @@ async def async_setup_entry(
         TuningAzimuthSensor(coordinator, entry),
         TuningRmseSensor(coordinator, entry),
         TuningExportExcludedSensor(coordinator, entry),
+        OrientationRecommendationSensor(coordinator, entry),
         DbRecordsSensor(coordinator, entry),
         MpptDcSensor(coordinator, entry),
         DampeningSensor(coordinator, entry),
@@ -224,6 +226,34 @@ class TuningExportExcludedSensor(_EnhancedSensorBase):
     @property
     def native_value(self) -> int:
         return self.coordinator.tuning_export_excluded
+
+
+class OrientationRecommendationSensor(_EnhancedSensorBase):
+    """Whether the configured Solcast tilt/azimuth should be updated.
+
+    The actionable counterpart to the raw Tuned Panel Tilt/Azimuth diagnostics: an
+    enum status (``matches`` / ``update_suggested`` / ``insufficient_data``) rather
+    than a live angle, so users aren't asked to re-enter a moving number. The
+    recommended/configured values and per-site breakdown live in the attributes.
+    """
+
+    _attr_translation_key = "orientation_recommendation"
+    _attr_icon = "mdi:compass-outline"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_options = ["matches", "update_suggested", "insufficient_data"]
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_ORIENTATION_RECOMMENDATION)
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.orientation_recommendation["status"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        rec = self.coordinator.orientation_recommendation
+        return {k: v for k, v in rec.items() if k != "status"}
 
 
 class DbRecordsSensor(_EnhancedSensorBase):

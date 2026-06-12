@@ -149,6 +149,14 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "チューニング：売電制限により除外"
+      },
+      "orientation_recommendation": {
+        "name": "向き推奨",
+        "state": {
+          "matches": "Solcast設定と一致",
+          "update_suggested": "更新を推奨",
+          "insufficient_data": "データ不足"
+        }
       }
     }
   },

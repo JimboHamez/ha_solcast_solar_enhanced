@@ -5,6 +5,12 @@ DOMAIN = "solcast_solar_enhanced"
 BASE_DOMAIN = "solcast_solar"
 PLATFORMS = ["sensor"]
 
+# Base integration's "API last polled" timestamp sensor. Its state advances each
+# time the base fetches a fresh Solcast forecast; we watch it to re-push the
+# dampening factors right after a poll (so the latest curve lands on the freshly
+# fetched forecast) rather than only on the periodic timer.
+BASE_API_LAST_POLLED_SENSOR = "sensor.solcast_pv_forecast_api_last_polled"
+
 # Config keys
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
@@ -117,6 +123,19 @@ UPDATE_INTERVAL_MINUTES = 30
 HALF_HOUR_REFRESH_OFFSET_SECONDS = 30
 DAMPENING_INTERVAL_HOURS = 6
 TUNING_INTERVAL_HOURS = 24
+# Upper bound on clear-sky rows pulled into a single tuning fit. Panel orientation
+# is a fixed physical constant, so the fit should span the *full* history (every
+# season cancels the seasonal sun-angle bias and the estimate converges), not a
+# recent window — a recent-weighted window never settles and makes the tuned
+# tilt/azimuth wander day to day. This cap is a memory guard only: ~20k clear-sky
+# half-hours is several years for a typical site, so in practice the whole history
+# is used. Raise if a very long-lived site ever brushes it.
+TUNING_MAX_RECORDS = 20000
+# Grace delay after the base "API last polled" sensor advances before we re-push
+# dampening. The poll timestamp updates when the fetch fires, but the base then
+# parses/stores the forecast detail we read; this lets that settle. Also debounces
+# bursts of poll-sensor writes into a single dampening run.
+DAMPENING_POLL_DELAY_SECONDS = 60
 STORAGE_VERSION = 1
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
 
@@ -133,6 +152,17 @@ DAMPENING_GATE_MIN_RECORDS = 50      # tuning confidence before the gate may act
 DAMPENING_GATE_TILT_TOL = 15.0       # ° tilt divergence that trips the gate
 DAMPENING_GATE_AZIMUTH_TOL = 25.0    # ° azimuth divergence that trips the gate
 
+# Orientation recommendation: the user-facing "should I update my Solcast site
+# tilt/azimuth?" signal. Tighter tolerances than the dampening gate above — the
+# gate guards against *gross* mis-config baking into dampening, whereas this is a
+# gentle nudge to align Solcast with the converged fit. Confidence reuses
+# DAMPENING_GATE_MIN_RECORDS. The status only flips to "update_suggested" when the
+# converged fit differs by more than these tolerances; once the user applies the
+# change the delta collapses back inside tolerance, so it nudges once rather than
+# nagging every cycle.
+RECOMMEND_TILT_TOL = 4.0             # ° tilt divergence to suggest updating Solcast
+RECOMMEND_AZIMUTH_TOL = 6.0         # ° azimuth divergence to suggest updating Solcast
+
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"
 SENSOR_FORECAST_TODAY = "forecast_today"
@@ -140,6 +170,7 @@ SENSOR_TUNING_TILT = "tuning_tilt"
 SENSOR_TUNING_AZIMUTH = "tuning_azimuth"
 SENSOR_TUNING_RMSE = "tuning_rmse"
 SENSOR_TUNING_EXPORT_EXCLUDED = "tuning_export_excluded"
+SENSOR_ORIENTATION_RECOMMENDATION = "orientation_recommendation"
 SENSOR_DB_RECORDS = "db_records"
 SENSOR_DAMPENING = "dampening"
 SENSOR_WEATHER_TEMP = "weather_temp"

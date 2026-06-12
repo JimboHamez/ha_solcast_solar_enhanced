@@ -190,7 +190,7 @@ Shown when more than one Solcast site is detected. Sites are auto-discovered fro
 
 ## How it works
 
-- **PV tuning** runs daily: it searches for the panel tilt and azimuth that best explain your clear-sky generation, and reports them on the **Tuned Panel Tilt/Azimuth** sensors. Needs at least ~10 clear-sky, non-clipped records.
+- **PV tuning** runs daily: it searches for the panel tilt and azimuth that best explain your clear-sky generation, and reports them on the **Tuned Panel Tilt/Azimuth** sensors. The fit uses your *whole* history (not a recent window), because panel orientation is fixed — so once enough seasons are in, the estimate converges and stops wandering. The **Orientation Recommendation** sensor turns that into a plain status — `matches` (your Solcast config is fine), `update_suggested` (it's genuinely off — the suggested whole-degree values are in the sensor's attributes), or `insufficient_data` — so you change your Solcast tilt/azimuth once, rather than chasing a moving number. Needs at least ~10 clear-sky, non-clipped records to fit, and ~50 before it will suggest a change.
 - **Adaptive dampening** compares your actual output to the forecast across a ±14-day seasonal window, weighting each record by how clear the sky was and how close the sun was to the same position. It starts at a neutral no-op and ramps toward the measured correction as data builds, then pushes 24 hourly factors to Solcast via `set_dampening`. The base integration's own dampening factors are never read into this — the correction is learned purely from your history.
 - **Curtailment** — when your inverter is export-limited, that capped output is detected and handled so it doesn't look like shading: tuning excludes it, and dampening clips it to the achievable ceiling so a curtailed clear day stays neutral.
 
@@ -214,6 +214,7 @@ If several arrays share one AC sensor, the integration splits the measured AC be
 | Tuned Panel Azimuth | ° | Optimised azimuth from PV tuning |
 | Tuning RMSE | kW | Goodness of fit for the tuned geometry |
 | Tuning Export Limited Excluded | — | Records dropped from the last tuning run by the export-limit filter |
+| Orientation Recommendation | — | Whether to update your Solcast tilt/azimuth: `matches` / `update_suggested` / `insufficient_data` (recommended + configured values, deltas and per-site breakdown in attributes) |
 | Database Records | — | Total records in the store |
 | MPPT DC Voltage (max) | V | Diagnostic — highest captured string voltage this cycle (per-tracker detail in attributes). Unavailable until per-string DC sensors are configured |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active (per-hour diagnostics in attributes) |

@@ -149,6 +149,14 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Ladenie — vylúčené pre limit dodávky"
+      },
+      "orientation_recommendation": {
+        "name": "Odporúčanie orientácie",
+        "state": {
+          "matches": "Zhoduje sa s konfiguráciou Solcast",
+          "update_suggested": "Odporúča sa aktualizácia",
+          "insufficient_data": "Nedostatok údajov"
+        }
       }
     }
   },

@@ -8,16 +8,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BASE_API_LAST_POLLED_SENSOR,
     BASE_DOMAIN,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
@@ -55,6 +60,7 @@ from .const import (
     DAMPENING_GATE_MIN_RECORDS,
     DAMPENING_GATE_TILT_TOL,
     DAMPENING_INTERVAL_HOURS,
+    DAMPENING_POLL_DELAY_SECONDS,
     DEFAULT_DAMPENING_GATE,
     DEFAULT_DB_ENABLED,
     DEFAULT_DB_FILENAME,
@@ -73,8 +79,11 @@ from .const import (
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
     ISSUE_DAMPENING_GATED,
     ISSUE_OWM_REQUIRED,
+    RECOMMEND_AZIMUTH_TOL,
+    RECOMMEND_TILT_TOL,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
+    TUNING_MAX_RECORDS,
     UPDATE_INTERVAL_MINUTES,
 )
 from .sqlite_store import SqliteStore
@@ -191,6 +200,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # Unsubscribe handle for the half-hour wall-clock refresh listener.
         self._unsub_timer: CALLBACK_TYPE | None = None
 
+        # Poll-driven dampening: watch the base "API last polled" sensor and
+        # re-push dampening shortly after each fresh forecast fetch.
+        #  _unsub_poll       — state-change listener handle
+        #  _unsub_poll_delay — pending grace-delay timer (debounces poll bursts)
+        #  _last_api_poll    — last seen poll timestamp, to ignore no-op writes
+        self._unsub_poll: CALLBACK_TYPE | None = None
+        self._unsub_poll_delay: CALLBACK_TYPE | None = None
+        self._last_api_poll: str | None = None
+
     # ------------------------------------------------------------------
     # Setup / teardown
     # ------------------------------------------------------------------
@@ -259,16 +277,81 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             second=HALF_HOUR_REFRESH_OFFSET_SECONDS,
         )
 
+        # Re-push dampening shortly after the base integration polls a fresh
+        # forecast, so the latest curve lands on the new data instead of waiting
+        # for the periodic timer. Only relevant when auto-dampening is enabled.
+        # Seed the last-seen poll value first so an existing state doesn't fire a
+        # spurious run at setup.
+        if opts.get(CONF_AUTO_DAMPENING, True):
+            cur = self.hass.states.get(BASE_API_LAST_POLLED_SENSOR)
+            self._last_api_poll = cur.state if cur is not None else None
+            self._unsub_poll = async_track_state_change_event(
+                self.hass, [BASE_API_LAST_POLLED_SENSOR], self._handle_api_poll
+            )
+
     @callback
     def _handle_timed_refresh(self, now: datetime) -> None:
         """Wall-clock-aligned refresh trigger (fires at :00/:30 each hour)."""
         self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_api_poll(self, event: Event) -> None:
+        """React to the base 'API last polled' sensor advancing.
+
+        Schedules a dampening re-push after ``DAMPENING_POLL_DELAY_SECONDS`` so
+        the base has time to parse/store the freshly fetched forecast detail we
+        read. Ignores no-op writes (unchanged value) and unavailable states, and
+        debounces a burst of writes by cancelling any still-pending timer.
+        """
+        new = event.data.get("new_state")
+        if new is None or new.state in ("unknown", "unavailable", ""):
+            return
+        if new.state == self._last_api_poll:
+            return  # same poll timestamp re-written — nothing new fetched
+        self._last_api_poll = new.state
+
+        if self._unsub_poll_delay is not None:
+            self._unsub_poll_delay()  # debounce: drop the previous pending run
+        _LOGGER.debug(
+            "Base API poll detected (%s); scheduling dampening re-push in %ds",
+            new.state, DAMPENING_POLL_DELAY_SECONDS,
+        )
+        self._unsub_poll_delay = async_call_later(
+            self.hass, DAMPENING_POLL_DELAY_SECONDS, self._handle_poll_delay_elapsed
+        )
+
+    @callback
+    def _handle_poll_delay_elapsed(self, _now: datetime) -> None:
+        """Grace delay elapsed — run the poll-driven dampening update."""
+        self._unsub_poll_delay = None
+        self.hass.async_create_task(self._async_dampening_on_poll())
+
+    async def _async_dampening_on_poll(self) -> None:
+        """Recompute and push dampening after a fresh base forecast poll.
+
+        Resets the periodic-dampening clock so the 6-hourly timer doesn't redo
+        the same work right after a poll-driven run."""
+        opts = {**self._entry.data, **self._entry.options}
+        if not opts.get(CONF_AUTO_DAMPENING, True):
+            return
+        now_epoch = normalize_epoch(time.time())
+        lat = float(opts.get(CONF_LATITUDE, -37.9))
+        lon = float(opts.get(CONF_LONGITUDE, 145.0))
+        await self._run_dampening(opts, now_epoch, lat, lon)
+        self._last_dampening_ts = float(now_epoch)
+        self.async_set_updated_data(self.data or {})
 
     async def async_teardown(self) -> None:
         """Close DB pool and cancel the refresh timer."""
         if self._unsub_timer is not None:
             self._unsub_timer()
             self._unsub_timer = None
+        if self._unsub_poll is not None:
+            self._unsub_poll()
+            self._unsub_poll = None
+        if self._unsub_poll_delay is not None:
+            self._unsub_poll_delay()
+            self._unsub_poll_delay = None
         if self._db:
             await self._db.async_close()
             self._db = None
@@ -544,7 +627,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # data spanning all seasons, not just a recent cloudy window.
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         records = await self._db.async_get_records_for_tuning(
-            site=DEFAULT_SITE_ID, cloud_max=cloud_threshold
+            limit=TUNING_MAX_RECORDS, site=DEFAULT_SITE_ID, cloud_max=cloud_threshold
         )
         if not records:
             _LOGGER.debug("PV tuning skipped: no usable records yet")
@@ -594,7 +677,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         results: dict[str, dict[str, Any]] = {}
         for site_id in site_ids:
             records = await self._db.async_get_records_for_tuning(
-                site=site_id, cloud_max=cloud_threshold
+                limit=TUNING_MAX_RECORDS, site=site_id, cloud_max=cloud_threshold
             )
             if not records:
                 continue
@@ -696,6 +779,65 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if d_tilt > DAMPENING_GATE_TILT_TOL or d_az > DAMPENING_GATE_AZIMUTH_TOL:
             return {"tilt_delta": round(d_tilt, 1), "azimuth_delta": round(d_az, 1)}
         return None
+
+    def _recommend_entry(
+        self,
+        tuning_result: dict[str, Any] | None,
+        seed_tilt: float,
+        seed_az: float,
+        name: str | None,
+        resource_id: str | None,
+    ) -> dict[str, Any]:
+        """One target's orientation recommendation (aggregate or a single site).
+
+        Seeds are in the internal tuner frame (East-positive); reported values are
+        converted back to the Solcast/base convention (West-positive) and rounded
+        to whole degrees, since Solcast site config is entered in whole degrees and
+        the sub-degree grid resolution is noise the user shouldn't chase. Status:
+
+        - ``insufficient_data`` — no fit yet, or fewer than
+          ``DAMPENING_GATE_MIN_RECORDS`` clear-sky records (not trustworthy).
+        - ``update_suggested`` — confident, and the converged tilt/azimuth differs
+          from the configured Solcast value by more than ``RECOMMEND_*_TOL``.
+        - ``matches`` — confident, and the configured value already agrees.
+        """
+        entry: dict[str, Any] = {"name": name, "resource_id": resource_id}
+        n_records = int(tuning_result.get("n_records", 0)) if tuning_result else 0
+        entry["n_records"] = n_records
+        if not tuning_result or n_records < DAMPENING_GATE_MIN_RECORDS:
+            entry["status"] = "insufficient_data"
+            return entry
+
+        tuned_tilt = float(tuning_result["tilt"])
+        tuned_az = float(tuning_result["azimuth"])
+        d_tilt = abs(tuned_tilt - seed_tilt)
+        d_az = abs(self._angle_diff(tuned_az, seed_az))
+        entry.update(
+            {
+                "recommended_tilt": round(tuned_tilt),
+                "recommended_azimuth": round(panel_azimuth_to_solcast(tuned_az)),
+                "configured_tilt": round(seed_tilt),
+                "configured_azimuth": round(panel_azimuth_to_solcast(seed_az)),
+                "tilt_delta": round(d_tilt, 1),
+                "azimuth_delta": round(d_az, 1),
+            }
+        )
+        if d_tilt > RECOMMEND_TILT_TOL or d_az > RECOMMEND_AZIMUTH_TOL:
+            entry["status"] = "update_suggested"
+        else:
+            entry["status"] = "matches"
+        return entry
+
+    @staticmethod
+    def _rollup_recommendation(entries: list[dict[str, Any]]) -> str:
+        """Worst-case status across targets: any update_suggested wins, else any
+        confident match, else insufficient_data."""
+        statuses = {e.get("status") for e in entries}
+        if "update_suggested" in statuses:
+            return "update_suggested"
+        if "matches" in statuses:
+            return "matches"
+        return "insufficient_data"
 
     def _site_orientation_seed(
         self, site_id: str, opts: dict[str, Any]
@@ -1580,6 +1722,52 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 for rid, r in self._site_tuning_results.items()
             ]
         return extra
+
+    @property
+    def orientation_recommendation(self) -> dict[str, Any]:
+        """User-facing 'should I update my Solcast tilt/azimuth?' signal.
+
+        Drives the Orientation Recommendation sensor: a divergence-gated *status*
+        (not a live angle to chase). Because the fit now spans full history and
+        converges, this only flips to ``update_suggested`` on a genuine, persistent
+        mismatch — and collapses back to ``matches`` once the user applies the
+        change, so it nudges once rather than nagging. Multi-site reports one entry
+        per individually-measured site (a property-wide aggregate orientation is
+        meaningless across differently-oriented arrays); single-site uses the
+        aggregate ``_total`` fit against the configured tilt/azimuth.
+        """
+        opts = {**self._entry.data, **self._entry.options}
+        site_ids = self._configured_site_ids(opts.get(CONF_SITE_GROUPS) or [])
+        entries: list[dict[str, Any]] = []
+        if site_ids:
+            by_id = {s.get("resource_id"): s for s in self._sites}
+            for site_id in site_ids:
+                seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
+                entries.append(
+                    self._recommend_entry(
+                        self._site_tuning_results.get(site_id),
+                        seed_tilt,
+                        seed_az,
+                        by_id.get(site_id, {}).get("name"),
+                        site_id,
+                    )
+                )
+        else:
+            entries.append(
+                self._recommend_entry(
+                    self._tuning_result,
+                    float(opts.get(CONF_TILT, 20.0)),
+                    panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
+                    None,
+                    None,
+                )
+            )
+        return {
+            "status": self._rollup_recommendation(entries),
+            "tilt_tolerance": RECOMMEND_TILT_TOL,
+            "azimuth_tolerance": RECOMMEND_AZIMUTH_TOL,
+            "sites": entries,
+        }
 
     @property
     def dampening_hours_with_db(self) -> int:

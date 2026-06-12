@@ -144,7 +144,7 @@ Optimises panel tilt/azimuth to minimise RMSE between measured `total_pv` and th
 
 ### Algorithm
 
-1. Fetch up to 2000 recent records (`pv_actual > 0`).
+1. Fetch the clear-sky records (`pv_actual > 0`), up to `TUNING_MAX_RECORDS` (20000 — a memory guard, effectively the full history for a typical site). The fit deliberately spans **all** history rather than a recent window: panel orientation is a fixed physical constant, so a full-history fit averages over every sun declination and *converges*, whereas a recent-weighted window is seasonally biased and makes the tuned tilt/azimuth wander each run.
 2. Filter to clear-sky (`clouds < cloud_threshold`).
 3. Exclude clipped records (`total_pv` **and** `pv_estimate` ≥ `capacity × clipping_threshold`).
 4. Exclude export-limited records (`pv_export ≥ export_limit_kw × clipping_threshold`, when set) — see below.
@@ -163,6 +163,16 @@ is_export_limited = export_limit_kw > 0 AND pv_export >= export_limit_kw × clip
 ```
 
 Reusing `clipping_threshold` keeps marginal export values; `export_limit_kw = 0` (default) disables it. Results surface on the `Tuned Panel Tilt` sensor (`azimuth`, `rmse_kw`, `n_records` attributes) and the Configure page. The `battery_full + export_capped` double-curtailment case remains a known AC-side limitation, addressed by the DC-telemetry [roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+
+### Orientation recommendation
+
+Because the user closes the tuning loop by hand — copying the tuned tilt/azimuth into their Solcast account — the raw tuned angle is the wrong thing to surface as a call to action: it carries sub-degree grid noise and (before the full-history change above) drifted seasonally, so it reads as "re-enter this number again." The `Orientation Recommendation` sensor instead exposes a divergence-gated **status** built on the converged fit:
+
+- `insufficient_data` — no fit yet, or fewer than `DAMPENING_GATE_MIN_RECORDS` (50) clear-sky records.
+- `update_suggested` — confident, and the converged tilt/azimuth differs from the configured Solcast value by more than `RECOMMEND_TILT_TOL` (4°) / `RECOMMEND_AZIMUTH_TOL` (6°). The suggested whole-degree values and deltas are in the attributes.
+- `matches` — confident, and the configured value already agrees.
+
+These tolerances are tighter than the dampening convergence gate (`DAMPENING_GATE_*_TOL`, 15°/25°), which guards only against *gross* mis-config baking into the dampening curve. The status is hysteretic by construction: applying the suggested change collapses the delta back inside tolerance, so it nudges once rather than every cycle. Multi-site reports one entry per individually-measured site (a property-wide aggregate orientation is meaningless across differently-oriented arrays); single-site uses the aggregate `_total` fit.
 
 ---
 
@@ -337,6 +347,7 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 | Tuned Panel Azimuth | ° | Optimised azimuth |
 | Tuning RMSE | kW | Goodness of fit |
 | Tuning Export Limited Excluded | — | Records dropped by the export-limit filter last run |
+| Orientation Recommendation | — | Divergence-gated status: `matches` / `update_suggested` / `insufficient_data` (recommended + configured tilt/azimuth, deltas, per-site breakdown in attributes) |
 | Database Records | — | Total DB record count |
 | MPPT DC Voltage (max) | V | Diagnostic: latest captured DC telemetry (max string voltage; per-tracker V/I + per-site in attributes). Unavailable when no DC sensors configured |
 | Dampening Hours with DB Data | — | Hours with DB-derived factors (per-hour diagnostics in attributes) |

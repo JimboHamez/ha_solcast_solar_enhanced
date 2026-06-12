@@ -149,6 +149,14 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Ajuste: excluidos por límite de exportación"
+      },
+      "orientation_recommendation": {
+        "name": "Recomendación de orientación",
+        "state": {
+          "matches": "Coincide con la configuración de Solcast",
+          "update_suggested": "Actualización sugerida",
+          "insufficient_data": "Datos insuficientes"
+        }
       }
     }
   },

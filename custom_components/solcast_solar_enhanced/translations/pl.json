@@ -149,6 +149,14 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Strojenie — wykluczone z powodu limitu oddawania"
+      },
+      "orientation_recommendation": {
+        "name": "Zalecenie orientacji",
+        "state": {
+          "matches": "Zgodne z konfiguracją Solcast",
+          "update_suggested": "Zalecana aktualizacja",
+          "insufficient_data": "Niewystarczające dane"
+        }
       }
     }
   },

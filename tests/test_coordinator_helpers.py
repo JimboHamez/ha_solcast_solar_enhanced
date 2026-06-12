@@ -694,7 +694,7 @@ class _TuningStore(_FakeStore):
         super().__init__()
         self._by_site = records_by_site
 
-    async def async_get_records_for_tuning(self, site, cloud_max):
+    async def async_get_records_for_tuning(self, limit=2000, site=None, cloud_max=None):
         return self._by_site.get(site, [])
 
 
@@ -878,3 +878,115 @@ async def test_run_site_tuning_skips_site_without_records(hass):
 
     assert "r1" in coord._site_tuning_results
     assert "r2" not in coord._site_tuning_results
+
+
+# ---------------------------------------------------------------------------
+# Poll-driven dampening — _handle_api_poll / delayed run
+# ---------------------------------------------------------------------------
+
+def _poll_event(new_state):
+    return SimpleNamespace(data={"new_state": SimpleNamespace(state=new_state)})
+
+
+async def test_handle_api_poll_schedules_after_new_value(hass, coordinator):
+    coordinator._last_api_poll = "2026-06-09T00:00:00+00:00"
+    with patch("custom_components.solcast_solar_enhanced.coordinator.async_call_later",
+               return_value=lambda: None) as later:
+        coordinator._handle_api_poll(_poll_event("2026-06-09T01:00:00+00:00"))
+    later.assert_called_once()
+    assert coordinator._last_api_poll == "2026-06-09T01:00:00+00:00"
+    assert coordinator._unsub_poll_delay is not None
+
+
+async def test_handle_api_poll_ignores_unchanged_value(hass, coordinator):
+    coordinator._last_api_poll = "2026-06-09T01:00:00+00:00"
+    with patch("custom_components.solcast_solar_enhanced.coordinator.async_call_later") as later:
+        coordinator._handle_api_poll(_poll_event("2026-06-09T01:00:00+00:00"))
+    later.assert_not_called()
+
+
+@pytest.mark.parametrize("bad", ["unavailable", "unknown", ""])
+async def test_handle_api_poll_ignores_unusable_state(hass, coordinator, bad):
+    coordinator._last_api_poll = None
+    with patch("custom_components.solcast_solar_enhanced.coordinator.async_call_later") as later:
+        coordinator._handle_api_poll(_poll_event(bad))
+    later.assert_not_called()
+
+
+async def test_handle_api_poll_debounces_burst(hass, coordinator):
+    coordinator._last_api_poll = None
+    cancels = []
+
+    def fake_later(hass_, delay, cb):
+        unsub = MagicMock()
+        cancels.append(unsub)
+        return unsub
+
+    with patch("custom_components.solcast_solar_enhanced.coordinator.async_call_later",
+               side_effect=fake_later):
+        coordinator._handle_api_poll(_poll_event("t1"))
+        coordinator._handle_api_poll(_poll_event("t2"))  # supersedes the first
+
+    assert len(cancels) == 2
+    cancels[0].assert_called_once()      # first pending timer was cancelled
+    cancels[1].assert_not_called()       # second is the live one
+
+
+async def test_poll_delay_elapsed_runs_dampening(hass, coordinator):
+    coordinator._unsub_poll_delay = MagicMock()
+    coordinator.data = {}
+    with patch.object(coordinator, "_async_dampening_on_poll", new=AsyncMock()):
+        coordinator._handle_poll_delay_elapsed(None)
+        await hass.async_block_till_done()
+    assert coordinator._unsub_poll_delay is None
+
+
+async def test_async_dampening_on_poll_runs_and_resets_clock(hass):
+    coord = _orch_coordinator(hass, {CONF_AUTO_DAMPENING: True})
+    coord.data = {}
+    with patch.object(coord, "_run_dampening", new=AsyncMock()) as run:
+        await coord._async_dampening_on_poll()
+    run.assert_awaited_once()
+    assert coord._last_dampening_ts > 0
+
+
+async def test_async_dampening_on_poll_skips_when_disabled(hass):
+    coord = _orch_coordinator(hass, {CONF_AUTO_DAMPENING: False})
+    coord.data = {}
+    with patch.object(coord, "_run_dampening", new=AsyncMock()) as run:
+        await coord._async_dampening_on_poll()
+    run.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# orientation_recommendation — the divergence-gated "update Solcast?" status
+# ---------------------------------------------------------------------------
+
+def test_orientation_recommendation_insufficient_without_fit(coordinator):
+    coordinator._tuning_result = None
+    rec = coordinator.orientation_recommendation
+    assert rec["status"] == "insufficient_data"
+    assert rec["sites"][0]["status"] == "insufficient_data"
+
+
+def test_orientation_recommendation_insufficient_when_few_records(coordinator):
+    coordinator._tuning_result = {"tilt": 35.0, "azimuth": 0.0, "n_records": 10}
+    assert coordinator.orientation_recommendation["status"] == "insufficient_data"
+
+
+def test_orientation_recommendation_matches_configured(coordinator):
+    # Config seed is tilt 20 / azimuth 0; a confident fit at the same orientation.
+    coordinator._tuning_result = {"tilt": 20.0, "azimuth": 0.0, "n_records": 200}
+    rec = coordinator.orientation_recommendation
+    assert rec["status"] == "matches"
+    entry = rec["sites"][0]
+    assert entry["recommended_tilt"] == 20
+    assert entry["tilt_delta"] == 0.0
+
+
+def test_orientation_recommendation_suggests_update_when_diverged(coordinator):
+    # Tilt 32 vs configured 20 → 12° beyond the recommend tolerance.
+    coordinator._tuning_result = {"tilt": 32.0, "azimuth": 0.0, "n_records": 200}
+    rec = coordinator.orientation_recommendation
+    assert rec["status"] == "update_suggested"
+    assert rec["sites"][0]["recommended_tilt"] == 32

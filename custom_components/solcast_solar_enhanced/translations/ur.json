@@ -149,6 +149,14 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "ٹیوننگ — ایکسپورٹ حد کے باعث خارج"
+      },
+      "orientation_recommendation": {
+        "name": "سمت کی سفارش",
+        "state": {
+          "matches": "Solcast کنفیگریشن سے مطابقت",
+          "update_suggested": "اپ ڈیٹ تجویز کردہ",
+          "insufficient_data": "ناکافی ڈیٹا"
+        }
       }
     }
   },
