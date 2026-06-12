@@ -91,7 +91,7 @@ class _EnhancedSensorBase(CoordinatorEntity[SolcastEnhancedCoordinator], SensorE
             identifiers={(DOMAIN, entry.entry_id)},
             name="Solcast Solar Enhanced",
             manufacturer="JimboHamez",
-            model="Enhanced Integration",
+            model="Solcast Solar Enhanced Integration",
             entry_type=DeviceEntryType.SERVICE,
         )
 
