@@ -82,6 +82,69 @@ async def test_insert_dc_telemetry_defaults_to_zero(store):
     }]
 
 
+_IRR_COLS = "ghi, dni, dhi"
+
+
+async def test_insert_and_read_irradiance(store):
+    await store.async_insert_record(_record(JUNE1, ghi=712.0, dni=540.5, dhi=158.0))
+    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{"ghi": 712.0, "dni": 540.5, "dhi": 158.0}]
+
+
+async def test_insert_irradiance_defaults_to_zero(store):
+    # A record without irradiance fields stores 0 via NOT NULL DEFAULT (no crash).
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data", ())
+    assert rows == [{"ghi": 0.0, "dni": 0.0, "dhi": 0.0}]
+
+
+async def test_connect_adds_irradiance_columns_to_legacy_db(hass, tmp_path):
+    """A DB created before the irradiance columns (but with the DC columns) gets
+    ghi/dni/dhi ALTERed in, legacy rows backfilled to 0, new inserts round-trip."""
+    import sqlite3
+
+    path = str(tmp_path / "pre_irr.db")
+    sql = """
+        CREATE TABLE solcast_data (
+          "index" INTEGER PRIMARY KEY AUTOINCREMENT,
+          period_end TEXT NOT NULL, period_end_epoch INTEGER NOT NULL,
+          period_start TEXT NOT NULL, site TEXT NOT NULL DEFAULT '_total',
+          pv_actual REAL NOT NULL, pv_export REAL NOT NULL DEFAULT 0,
+          pv_estimate REAL NOT NULL, pv_estimate10 REAL NOT NULL,
+          pv_estimate90 REAL NOT NULL, azimuth REAL NOT NULL, zenith REAL NOT NULL,
+          temp REAL NOT NULL, clouds INTEGER NOT NULL, description TEXT NOT NULL,
+          battery_charge REAL NOT NULL DEFAULT 0,
+          dc_voltage1 REAL NOT NULL DEFAULT 0, dc_current1 REAL NOT NULL DEFAULT 0,
+          dc_voltage2 REAL NOT NULL DEFAULT 0, dc_current2 REAL NOT NULL DEFAULT 0,
+          UNIQUE(period_end_epoch, site)
+        );
+    """
+    con = sqlite3.connect(path)
+    con.executescript(sql)
+    con.execute(
+        'INSERT INTO solcast_data (period_end, period_end_epoch, period_start, site,'
+        " pv_actual, pv_estimate, pv_estimate10, pv_estimate90, azimuth, zenith,"
+        " temp, clouds, description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("x", JUNE1, "y", "_total", 3.0, 4.0, 3.0, 5.0, 180.0, 35.0, 20.0, 10, "clear"),
+    )
+    con.commit()
+    con.close()
+
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    # Columns present; legacy row backfilled to 0.
+    assert s._query(f"SELECT {_IRR_COLS} FROM solcast_data", ()) == [
+        {"ghi": 0.0, "dni": 0.0, "dhi": 0.0}
+    ]
+    # A new irradiance-bearing insert round-trips.
+    await s.async_insert_record(_record(JUNE1 + 1800, ghi=500.0, dni=300.0, dhi=120.0))
+    assert s._query(
+        f"SELECT {_IRR_COLS} FROM solcast_data WHERE period_end_epoch = ?",
+        (JUNE1 + 1800,),
+    ) == [{"ghi": 500.0, "dni": 300.0, "dhi": 120.0}]
+    await s.async_close()
+
+
 async def test_connect_adds_dc_columns_to_legacy_db(hass, tmp_path):
     """An existing DB created before the DC columns gets them ALTERed in, with
     legacy rows backfilled to 0, and accepts new DC-bearing inserts."""
@@ -246,10 +309,11 @@ async def test_tuning_orders_desc_and_limits(store):
         await store.async_insert_record(_record(JUNE1 + i * 1800))
     rows = await store.async_get_records_for_tuning(limit=3)
     assert len(rows) == 3
-    # Returned newest-first; tuning rows expose the consumed columns only.
+    # Returned newest-first; tuning rows expose the consumed columns, now including
+    # the irradiance components + epoch for transposition-based tuning.
     assert set(rows[0]) == {
-        "pv_actual", "pv_export", "pv_estimate",
-        "azimuth", "zenith", "clouds", "battery_charge",
+        "period_end_epoch", "pv_actual", "pv_export", "pv_estimate",
+        "azimuth", "zenith", "clouds", "ghi", "dni", "dhi", "battery_charge",
     }
 
 

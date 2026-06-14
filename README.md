@@ -82,21 +82,13 @@ sensor:
 
 Powers dampening and tuning, and needs nothing — a built-in SQLite file (`config/solcast_solar_enhanced.db`) is created automatically. On by default.
 
-### 4. OpenWeatherMap API key (required for tuning & dampening)
+### 4. Weather & irradiance (Open-Meteo — keyless, on by default)
 
-> **Without OpenWeatherMap, tuning and dampening stay inactive.** They only learn from *clear-sky* periods (the cloudy ones tell you nothing about your panels), and the cloud-cover reading that finds those periods comes only from OWM. History is still recorded, but with no cloud data every record is treated as overcast and skipped. A repair issue prompts you until a key is added.
+Tuning and dampening only learn from *clear-sky* periods (cloudy ones tell you nothing about your panels), and PV tilt tuning additionally needs solar **irradiance**. Both now come from [**Open-Meteo**](https://open-meteo.com/), which is **free and needs no API key** — it's enabled by default, so there's nothing to set up. It supplies the irradiance components (GHI/DNI/DHI) plus cloud cover and temperature.
 
-It's free and easy:
+> **OpenWeatherMap is now optional (legacy).** If you'd rather use OWM for cloud/temperature, enable it in setup **Step 3** and paste a free key — it then takes precedence for cloud/temperature, while irradiance still comes from Open-Meteo. A repair issue appears only if you disable Open-Meteo *and* don't configure OWM, leaving no weather source at all.
 
-| What | Detail |
-|---|---|
-| Account | Free at [openweathermap.org](https://openweathermap.org/api) |
-| API key | Created under **API keys**. New keys can take up to ~2 hours to activate |
-| Plan | The free **Current Weather Data** API — no paid plan |
-| Usage | One call per 30-min cycle (~48/day), far under the free limit |
-| Enable | Off by default — turn it on in setup **Step 3** and paste the key |
-
-**Check it's working** after setup: the **Cloud Cover** sensor should show a real percentage, the log should be free of `OWM fetch failed`, and the repair issue should be gone.
+**Check it's working** after setup: the **Cloud Cover** sensor should show a real percentage and the repair issue (if any) should be gone. To make tuning useful on day one rather than waiting for fresh data, backfill irradiance onto your existing history with `tools/backfill_irradiance.py` (see [Standalone tools](#standalone-tools)).
 
 ---
 
@@ -149,14 +141,15 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path.
 
-### Step 3 — OpenWeatherMap
+### Step 3 — Weather & Irradiance
 
-Required for tuning & dampening (see [§4 above](#4-openweathermap-api-key-required-for-tuning--dampening)). Off by default.
+Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 above](#4-weather--irradiance-open-meteo--keyless-on-by-default)). OpenWeatherMap is an optional legacy alternative for cloud/temperature.
 
 | Field | Default | Description |
 |---|---|---|
-| Enable OWM | **Off** | Turn on to fetch cloud cover |
-| OWM API key | — | Free key from openweathermap.org |
+| Enable Open-Meteo | **On** | Keyless irradiance (GHI/DNI/DHI) + cloud/temperature |
+| Enable OWM | **Off** | Optional legacy cloud/temperature source; needs a key |
+| OWM API key | — | Free key from openweathermap.org (only if OWM enabled) |
 
 ### Step 4 — Battery Storage
 
@@ -210,15 +203,15 @@ If several arrays share one AC sensor, the integration splits the measured AC be
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast (from base integration) |
 | Forecast Today | kWh | Total forecast for today (from base integration) |
-| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries a `per_site` attribute in multi-site mode) |
-| Tuned Panel Azimuth | ° | Optimised azimuth from PV tuning |
-| Tuning RMSE | kW | Goodness of fit for the tuned geometry |
+| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries `mae_kw`, `capacity_scale`, and a `per_site` attribute in multi-site mode) |
+| Tuned Panel Azimuth | ° | Your configured azimuth — **not tuned** (azimuth is non-identifiable from this data; `azimuth_tuned: false`). Reported for reference only |
+| Tuning RMSE | kW | Goodness of fit for the tuned tilt |
 | Tuning Export Limited Excluded | — | Records dropped from the last tuning run by the export-limit filter |
 | Database Records | — | Total records in the store |
 | MPPT DC Voltage (max) | V | Diagnostic — highest captured string voltage this cycle (per-tracker detail in attributes). Unavailable until per-string DC sensors are configured |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active (per-hour diagnostics in attributes) |
-| Weather Temperature | °C | OWM current temperature |
-| Cloud Cover | % | OWM cloud cover |
+| Weather Temperature | °C | Current temperature (Open-Meteo, or OWM if configured) |
+| Cloud Cover | % | Cloud cover (Open-Meteo, or OWM if configured) |
 | Battery Charge 30min Average | kW | From the configured battery sensor (restored across restarts) |
 | PV Power 30min Average | kW | Average generation for the period (restored across restarts) |
 | PV Export 30min Average | kW | Average export for the period (restored across restarts) |
@@ -232,13 +225,13 @@ If several arrays share one AC sensor, the integration splits the measured AC be
 |---|---|
 | `solcast_solar_enhanced.run_pv_tuning` | Force immediate PV tuning |
 | `solcast_solar_enhanced.run_dampening_update` | Force immediate dampening recalculation and push |
-| `solcast_solar_enhanced.fetch_weather` | Force immediate OWM weather fetch |
+| `solcast_solar_enhanced.fetch_weather` | Force immediate weather fetch (Open-Meteo / OWM) |
 
 ---
 
-## Standalone tuning tool
+## Standalone tools
 
-`tools/standalone_tuning.py` runs the same tilt/azimuth optimisation outside Home Assistant, against the SQLite store or a CSV export — handy for experimenting without waiting for the daily run.
+`tools/standalone_tuning.py` runs the same tilt optimisation outside Home Assistant, against the SQLite store or a CSV export — handy for experimenting without waiting for the daily run.
 
 ```bash
 # Whole-property tuning from the built-in store
@@ -253,6 +246,15 @@ python tools/standalone_tuning.py --sqlite config/solcast_solar_enhanced.db --al
 ```
 
 Requires `numpy`. Run `--help` for all options.
+
+### Backfill irradiance
+
+`tools/backfill_irradiance.py` fills the `ghi`/`dni`/`dhi` columns on existing rows from Open-Meteo's free historical archive, so transposition-based tilt tuning is useful immediately instead of waiting months for fresh data to accumulate. Stdlib-only; safe to re-run (fills only rows still missing irradiance).
+
+```bash
+python tools/backfill_irradiance.py --sqlite config/solcast_solar_enhanced.db \
+    --lat -37.9046 --lon 145.0362
+```
 
 ---
 

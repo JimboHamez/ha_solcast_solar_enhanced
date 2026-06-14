@@ -23,6 +23,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OWM_API_KEY,
+    CONF_OPENMETEO_ENABLED,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_SENSOR,
     CONF_PV_EXPORT_SENSOR,
@@ -54,7 +55,8 @@ STEP_DATABASE = {
     CONF_DB_ENABLED: False,
 }
 
-STEP_OWM = {
+STEP_WEATHER = {
+    CONF_OPENMETEO_ENABLED: True,
     CONF_OWM_ENABLED: False,
     CONF_OWM_API_KEY: "",
 }
@@ -88,10 +90,10 @@ async def _run_full_flow(hass) -> dict:
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], STEP_DATABASE
     )
-    assert result["step_id"] == "owm"
+    assert result["step_id"] == "weather"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], STEP_OWM
+        result["flow_id"], STEP_WEATHER
     )
     assert result["step_id"] == "battery"
 
@@ -159,7 +161,7 @@ async def test_options_flow_completes(hass, mock_config_entry):
 
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
-    for step_data in (STEP_SITE, STEP_DATABASE, STEP_OWM, STEP_BATTERY):
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY):
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], step_data
         )

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Open-Meteo is now the default weather + irradiance source; OpenWeatherMap is
+  optional/legacy (Phase 3).** Open-Meteo is keyless and on by default, so it now
+  supplies cloud cover and temperature (in addition to the irradiance added in
+  Phase 1) whenever OWM isn't configured — meaning tuning and dampening work out of
+  the box with **no API key**. OWM, when enabled, still takes precedence for
+  cloud/temperature for backward compatibility. The setup "OpenWeatherMap" step is
+  now a "Weather & Irradiance" step with an Open-Meteo toggle, and the
+  weather-source repair issue fires only if *both* sources are disabled (previously
+  it nagged whenever OWM was off). Translations updated (new strings land in English
+  pending localisation).
+- **PV tuning rewritten to transposition-based, tilt-only (Phase 2).** The tuner now
+  transposes the collected Open-Meteo GHI/DNI/DHI to the panel plane (Hay-Davies,
+  isotropic fallback) for each candidate **tilt**, fits a capacity scale by
+  least squares, and minimises MAE against measured generation — replacing the old
+  cosine-ratio method, which only re-scaled the single configured-orientation
+  forecast and was therefore **seed-degenerate** (it echoed the configured tilt back
+  rather than measuring it). Still numpy-only, no scipy; a coarse-to-fine 1-D grid
+  runs in ~750 ms on a Pi.
+  - **Azimuth is no longer tuned — it is held at the configured value.** Azimuth is
+    non-identifiable from this data (degenerate with the irradiance↔power time
+    alignment at ~1° per 3 min, and biased westward by morning shading), so tuning
+    it did more harm than good. The `Tuned Panel Tilt` sensor reports the fixed
+    azimuth with `azimuth_tuned: false`, plus new `mae_kw` and `capacity_scale`
+    attributes. The dampening convergence gate now keys on tilt divergence alone.
+  - Requires Open-Meteo irradiance: tuning is skipped (rather than falling back to
+    the degenerate method) until enough irradiance-bearing records exist. Run
+    `tools/backfill_irradiance.py` to make existing history usable immediately.
+
+### Added
+- **Open-Meteo irradiance collection (Phase 1 of the transposition-tuning roadmap).**
+  A keyless `OpenMeteoClient` now fetches plane-of-array irradiance components
+  (GHI/DNI/DHI) at each cycle's period midpoint, stored in three additive
+  `ghi`/`dni`/`dhi` columns (`ALTER TABLE`d into existing DBs, legacy rows → 0).
+  This is the data the current cosine-ratio PV tuner lacks: it can only re-scale
+  the single configured-orientation forecast, so its fit is seed-degenerate (it
+  echoes the configured tilt/azimuth back). Transposition from real irradiance
+  fixes that. Collection is **additive and inert** for now — nothing consumes the
+  columns yet (the new tuner is Phase 2); Open-Meteo does not yet replace OWM as
+  the cloud source. Defaults on; no API key required.
+- **`tools/backfill_irradiance.py`.** One-pass standalone tool to fill the new
+  irradiance columns on existing rows from Open-Meteo's historical archive
+  (interpolated to each slot's midpoint), so tuning is useful immediately instead
+  of waiting months for fresh data. Stdlib-only; safe to re-run (fills missing
+  rows only by default).
+
 ## [1.6.9] - 2026-06-07
 
 ### Added

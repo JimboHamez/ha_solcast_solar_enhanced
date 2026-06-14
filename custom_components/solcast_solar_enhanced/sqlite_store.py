@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_current1      REAL NOT NULL DEFAULT 0,
   dc_voltage2      REAL NOT NULL DEFAULT 0,
   dc_current2      REAL NOT NULL DEFAULT 0,
+  ghi              REAL NOT NULL DEFAULT 0,
+  dni              REAL NOT NULL DEFAULT 0,
+  dhi              REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -69,6 +72,11 @@ _ADDED_COLUMNS = (
     ("dc_current1", "REAL NOT NULL DEFAULT 0"),
     ("dc_voltage2", "REAL NOT NULL DEFAULT 0"),
     ("dc_current2", "REAL NOT NULL DEFAULT 0"),
+    # Open-Meteo plane-of-array irradiance components for transposition-based
+    # tuning. Backfillable on existing rows via tools/backfill_irradiance.py.
+    ("ghi", "REAL NOT NULL DEFAULT 0"),
+    ("dni", "REAL NOT NULL DEFAULT 0"),
+    ("dhi", "REAL NOT NULL DEFAULT 0"),
 )
 
 # Columns written by an insert, in order. Shared by single and bulk inserts.
@@ -77,6 +85,7 @@ _INSERT_COLUMNS = (
     "pv_actual", "pv_export", "pv_estimate", "pv_estimate10", "pv_estimate90",
     "azimuth", "zenith", "temp", "clouds", "description", "battery_charge",
     "dc_voltage1", "dc_current1", "dc_voltage2", "dc_current2",
+    "ghi", "dni", "dhi",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -188,6 +197,9 @@ class SqliteStore:
             record.get("dc_current1", 0.0) or 0.0,
             record.get("dc_voltage2", 0.0) or 0.0,
             record.get("dc_current2", 0.0) or 0.0,
+            record.get("ghi", 0.0) or 0.0,
+            record.get("dni", 0.0) or 0.0,
+            record.get("dhi", 0.0) or 0.0,
         )
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:
@@ -380,7 +392,8 @@ class SqliteStore:
             cloud_clause = " AND clouds < ?"
             cloud_params = (int(cloud_max),)
         sql = (
-            "SELECT pv_actual, pv_export, pv_estimate, azimuth, zenith, clouds, "
+            "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
+            "azimuth, zenith, clouds, ghi, dni, dhi, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
             f"WHERE pv_actual > 0{site_clause}{cloud_clause} "

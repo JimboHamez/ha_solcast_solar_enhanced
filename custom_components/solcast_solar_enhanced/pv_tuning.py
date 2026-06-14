@@ -129,52 +129,40 @@ _GRID_STAGES = (
     (1.0, 0.25),   # ±1° around best, 0.25° step
 )
 _TILT_BOUNDS = (0.0, 90.0)
-_AZIMUTH_BOUNDS = (-180.0, 180.0)
+# Solar constant (W/m²) for the Hay-Davies anisotropy index Ai = DNI / I0.
+_SOLAR_CONSTANT = 1361.0
 
 
-def _minimize_grid(
-    eval_row, initial_tilt: float, initial_azimuth: float
-) -> tuple[float, float, float]:
-    """Coarse-to-fine grid search, **azimuth-outer**, minimising the RMSE returned
-    by ``eval_row(tilts, az)``.
+def _minimize_tilt(eval_tilt, initial_tilt: float = 20.0) -> tuple[float, float]:
+    """Coarse-to-fine 1-D grid search over panel **tilt**, minimising ``eval_tilt(t)``.
 
-    ``eval_row`` takes a 1-D array of tilt candidates and a single azimuth and
-    returns one RMSE per tilt. This batched contract is the Raspberry-Pi
-    optimisation: it lets the caller compute the single expensive transcendental
-    (``cos(sun_az − panel_az)`` over all records) **once per azimuth** and then
-    evaluate the whole column of tilts as one vectorised numpy multiply-add,
-    instead of recomputing that cosine at every (tilt, azimuth) point. Peak memory
-    stays bounded to one ``tilts × records`` block (tilts ≈ 19), never a full grid.
-    Replaces the former ``scipy.optimize.minimize`` (L-BFGS-B) — grid search is the
-    method Solcast notebook 3.4 uses and needs no compiled extension. Returns
-    ``(tilt, azimuth, value)`` with azimuth normalised to ``[-180, 180]``.
+    Azimuth is no longer searched: it is non-identifiable from time-misaligned
+    irradiance (degenerate with the irradiance↔power time offset) and biased by
+    morning shading, so the tuner fits tilt alone at the configured azimuth (see
+    DESIGN_DOCUMENT). The first ``_GRID_STAGES`` stage sweeps the full tilt range,
+    so the result has no seed dependence; later stages zoom in around the running
+    best. ~30 evaluations total — trivial on a Raspberry Pi. Returns ``(tilt, value)``.
     """
-    t_lo, t_hi = _TILT_BOUNDS
-    a_lo, a_hi = _AZIMUTH_BOUNDS
-    best_tilt, best_az = float(initial_tilt), float(initial_azimuth)
-    best_val = float(eval_row(np.array([best_tilt]), best_az)[0])
-
+    lo, hi = _TILT_BOUNDS
+    best_t = float(initial_tilt)
+    best_v = float(eval_tilt(best_t))
     for half_window, step in _GRID_STAGES:
         if half_window is None:
-            tilts = np.arange(t_lo, t_hi + step / 2, step)
-            # Azimuth is periodic in the objective; sweep [-180, 180) so +180 isn't
-            # a duplicate of -180.
-            azimuths = np.arange(a_lo, a_hi, step)
+            tilts = np.arange(lo, hi + step / 2, step)
         else:
-            t0 = max(t_lo, best_tilt - half_window)
-            t1 = min(t_hi, best_tilt + half_window)
+            t0 = max(lo, best_t - half_window)
+            t1 = min(hi, best_t + half_window)
             tilts = np.arange(t0, t1 + step / 2, step)
-            azimuths = np.arange(best_az - half_window, best_az + half_window + step / 2, step)
-        for a in azimuths:
-            vals = eval_row(tilts, float(a))         # one RMSE per tilt candidate
-            j = int(np.argmin(vals))
-            if vals[j] < best_val:
-                best_val, best_tilt, best_az = float(vals[j]), float(tilts[j]), float(a)
+        for t in tilts:
+            v = float(eval_tilt(float(t)))
+            if v < best_v:
+                best_v, best_t = v, float(t)
+    return best_t, best_v
 
-    # Fold the (possibly out-of-range, from a refinement window) azimuth back into
-    # the canonical [-180, 180] band.
-    best_az = ((best_az + 180.0) % 360.0) - 180.0
-    return best_tilt, best_az, best_val
+
+def _extraterrestrial_normal(doy: int) -> float:
+    """Extraterrestrial normal irradiance for a day-of-year (W/m²)."""
+    return _SOLAR_CONSTANT * (1.0 + 0.033 * math.cos(2.0 * math.pi * doy / 365.0))
 
 
 def run_tuning(
@@ -183,10 +171,28 @@ def run_tuning(
     cloud_threshold: int,
     clipping_threshold: float,
     export_limit_kw: float = 0.0,
-    initial_tilt: float = 20.0,
-    initial_azimuth: float = 0.0,
+    fixed_azimuth: float = 0.0,
+    albedo: float = 0.2,
+    model: str = "hay_davies",
 ) -> dict[str, Any] | None:
-    """Grid-search tilt/azimuth optimisation. Returns dict with tilt, azimuth, rmse, n_records or None."""
+    """Transposition-based **tilt** optimisation at a fixed azimuth.
+
+    For each candidate tilt the stored Open-Meteo GHI/DNI/DHI are transposed to the
+    panel plane (Hay-Davies anisotropic sky, or isotropic when ``model`` is not
+    ``"hay_davies"``), a single capacity scale is fitted by least squares, and the
+    mean-absolute error against measured ``pv_actual`` is scored. The lowest-MAE
+    tilt over a coarse-to-fine grid wins. This is the notebook-3.4 approach adapted
+    to run offline: real per-orientation irradiance instead of a per-orientation
+    Solcast API call.
+
+    Azimuth is held at ``fixed_azimuth`` (internal solar frame) — deliberately not
+    tuned. It is non-identifiable from this data (degenerate with the
+    irradiance↔power time offset, and biased by morning shading), so tuning it would
+    do more harm than good. Unlike the former cosine-ratio tuner this needs no seed
+    and does not echo the configured orientation back; it recovers tilt from the
+    physical transposition. Returns a result dict (``azimuth`` echoed back as the
+    fixed value) or ``None`` (numpy absent, or < 10 usable irradiance-bearing rows).
+    """
     if not TUNING_AVAILABLE:
         _LOGGER.warning("numpy not available — skipping PV tuning")
         return None
@@ -194,96 +200,109 @@ def run_tuning(
     clip_kw = capacity_kw * clipping_threshold
     export_clip_kw = export_limit_kw * clipping_threshold if export_limit_kw > 0 else 0.0
 
-    # Pull the needed columns into arrays in a single pass, preserving the exact
-    # None/missing coercions of the former per-record loop. Clouds is the only
-    # special case: a missing value becomes the 100 "overcast" sentinel so that an
-    # unknown-weather row is excluded by the cloud filter rather than mistaken for
-    # clear sky (a bare `or 100` would also drop a genuine, falsy 0% — the clearest
-    # sky, the records tuning most wants — so None is distinguished from 0).
-    n = len(records)
-    pv_actual = np.empty(n)
-    pv_export = np.empty(n)
-    pv_est = np.empty(n)
-    clouds = np.empty(n)
-    zenith = np.empty(n)
-    azimuth = np.empty(n)
-    for i, r in enumerate(records):
-        pv_actual[i] = float(r.get("pv_actual", 0) or 0)
-        pv_export[i] = float(r.get("pv_export", 0) or 0)
-        pv_est[i] = float(r.get("pv_estimate", 0) or 0)
+    obs, zenith, sun_az, ghi, dni, dhi, i0 = [], [], [], [], [], [], []
+    export_limited_excluded = 0
+    for r in records:
+        raw_ghi = r.get("ghi")
+        if raw_ghi is None:
+            continue
+        g = float(raw_ghi)
+        if g <= 0.0:                     # no daytime irradiance (night / not backfilled)
+            continue
+        # Distinguish a genuine 0% cloud (clearest sky — the best data) from a
+        # missing value, as the old tuner did: a bare ``or 100`` would drop a falsy
+        # 0 and lose exactly the records tuning most wants.
         raw_clouds = r.get("clouds")
-        clouds[i] = 100.0 if raw_clouds is None else float(raw_clouds)
-        zenith[i] = float(r.get("zenith", 90) or 90)
-        azimuth[i] = float(r.get("azimuth", 0) or 0)
+        clouds = 100.0 if raw_clouds is None else float(raw_clouds)
+        if clouds >= cloud_threshold:
+            continue
+        zen = float(r.get("zenith", 90) or 90)
+        if zen >= 90.0:
+            continue
+        total_pv = float(r.get("pv_actual", 0) or 0)   # AC output incl. export + battery
+        pv_est = float(r.get("pv_estimate", 0) or 0)
+        pv_export = float(r.get("pv_export", 0) or 0)
+        # Clipping exclusion: both delivered and forecast pinned at the ceiling.
+        if total_pv >= clip_kw and pv_est >= clip_kw:
+            continue
+        # Export-curtailment exclusion — after the cloud/clip filters so the tally
+        # matches the former ordering.
+        if export_clip_kw > 0 and pv_export >= export_clip_kw:
+            export_limited_excluded += 1
+            continue
+        epoch = r.get("period_end_epoch")
+        doy = (
+            datetime.fromtimestamp(normalize_epoch(epoch), tz=timezone.utc).timetuple().tm_yday
+            if epoch else 172
+        )
+        obs.append(total_pv)
+        zenith.append(zen)
+        sun_az.append(float(r.get("azimuth", 0) or 0))
+        ghi.append(g)
+        dni.append(float(r.get("dni", 0) or 0))
+        dhi.append(float(r.get("dhi", 0) or 0))
+        i0.append(_extraterrestrial_normal(doy))
 
-    total_pv = pv_actual  # inverter AC output already includes export and battery
-
-    # Vectorised filter — the same exclusions as the former Python loop, as boolean
-    # masks. Order is preserved for the export-limited tally: a row is only counted
-    # as export-limited if it first passed the cloud and clipping filters (for an
-    # integer threshold, clouds < T is exactly int(clouds) < T, so no truncation is
-    # needed).
-    passed_clip = (clouds < cloud_threshold) & ~((total_pv >= clip_kw) & (pv_est >= clip_kw))
-    if export_clip_kw > 0:
-        export_fail = passed_clip & (pv_export >= export_clip_kw)
-    else:
-        export_fail = np.zeros(n, dtype=bool)
-    export_limited_excluded = int(np.count_nonzero(export_fail))
-    mask = passed_clip & ~export_fail & (pv_est > 0) & (zenith < 90)
-
-    n_filtered = int(np.count_nonzero(mask))
+    n_filtered = len(obs)
     if n_filtered < 10:
-        _LOGGER.debug("Insufficient tuning records: %d (need 10)", n_filtered)
+        _LOGGER.debug(
+            "Insufficient tuning records with irradiance: %d (need 10)", n_filtered
+        )
         return None
 
-    # Vectorised geometry. The sun position (zenith/azimuth) is fixed per record,
-    # so precompute its trig once; the optimiser then only varies tilt/panel-az.
-    # This replaces a per-record Python _cos_incidence call on every objective
-    # evaluation (~millions of calls over a run) with array math — the same
-    # formula, far cheaper on low-power CPUs.
-    zenith_rad = np.radians(zenith[mask])
-    sun_az_rad = np.radians(azimuth[mask])
-    cos_zenith = np.cos(zenith_rad)
-    sin_zenith = np.sin(zenith_rad)
-    pv_est_arr = pv_est[mask]
-    total_pv_arr = total_pv[mask]
+    obs_a = np.array(obs)
+    zen_r = np.radians(zenith)
+    sun_az_r = np.radians(sun_az)
+    cos_z = np.cos(zen_r)
+    sin_z = np.sin(zen_r)
+    ghi_a, dni_a, dhi_a = np.array(ghi), np.array(dni), np.array(dhi)
+    # Hay-Davies anisotropy index: fraction of diffuse arriving from the sun's
+    # direction (circumsolar) rather than the whole sky dome.
+    ai = np.clip(dni_a / np.maximum(np.array(i0), 1.0), 0.0, 1.0)
+    fixed_az_r = math.radians(fixed_azimuth)
+    use_hd = model == "hay_davies"
 
-    def cos_incidence_vec(tilt_deg: float, az_deg: float) -> np.ndarray:
-        """Vectorised equivalent of _cos_incidence over all records (single point)."""
-        tilt = math.radians(tilt_deg)
-        panel_az = math.radians(az_deg)
-        cos_inc = (
-            cos_zenith * math.cos(tilt)
-            + sin_zenith * math.sin(tilt) * np.cos(sun_az_rad - panel_az)
+    def poa(tilt_deg: float) -> np.ndarray:
+        """Plane-of-array irradiance over all records for one tilt (W/m²)."""
+        tr = math.radians(tilt_deg)
+        cos_aoi = np.maximum(
+            0.0, cos_z * math.cos(tr) + sin_z * math.sin(tr) * np.cos(sun_az_r - fixed_az_r)
         )
-        return np.maximum(0.0, cos_inc)
+        beam = dni_a * cos_aoi
+        iso = (1.0 + math.cos(tr)) / 2.0
+        if use_hd:
+            rb = cos_aoi / np.maximum(cos_z, 0.035)   # clamp low-sun blow-up
+            diffuse = dhi_a * (ai * rb + (1.0 - ai) * iso)
+        else:
+            diffuse = dhi_a * iso
+        ground = ghi_a * albedo * (1.0 - math.cos(tr)) / 2.0
+        return beam + diffuse + ground
 
-    nominal_cos = cos_incidence_vec(initial_tilt, initial_azimuth)
-    safe_nom = np.where(nominal_cos > 1e-6, nominal_cos, 1e-6)
+    def scale_for(p: np.ndarray) -> float:
+        """Closed-form least-squares capacity scale (kW per W/m²)."""
+        denom = float(np.dot(p, p))
+        return float(np.dot(p, obs_a) / denom) if denom > 0 else 0.0
 
-    def eval_row(tilts_deg: np.ndarray, az_deg: float) -> np.ndarray:
-        """RMSE for each candidate tilt at one azimuth (the batched objective the
-        grid search drives). The azimuth-dependent cosine is computed once here —
-        the single costly transcendental — then the tilt sweep is an outer-product
-        multiply-add over (tilts × records). See ``_minimize_grid`` for why this
-        shape is the Raspberry-Pi win."""
-        az_term = sin_zenith * np.cos(sun_az_rad - math.radians(az_deg))   # (N,)
-        cos_t = np.cos(np.radians(tilts_deg))[:, None]                     # (T, 1)
-        sin_t = np.sin(np.radians(tilts_deg))[:, None]                     # (T, 1)
-        cos_inc = np.maximum(0.0, cos_zenith[None, :] * cos_t + az_term[None, :] * sin_t)  # (T, N)
-        scaled = pv_est_arr[None, :] * (cos_inc / safe_nom[None, :])
-        return np.sqrt(np.mean((scaled - total_pv_arr[None, :]) ** 2, axis=1))  # (T,)
+    def eval_tilt(tilt_deg: float) -> float:
+        p = poa(tilt_deg)
+        s = scale_for(p)
+        return float(np.mean(np.abs(s * p - obs_a)))
 
-    initial_rmse = float(eval_row(np.array([float(initial_tilt)]), float(initial_azimuth))[0])
-    best_tilt, best_az, best_rmse = _minimize_grid(eval_row, initial_tilt, initial_azimuth)
-
-    if best_rmse >= initial_rmse:
-        _LOGGER.debug("PV tuning did not improve on initial values")
+    best_tilt, best_mae = _minimize_tilt(eval_tilt)
+    best_poa = poa(best_tilt)
+    scale = scale_for(best_poa)
+    rmse = float(np.sqrt(np.mean((scale * best_poa - obs_a) ** 2)))
 
     return {
         "tilt": best_tilt,
-        "azimuth": best_az,
-        "rmse_kw": best_rmse,
+        # Azimuth is fixed (not tuned); echo it back normalised so the existing
+        # consumers (panel_azimuth_to_solcast, the dampening convergence gate) work
+        # unchanged — the gate's azimuth delta is then identically ~0.
+        "azimuth": ((fixed_azimuth + 180.0) % 360.0) - 180.0,
+        "rmse_kw": rmse,
+        "mae_kw": best_mae,
+        "capacity_scale": scale,
         "n_records": n_filtered,
         "export_limited_excluded": export_limited_excluded,
+        "source": model,
     }
