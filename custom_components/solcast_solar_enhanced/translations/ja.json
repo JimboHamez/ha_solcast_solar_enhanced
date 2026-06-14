@@ -38,13 +38,6 @@
           "db_retention_days": "0 はすべての履歴を保持します（既定）。値を設定すると、古い行を毎日削除して低性能デバイスでデータベースを抑制します。ただし季節ダンピングは年をまたぐ期間を使用するため、これに依存する場合は少なくとも約 400 日（約 13 か月）は保持してください。"
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "OpenWeatherMap を有効化",
-          "owm_api_key": "API キー"
-        }
-      },
       "battery": {
         "title": "バッテリー蓄電",
         "data": {
@@ -69,6 +62,18 @@
       "sites": {
         "title": "サイトごとのセンサー割り当て",
         "description": "{count} 件の Solcast サイトを検出しました。各アレイについて、その発電を測定するセンサーを選択してください。複数のアレイが 1 つのインバーター AC 出力を共有している場合は、出力を按分できるよう各アレイに DC/MPPT センサーも指定してください。サイトを空欄にするとスキップします。「センサーの種類」は通常「自動検出」です。"
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -111,13 +116,6 @@
           "db_retention_days": "0 はすべての履歴を保持します（既定）。値を設定すると、古い行を毎日削除して低性能デバイスでデータベースを抑制します。ただし季節ダンピングは年をまたぐ期間を使用するため、これに依存する場合は少なくとも約 400 日（約 13 か月）は保持してください。"
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "OpenWeatherMap を有効化",
-          "owm_api_key": "API キー"
-        }
-      },
       "battery": {
         "title": "バッテリー蓄電",
         "data": {
@@ -142,6 +140,18 @@
       "sites": {
         "title": "サイトごとのセンサー割り当て",
         "description": "{count} 件の Solcast サイトを検出しました。各アレイについて、その発電を測定するセンサーを選択してください。複数のアレイが 1 つのインバーター AC 出力を共有している場合は、出力を按分できるよう各アレイに DC/MPPT センサーも指定してください。サイトを空欄にするとスキップします。「センサーの種類」は通常「自動検出」です。"
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -166,12 +176,12 @@
   },
   "issues": {
     "owm_required": {
-      "title": "PV チューニングとダンピングには OpenWeatherMap が必要です",
-      "description": "PV チューニングと適応ダンピングは、OpenWeatherMap の雲量を使って晴天期間を特定します。これは、実測値と予測値の比較が、通過する雲ではなくパネルの形状や影を反映する唯一のデータです。OpenWeatherMap が設定されていないため、各レコードの雲量は不明として除外され、これらの機能は無効のままになります（ダンピングは中立のままで Solcast へ送信されません）。有効にするには、この統合のオプションで無料の OpenWeatherMap API キーを追加してください。履歴の記録のみが目的の場合はこの通知を無視してかまいません。"
+      "title": "No weather source for PV tuning & dampening",
+      "description": "PV tuning and adaptive dampening need cloud cover (to find clear-sky periods) and, for tuning, solar irradiance. These normally come from Open-Meteo, which is free and needs no API key — but it has been disabled and no OpenWeatherMap key is configured, so every record's weather is unknown and excluded, leaving these features inactive (dampening stays neutral and is not pushed to Solcast). Re-enable Open-Meteo (or add an OpenWeatherMap API key) in this integration's options, or ignore this if you only want history logging."
     },
     "dampening_gated": {
-      "title": "ダンピングを一時停止 — チューニング後の向きが Solcast と異なります",
-      "description": "PV チューニングは、Solcast サイトに設定されている向きと大きく異なるパネル傾斜角／方位角に確信を持って収束しました。両者が一致するまで、Solcast の予測は誤った形状に基づくため、適応ダンピングは本来の影ではなくその向きの誤差を補正に取り込んでしまいます。そのため、該当するアレイのダンピングは中立 (1.0) に保たれ、Solcast へは何も送信されません。「チューニング後パネル傾斜角」および「チューニング後パネル方位角」センサーの現在値を確認し、それに合わせて Solcast サイトの設定を更新すると、ダンピングは自動的に再開されます。この保護を無効にするには、統合のオプションで「ダンピングを保留…」をオフにしてください。"
+      "title": "Dampening paused — tuned tilt differs from Solcast",
+      "description": "PV tuning has confidently converged on a panel tilt that differs materially from the tilt your Solcast site is configured with. Until they agree, the Solcast forecast is based on the wrong geometry, so adaptive dampening would bake that tilt error into its correction instead of capturing genuine shading. Dampening is therefore held neutral (1.0) for the affected array(s) and nothing is pushed to Solcast. Read the current value from the Tuned Panel Tilt sensor, update your Solcast site configuration to match, and dampening will resume automatically. (Azimuth is not tuned, so it is never the cause.) To disable this safeguard, turn off ‘Gate dampening…’ in the integration options."
     }
   }
 }

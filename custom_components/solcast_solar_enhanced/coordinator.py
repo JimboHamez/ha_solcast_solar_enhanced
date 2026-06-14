@@ -44,6 +44,8 @@ from .const import (
     DB_RETENTION_MIN_RECOMMENDED_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_ALBEDO,
+    CONF_OPENMETEO_ENABLED,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_INPUT_MODE,
@@ -56,8 +58,10 @@ from .const import (
     DAMPENING_GATE_TILT_TOL,
     DAMPENING_INTERVAL_HOURS,
     DEFAULT_DAMPENING_GATE,
+    DEFAULT_ALBEDO,
     DEFAULT_DB_ENABLED,
     DEFAULT_DB_FILENAME,
+    DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
@@ -86,7 +90,7 @@ from .pv_tuning import (
     solar_position,
 )
 from .shading_dampening import average_slot_pairs, compute_dampening
-from .solcast_api import OWMClient
+from .solcast_api import OpenMeteoClient, OWMClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,6 +152,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         self._db: SqliteStore | None = None
         self._owm: OWMClient | None = None
+        self._openmeteo: OpenMeteoClient | None = None
+        # Latest plane-of-array irradiance components (GHI/DNI/DHI), stored with
+        # each DB row to feed transposition-based tuning. None until first fetch /
+        # when Open-Meteo is disabled or unreachable.
+        self._irradiance: dict[str, Any] = {"ghi": None, "dni": None, "dhi": None}
 
         # Weather defaults to *unknown* (None), not 0. Without OWM there is no
         # cloud data; a 0 here would read as perfectly clear sky and be trusted by
@@ -231,12 +240,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 session=async_get_clientsession(self.hass),
             )
 
-        # Surface a repair issue when the cloud-driven features are enabled but no
-        # OWM source is configured. Without it every record's cloud cover is
-        # unknown (excluded), so tuning/dampening stay inert — fail loud, not
-        # silent. Re-evaluated on every reload (an options change reloads the
-        # entry), so enabling OWM clears the issue.
-        if not self._owm and (
+        # Open-Meteo irradiance collection (keyless, additive). Stores GHI/DNI/DHI
+        # alongside each row for transposition-based tuning; does not yet replace
+        # OWM as the cloud source, so it raises no repair issue of its own.
+        if opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED):
+            self._openmeteo = OpenMeteoClient(
+                latitude=float(opts.get(CONF_LATITUDE, -37.9)),
+                longitude=float(opts.get(CONF_LONGITUDE, 145.0)),
+                session=async_get_clientsession(self.hass),
+            )
+
+        # Surface a repair issue when the cloud-driven features are enabled but NO
+        # weather source is available — neither Open-Meteo nor OWM. Open-Meteo is
+        # keyless and on by default, so this normally never fires; it only triggers
+        # if the user has disabled Open-Meteo and not configured OWM. Without a
+        # cloud source every record's cover is unknown (excluded) and
+        # tuning/dampening stay inert — fail loud, not silent. Re-evaluated on every
+        # reload, so enabling either source clears the issue.
+        if not self._owm and not self._openmeteo and (
             opts.get(CONF_AUTO_TUNING, True) or opts.get(CONF_AUTO_DAMPENING, True)
         ):
             ir.async_create_issue(
@@ -335,6 +356,23 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._owm:
             self._weather = await self._owm.async_fetch()
 
+        # Fetch Open-Meteo irradiance at the interval midpoint (period_end − 15 min),
+        # the representative sun position for a half-hour-averaged value — matching
+        # the solar-position midpoint below. Stored as-is; None on miss (fail-safe).
+        if self._openmeteo:
+            fetched = await self._openmeteo.async_get_current(period_epoch - 900)
+            self._irradiance = {k: fetched.get(k) for k in ("ghi", "dni", "dhi")}
+            # Open-Meteo also supplies cloud cover + temperature. Use it as the
+            # weather source when OWM is not configured (the keyless default), so
+            # tuning/dampening get clear-sky data without an API key. OWM, when
+            # configured, keeps precedence (set just above) for back-compatibility.
+            if self._owm is None and fetched.get("clouds") is not None:
+                self._weather = {
+                    "temp": fetched.get("temp"),
+                    "clouds": int(fetched["clouds"]),
+                    "description": "open-meteo",
+                }
+
         # Solar position at the interval *midpoint* (period_end − 15 min), the
         # representative sun position for a value averaged across the half-hour —
         # matched geometrically against the dampening slots, which also use their
@@ -425,6 +463,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "dc_current1": total_dc[1],
                 "dc_voltage2": total_dc[2],
                 "dc_current2": total_dc[3],
+                **self._irradiance_for_storage(),
             }
             await self._db.async_insert_record(record)
 
@@ -463,6 +502,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "dc_current1": s_dc[1],
                     "dc_voltage2": s_dc[2],
                     "dc_current2": s_dc[3],
+                    # Irradiance is property-wide weather: same values on every site.
+                    **self._irradiance_for_storage(),
                 })
 
             self._db_record_count = await self._db.async_get_record_count()
@@ -554,6 +595,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         export_limit = self._read_base_export_limit()
         if export_limit is None:
             export_limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
+        albedo = float(opts.get(CONF_ALBEDO, DEFAULT_ALBEDO))
         result = await self.hass.async_add_executor_job(
             run_tuning,
             records,
@@ -561,11 +603,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)),
             float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)),
             export_limit,
-            float(opts.get(CONF_TILT, 20.0)),
-            # CONF_AZIMUTH is in the Solcast/base convention (West-positive); the
-            # tuner works in the internal solar frame (East-positive). Convert the
-            # seed so the optimiser searches in the right frame.
+            # Azimuth is held fixed at the configured value (not tuned — it is
+            # non-identifiable here). CONF_AZIMUTH is in the Solcast/base convention
+            # (West-positive); convert to the internal solar frame the tuner uses.
             panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
+            albedo,
         )
         if result:
             self._tuning_result = result
@@ -600,8 +642,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 continue
             site = by_id.get(site_id, {})
             capacity = site.get("capacity") or float(opts.get(CONF_CAPACITY_KW, 5.0))
-            tilt_seed = site.get("tilt") or float(opts.get(CONF_TILT, 20.0))
-            az_seed = self._site_azimuth_seed(site, opts)
+            # Azimuth fixed at this site's configured orientation (not tuned).
+            fixed_az = self._site_azimuth_seed(site, opts)
+            albedo = float(opts.get(CONF_ALBEDO, DEFAULT_ALBEDO))
             result = await self.hass.async_add_executor_job(
                 run_tuning,
                 records,
@@ -609,8 +652,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 cloud_threshold,
                 clipping_threshold,
                 export_limit,
-                float(tilt_seed),
-                float(az_seed),
+                float(fixed_az),
+                albedo,
             )
             if result:
                 result["resource_id"] = site_id
@@ -669,6 +712,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         temp = round(w_temp, 2) if w_temp is not None else 0.0
         clouds = 100 if w_clouds is None else int(w_clouds)
         return temp, clouds, self._weather.get("description") or "unavailable"
+
+    def _irradiance_for_storage(self) -> dict[str, float]:
+        """GHI/DNI/DHI rounded for the NOT NULL columns; unknown (no Open-Meteo or a
+        failed fetch) stored as 0 — for a daytime row that reads as "no irradiance"
+        and is simply skipped by the transposition tuner."""
+        return {
+            k: round(v, 2) if v is not None else 0.0
+            for k, v in self._irradiance.items()
+        }
 
     @staticmethod
     def _angle_diff(a: float, b: float) -> float:
@@ -761,11 +813,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     if div:
                         any_gated = True
                         _LOGGER.warning(
-                            "Dampening gated for site %s: tuned orientation diverges "
-                            "from configured (Δtilt %.0f°, Δazimuth %.0f°) — pushing "
-                            "neutral 1.0. Apply the Tuned Panel Tilt/Azimuth values in "
-                            "your Solcast account.", site_id,
-                            div["tilt_delta"], div["azimuth_delta"],
+                            "Dampening gated for site %s: tuned tilt diverges from "
+                            "configured (Δtilt %.0f°) — pushing neutral 1.0. Apply the "
+                            "Tuned Panel Tilt value in your Solcast account.", site_id,
+                            div["tilt_delta"],
                         )
                         hourly = [1.0] * len(hourly)
                 await self._push_dampening(hourly, site=site_id)
@@ -781,10 +832,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 if div:
                     any_gated = True
                     _LOGGER.warning(
-                        "Dampening gated: tuned orientation diverges from configured "
-                        "(Δtilt %.0f°, Δazimuth %.0f°) — pushing neutral 1.0. Apply the "
-                        "Tuned Panel Tilt/Azimuth values in your Solcast account.",
-                        div["tilt_delta"], div["azimuth_delta"],
+                        "Dampening gated: tuned tilt diverges from configured "
+                        "(Δtilt %.0f°) — pushing neutral 1.0. Apply the Tuned Panel "
+                        "Tilt value in your Solcast account.",
+                        div["tilt_delta"],
                     )
                     hourly = [1.0] * len(hourly)
             await self._push_dampening(hourly)
@@ -1561,9 +1612,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         extra: dict[str, Any] = {}
         if self._tuning_result:
             extra.update({
-                # Reported in the Solcast/base convention (West-positive).
+                # Azimuth is fixed at the configured value (not tuned); reported in
+                # the Solcast/base convention (West-positive) for reference.
                 "azimuth": panel_azimuth_to_solcast(self._tuning_result.get("azimuth", 0.0)),
+                "azimuth_tuned": False,
                 "rmse_kw": self._tuning_result.get("rmse_kw"),
+                "mae_kw": self._tuning_result.get("mae_kw"),
+                "capacity_scale": self._tuning_result.get("capacity_scale"),
                 "n_records": self._tuning_result.get("n_records"),
                 "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
             })

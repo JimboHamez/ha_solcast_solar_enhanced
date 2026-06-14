@@ -38,13 +38,6 @@
           "db_retention_days": "0 behält den gesamten Verlauf (Standard). Ein Wert begrenzt die Datenbank auf leistungsschwachen Geräten, indem täglich ältere Zeilen gelöscht werden – die saisonale Dämpfung nutzt jedoch ein jahresübergreifendes Fenster, behalten Sie daher mindestens ~400 Tage (≈13 Monate), wenn Sie darauf angewiesen sind."
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "OpenWeatherMap aktivieren",
-          "owm_api_key": "API-Schlüssel"
-        }
-      },
       "battery": {
         "title": "Batteriespeicher",
         "data": {
@@ -69,6 +62,18 @@
       "sites": {
         "title": "Sensorzuordnung je Standort",
         "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -111,13 +116,6 @@
           "db_retention_days": "0 behält den gesamten Verlauf (Standard). Ein Wert begrenzt die Datenbank auf leistungsschwachen Geräten, indem täglich ältere Zeilen gelöscht werden – die saisonale Dämpfung nutzt jedoch ein jahresübergreifendes Fenster, behalten Sie daher mindestens ~400 Tage (≈13 Monate), wenn Sie darauf angewiesen sind."
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "OpenWeatherMap aktivieren",
-          "owm_api_key": "API-Schlüssel"
-        }
-      },
       "battery": {
         "title": "Batteriespeicher",
         "data": {
@@ -142,6 +140,18 @@
       "sites": {
         "title": "Sensorzuordnung je Standort",
         "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -166,12 +176,12 @@
   },
   "issues": {
     "owm_required": {
-      "title": "OpenWeatherMap für PV-Abstimmung & Dämpfung erforderlich",
-      "description": "PV-Abstimmung und adaptive Dämpfung nutzen die Bewölkung von OpenWeatherMap, um klare Himmelsperioden zu erkennen – die einzigen Daten, bei denen Messwert vs. Prognose die Modulgeometrie und Verschattung widerspiegelt und nicht vorüberziehende Wolken. OpenWeatherMap ist nicht konfiguriert, daher ist die Bewölkung jedes Datensatzes unbekannt und wird ausgeschlossen, sodass diese Funktionen inaktiv bleiben (die Dämpfung bleibt neutral und wird nicht an Solcast übermittelt). Fügen Sie in den Optionen dieser Integration einen kostenlosen OpenWeatherMap-API-Schlüssel hinzu, um sie zu aktivieren, oder ignorieren Sie dies, wenn Sie nur den Verlauf protokollieren möchten."
+      "title": "No weather source for PV tuning & dampening",
+      "description": "PV tuning and adaptive dampening need cloud cover (to find clear-sky periods) and, for tuning, solar irradiance. These normally come from Open-Meteo, which is free and needs no API key — but it has been disabled and no OpenWeatherMap key is configured, so every record's weather is unknown and excluded, leaving these features inactive (dampening stays neutral and is not pushed to Solcast). Re-enable Open-Meteo (or add an OpenWeatherMap API key) in this integration's options, or ignore this if you only want history logging."
     },
     "dampening_gated": {
-      "title": "Dämpfung pausiert – abgestimmte Ausrichtung weicht von Solcast ab",
-      "description": "Die PV-Abstimmung hat sicher auf eine Modulneigung/-azimut konvergiert, die wesentlich von der Ausrichtung abweicht, mit der Ihr Solcast-Standort konfiguriert ist. Solange sie nicht übereinstimmen, basiert die Solcast-Prognose auf der falschen Geometrie, sodass die adaptive Dämpfung diesen Ausrichtungsfehler in ihre Korrektur einbauen würde, statt echte Verschattung zu erfassen. Die Dämpfung wird daher für die betroffenen Stränge neutral (1.0) gehalten und nichts wird an Solcast übermittelt. Lesen Sie die aktuellen Werte der Sensoren „Abgestimmte Modulneigung“ und „Abgestimmter Modulazimut“ ab, passen Sie Ihre Solcast-Standortkonfiguration entsprechend an, und die Dämpfung wird automatisch fortgesetzt. Um diese Absicherung zu deaktivieren, schalten Sie ‚Dämpfung sperren …‘ in den Integrationsoptionen aus."
+      "title": "Dampening paused — tuned tilt differs from Solcast",
+      "description": "PV tuning has confidently converged on a panel tilt that differs materially from the tilt your Solcast site is configured with. Until they agree, the Solcast forecast is based on the wrong geometry, so adaptive dampening would bake that tilt error into its correction instead of capturing genuine shading. Dampening is therefore held neutral (1.0) for the affected array(s) and nothing is pushed to Solcast. Read the current value from the Tuned Panel Tilt sensor, update your Solcast site configuration to match, and dampening will resume automatically. (Azimuth is not tuned, so it is never the cause.) To disable this safeguard, turn off ‘Gate dampening…’ in the integration options."
     }
   }
 }

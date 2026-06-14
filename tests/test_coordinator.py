@@ -17,6 +17,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
     CONF_AUTO_TUNING,
+    CONF_OPENMETEO_ENABLED,
     CONF_DAMPENING_GATE,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
@@ -366,13 +367,19 @@ async def test_weather_default_is_unknown_not_clear(coordinator):
     assert coordinator._weather["temp"] is None
 
 
-async def test_setup_raises_owm_issue_when_disabled(hass, mock_config_entry):
-    """OWM off + a cloud-driven feature on → a repair issue is raised, cleared on teardown."""
+async def test_setup_raises_issue_when_no_weather_source(hass, mock_config_entry):
+    """BOTH weather sources off + a cloud-driven feature on → a repair issue is
+    raised, cleared on teardown. (Open-Meteo on by default would otherwise supply
+    clouds, so the issue only fires when it is explicitly disabled too.)"""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data=dict(mock_config_entry.data),
-        options={CONF_OWM_ENABLED: False, CONF_AUTO_TUNING: True},
-        entry_id="owm_off_tuning_on",
+        options={
+            CONF_OWM_ENABLED: False,
+            CONF_OPENMETEO_ENABLED: False,
+            CONF_AUTO_TUNING: True,
+        },
+        entry_id="no_weather_tuning_on",
     )
     entry.add_to_hass(hass)
     coord = SolcastEnhancedCoordinator(hass, entry)
@@ -382,6 +389,23 @@ async def test_setup_raises_owm_issue_when_disabled(hass, mock_config_entry):
     finally:
         await coord.async_teardown()
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is None
+
+
+async def test_setup_no_issue_with_openmeteo_default(hass, mock_config_entry):
+    """Open-Meteo (keyless, on by default) supplies clouds, so no issue even with OWM off."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=dict(mock_config_entry.data),
+        options={CONF_OWM_ENABLED: False, CONF_AUTO_TUNING: True},
+        entry_id="openmeteo_default",
+    )
+    entry.add_to_hass(hass)
+    coord = SolcastEnhancedCoordinator(hass, entry)
+    await coord.async_setup()
+    try:
+        assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_OWM_REQUIRED) is None
+    finally:
+        await coord.async_teardown()
 
 
 async def test_setup_no_owm_issue_when_configured(hass, mock_config_entry):

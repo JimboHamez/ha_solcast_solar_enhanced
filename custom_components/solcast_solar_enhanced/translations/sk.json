@@ -38,13 +38,6 @@
           "db_retention_days": "0 uchová celú históriu (predvolené). Hodnota obmedzí databázu na zariadeniach s nízkym výkonom denným mazaním starších riadkov — sezónne tlmenie však používa okno cez viac rokov, preto uchovajte aspoň ~400 dní (≈13 mesiacov), ak sa naň spoliehate."
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "Povoliť OpenWeatherMap",
-          "owm_api_key": "API kľúč"
-        }
-      },
       "battery": {
         "title": "Batériové úložisko",
         "data": {
@@ -69,6 +62,18 @@
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
         "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -111,13 +116,6 @@
           "db_retention_days": "0 uchová celú históriu (predvolené). Hodnota obmedzí databázu na zariadeniach s nízkym výkonom denným mazaním starších riadkov — sezónne tlmenie však používa okno cez viac rokov, preto uchovajte aspoň ~400 dní (≈13 mesiacov), ak sa naň spoliehate."
         }
       },
-      "owm": {
-        "title": "OpenWeatherMap",
-        "data": {
-          "owm_enabled": "Povoliť OpenWeatherMap",
-          "owm_api_key": "API kľúč"
-        }
-      },
       "battery": {
         "title": "Batériové úložisko",
         "data": {
@@ -142,6 +140,18 @@
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
         "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+      },
+      "weather": {
+        "title": "Weather & Irradiance",
+        "data": {
+          "openmeteo_enabled": "Enable Open-Meteo (recommended, no API key)",
+          "owm_enabled": "Enable OpenWeatherMap (legacy, optional)",
+          "owm_api_key": "OpenWeatherMap API key"
+        },
+        "data_description": {
+          "openmeteo_enabled": "Free, keyless source of solar irradiance (required for PV tilt tuning) plus cloud cover and temperature. Leave enabled unless you specifically prefer OpenWeatherMap.",
+          "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
+        }
       }
     }
   },
@@ -166,12 +176,12 @@
   },
   "issues": {
     "owm_required": {
-      "title": "Pre ladenie FV a tlmenie je potrebný OpenWeatherMap",
-      "description": "Ladenie FV a adaptívne tlmenie využívajú oblačnosť z OpenWeatherMap na identifikáciu období jasnej oblohy — jediné údaje, kde porovnanie nameraného a predpovedaného odráža geometriu panelov a zatienenie, a nie prechádzajúce oblaky. OpenWeatherMap nie je nakonfigurovaný, takže oblačnosť každého záznamu je neznáma a vylúčená, čím tieto funkcie zostávajú neaktívne (tlmenie zostáva neutrálne a neodosiela sa do Solcast). Ak ich chcete povoliť, pridajte v možnostiach tejto integrácie bezplatný API kľúč OpenWeatherMap, alebo toto ignorujte, ak chcete len zaznamenávať históriu."
+      "title": "No weather source for PV tuning & dampening",
+      "description": "PV tuning and adaptive dampening need cloud cover (to find clear-sky periods) and, for tuning, solar irradiance. These normally come from Open-Meteo, which is free and needs no API key — but it has been disabled and no OpenWeatherMap key is configured, so every record's weather is unknown and excluded, leaving these features inactive (dampening stays neutral and is not pushed to Solcast). Re-enable Open-Meteo (or add an OpenWeatherMap API key) in this integration's options, or ignore this if you only want history logging."
     },
     "dampening_gated": {
-      "title": "Tlmenie pozastavené — vyladená orientácia sa líši od Solcast",
-      "description": "Ladenie FV s istotou konvergovalo na sklon/azimut panelov, ktorý sa podstatne líši od orientácie nakonfigurovanej pre vašu lokalitu Solcast. Kým sa nezhodnú, predpoveď Solcast vychádza z nesprávnej geometrie, takže adaptívne tlmenie by zabudovalo túto chybu orientácie do svojej korekcie namiesto zachytenia skutočného zatienenia. Tlmenie sa preto pre dotknuté polia udržiava neutrálne (1.0) a do Solcast sa nič neodosiela. Prečítajte aktuálne hodnoty zo senzorov „Vyladený sklon panelov“ a „Vyladený azimut panelov“, aktualizujte podľa nich konfiguráciu vašej lokality Solcast a tlmenie sa automaticky obnoví. Ak chcete túto ochranu vypnúť, vypnite „Pozastaviť tlmenie…“ v možnostiach integrácie."
+      "title": "Dampening paused — tuned tilt differs from Solcast",
+      "description": "PV tuning has confidently converged on a panel tilt that differs materially from the tilt your Solcast site is configured with. Until they agree, the Solcast forecast is based on the wrong geometry, so adaptive dampening would bake that tilt error into its correction instead of capturing genuine shading. Dampening is therefore held neutral (1.0) for the affected array(s) and nothing is pushed to Solcast. Read the current value from the Tuned Panel Tilt sensor, update your Solcast site configuration to match, and dampening will resume automatically. (Azimuth is not tuned, so it is never the cause.) To disable this safeguard, turn off ‘Gate dampening…’ in the integration options."
     }
   }
 }

@@ -92,7 +92,7 @@ Persists historical PV data alongside solar position, weather and battery state 
 
 ### Implementation
 
-`SqliteStore` runs every call via `async_add_executor_job` under a serialising lock, in WAL mode (`synchronous=NORMAL`). The core schema is created complete on first run (so the `site` and `battery_charge` columns are always present); writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`. The **only** schema evolution is additive: the per-MPPT `dc_*` columns (v1.6.8) are `ALTER TABLE`d into older DBs (`_ensure_columns`), backfilled to `0`.
+`SqliteStore` runs every call via `async_add_executor_job` under a serialising lock, in WAL mode (`synchronous=NORMAL`). The core schema is created complete on first run (so the `site` and `battery_charge` columns are always present); writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`. Schema evolution is additive only: the per-MPPT `dc_*` columns (v1.6.8) and the `ghi`/`dni`/`dhi` irradiance columns are `ALTER TABLE`d into older DBs (`_ensure_columns`), backfilled to `0`.
 
 One-time **data repairs** (not schema changes) are gated by `PRAGMA user_version`, so they run silently once and no-op thereafter. v1 recomputes the solar `azimuth` column for rows written before the hour-angle wrap fix — reconstructable in place from each row's `period_end_epoch` + site lat/lon, rewriting only rows whose value actually moved (to spare SD-card wear).
 
@@ -120,11 +120,16 @@ CREATE TABLE solcast_data (
   dc_current1      REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC current, slot min (A)
   dc_voltage2      REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC voltage, slot max (V)
   dc_current2      REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC current, slot min (A)
+  ghi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo global horizontal irradiance (W/m²)
+  dni              REAL NOT NULL DEFAULT 0,        -- Open-Meteo direct normal irradiance (W/m²)
+  dhi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo diffuse horizontal irradiance (W/m²)
   UNIQUE(period_end_epoch, site)
 );
 ```
 
 The four `dc_*` columns are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+
+The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless) at the period midpoint. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (interpolated to the midpoint) instead of waiting for fresh collection.
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at it (WAL mode — leave the `-wal`/`-shm` sidecars in place).
 
@@ -140,17 +145,21 @@ total_pv = pv_actual
 
 ## Feature 2 — Rooftop PV Tuning
 
-Optimises panel tilt/azimuth to minimise RMSE between measured `total_pv` and the geometrically-corrected Solcast estimate. Based on [Solcast SDK notebook 3.4](https://solcast.github.io/solcast-api-python-sdk/notebooks/3.4%20Rooftop%20PV%20Tuning/).
+Recovers panel **tilt** by transposing measured irradiance to the panel plane and fitting it to measured `total_pv`. Follows the approach of [Solcast SDK notebook 3.4](https://solcast.github.io/solcast-api-python-sdk/notebooks/3.4%20Rooftop%20PV%20Tuning/) — comparing measured generation against a *per-orientation* model — but adapted to run **offline**: the notebook re-queries the Solcast API for a fresh physical forecast at each candidate orientation, which we can't do on a Pi, so we transpose stored **Open-Meteo** irradiance (GHI/DNI/DHI) instead.
+
+> **Why not the old cosine-ratio tuner?** The previous implementation had only the single configured-orientation `pv_estimate` and re-scaled it by `cos(incidence)/cos(incidence at the seed)`. That normalisation is identity at the seed, so the RMSE surface was flat and the result simply **echoed the configured orientation back** — seed-degenerate, not a measurement. Transposing real per-orientation irradiance removes that degeneracy.
 
 ### Algorithm
 
-1. Fetch up to 2000 recent records (`pv_actual > 0`).
-2. Filter to clear-sky (`clouds < cloud_threshold`).
+1. Fetch up to 2000 recent records (`pv_actual > 0`), now including `ghi`/`dni`/`dhi`.
+2. Filter to clear-sky (`clouds < cloud_threshold`); skip rows lacking irradiance (`ghi = 0`).
 3. Exclude clipped records (`total_pv` **and** `pv_estimate` ≥ `capacity × clipping_threshold`).
 4. Exclude export-limited records (`pv_export ≥ export_limit_kw × clipping_threshold`, when set) — see below.
-5. For each (tilt, azimuth) compute the cosine of incidence relative to nominal geometry and scale the Solcast estimate by that ratio.
-6. Minimise RMSE via a coarse-to-fine numpy **grid search** (`_minimize_grid`: full 5° sweep, then ±5° at 1°, then ±1° at 0.25° around the running best). This is the method notebook 3.4 uses, and it drops scipy, which has no Raspberry Pi wheel (issue #85).
-7. Run in an executor thread; requires ≥10 qualifying records; runs daily.
+5. For each candidate **tilt** (azimuth held fixed — see below), transpose to plane-of-array irradiance (Hay-Davies anisotropic sky by default, isotropic fallback), fit a single capacity scale by least squares (`s = Σ(poa·obs)/Σ(poa²)` — closed-form, no scipy), and score **MAE** against `total_pv`.
+6. Minimise MAE via a coarse-to-fine numpy **1-D grid search** over tilt (`_minimize_tilt`: full 5° sweep, then ±5° at 1°, then ±1° at 0.25°). ~30 evaluations; no seed dependence; ~750 ms on a Pi. Drops scipy (no Pi wheel, issue #85).
+7. Run in an executor thread; requires ≥10 qualifying irradiance-bearing records; runs daily.
+
+**Azimuth is held fixed at the configured value, not tuned.** It is non-identifiable from this data: a shift in the irradiance↔power time alignment is mathematically degenerate with a panel rotation (~1° of azimuth per ~3 min of offset), and morning shading biases any azimuth estimate westward regardless of method. Fitting it would do more harm than good, so the tuner recovers tilt only; the result echoes the configured azimuth back (the dampening gate's azimuth delta is then identically 0). Recovering azimuth would need precisely-timestamped 15-min irradiance *and* shading-aware AM/PM weighting — a separate workstream.
 
 Solar position (azimuth/zenith, ±1°) is computed locally in `pv_tuning.py` from declination, equation of time and hour angle — no extra library — and the same function populates the `azimuth`/`zenith` columns at write time.
 
@@ -162,7 +171,7 @@ A site with a grid export cap produces artificially low `total_pv` while `pv_exp
 is_export_limited = export_limit_kw > 0 AND pv_export >= export_limit_kw × clipping_threshold
 ```
 
-Reusing `clipping_threshold` keeps marginal export values; `export_limit_kw = 0` (default) disables it. Results surface on the `Tuned Panel Tilt` sensor (`azimuth`, `rmse_kw`, `n_records` attributes) and the Configure page. The `battery_full + export_capped` double-curtailment case remains a known AC-side limitation, addressed by the DC-telemetry [roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+Reusing `clipping_threshold` keeps marginal export values; `export_limit_kw = 0` (default) disables it. This filter matters more now: with a capacity scale fitted across all records, a cluster of export-curtailed points would drag the fit. Results surface on the `Tuned Panel Tilt` sensor (`azimuth` — the fixed configured value, `azimuth_tuned: false`, `rmse_kw`, `mae_kw`, `capacity_scale`, `n_records` attributes) and the Configure page. The `battery_full + export_capped` double-curtailment case remains a known AC-side limitation, addressed by the DC-telemetry [roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
 
 ---
 

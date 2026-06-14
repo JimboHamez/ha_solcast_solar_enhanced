@@ -7,7 +7,7 @@ import pytest
 from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
     _cos_incidence,
-    _minimize_grid,
+    _minimize_tilt,
     panel_azimuth_to_internal,
     panel_azimuth_to_solcast,
     run_tuning,
@@ -159,200 +159,173 @@ def test_cos_incidence_panel_facing_away():
 
 
 # ---------------------------------------------------------------------------
-# run_tuning
+# run_tuning — transposition-based, tilt-only (azimuth fixed)
 # ---------------------------------------------------------------------------
+
+def _irr_record(**overrides):
+    """A clear-sky, irradiance-bearing tuning record (the columns the tuner reads)."""
+    rec = {
+        "period_end_epoch": 1717200000,
+        "pv_actual": 3.0, "pv_export": 0.5, "battery_charge": 0.0,
+        "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0, "azimuth": 180.0,
+        "ghi": 600.0, "dni": 700.0, "dhi": 120.0,
+    }
+    rec.update(overrides)
+    return rec
+
 
 def test_run_tuning_returns_none_on_empty_records():
     assert run_tuning([], 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_returns_none_below_10_records():
-    records = [
-        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0, "azimuth": 45.0}
-        for _ in range(9)
-    ]
+    records = [_irr_record() for _ in range(9)]
     assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_filters_cloudy_records():
     """Records with clouds ≥ threshold are excluded; if none remain → None."""
-    records = [
-        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 50, "zenith": 30.0, "azimuth": 45.0}
-        for _ in range(20)
-    ]
-    # cloud_threshold=20 — all 50% cloud records are excluded
+    records = [_irr_record(clouds=50) for _ in range(20)]
     assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
-def test_run_tuning_returns_result_with_clear_records():
-    """With enough clear-sky, non-clipped records, returns a dict."""
+def test_run_tuning_skips_records_without_irradiance():
+    """The transposition tuner needs GHI; rows with ghi=0 (night / not backfilled)
+    are skipped, so an all-zero-irradiance set yields None even when otherwise clear."""
+    records = [_irr_record(ghi=0.0, zenith=30.0 + i * 0.1) for i in range(20)]
+    assert run_tuning(records, 5.0, 20, 0.95) is None
+
+
+def test_run_tuning_returns_result_with_irradiance():
+    """Enough clear-sky, irradiance-bearing, non-clipped records → a result dict."""
     records = [
-        {"pv_actual": 3.0, "pv_export": 0.5, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0 + i * 0.1, "azimuth": 180.0 + i * 0.1}
-        for i in range(20)
+        _irr_record(zenith=30.0 + i * 0.5, azimuth=170.0 + i) for i in range(20)
     ]
-    result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=20.0, initial_azimuth=0.0)
+    result = run_tuning(records, 8.0, 20, 0.95, fixed_azimuth=0.0)
     if result is None:
         pytest.skip("numpy not available")
-
-    assert "tilt" in result
-    assert "azimuth" in result
-    assert "rmse_kw" in result
-    assert "n_records" in result
+    assert set(result) >= {
+        "tilt", "azimuth", "rmse_kw", "mae_kw", "capacity_scale",
+        "n_records", "export_limited_excluded", "source",
+    }
     assert result["n_records"] == 20
     assert 0.0 <= result["tilt"] <= 90.0
-    assert -180.0 <= result["azimuth"] <= 180.0
+    assert result["capacity_scale"] > 0.0
     assert result["rmse_kw"] >= 0.0
 
 
 def test_run_tuning_keeps_zero_cloud_records():
-    """A genuine 0% cloud reading (clearest sky) must NOT be dropped.
-
-    Regression: clouds were read as `int(r.get("clouds", 100) or 100)`, so a
-    falsy 0 became 100 and every clear-sky record was filtered out, returning
-    None despite ample data.
-    """
-    records = [
-        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 0, "zenith": 30.0 + i * 0.1, "azimuth": 180.0 + i * 0.1}
-        for i in range(20)
-    ]
+    """A genuine 0% cloud reading (clearest sky) must NOT be dropped (None=missing)."""
     if not TUNING_AVAILABLE:
         pytest.skip("numpy not available")
-    result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=20.0, initial_azimuth=0.0)
+    records = [_irr_record(clouds=0, zenith=30.0 + i * 0.5) for i in range(20)]
+    result = run_tuning(records, 8.0, 20, 0.95, fixed_azimuth=0.0)
     assert result is not None, "0% cloud records were wrongly excluded"
     assert result["n_records"] == 20
 
 
 def test_run_tuning_treats_missing_cloud_as_overcast():
     """A missing/None cloud value is still treated as overcast (excluded)."""
-    records = [
-        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": None, "zenith": 30.0, "azimuth": 180.0}
-        for _ in range(20)
-    ]
-    # cloud defaults to 100 → all excluded → None
+    records = [_irr_record(clouds=None) for _ in range(20)]
     assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_excludes_no_owm_sentinel():
-    """The no-OWM storage sentinel (clouds=100) is excluded as fully overcast.
-
-    Without an OWM source the coordinator stores clouds=100 so records can never
-    masquerade as clear sky; tuning then has nothing to fit and returns None.
-    """
-    records = [
-        {"pv_actual": 3.0, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 100, "zenith": 30.0, "azimuth": 45.0}
-        for _ in range(20)
-    ]
+    """The no-OWM storage sentinel (clouds=100) is excluded as fully overcast."""
+    records = [_irr_record(clouds=100) for _ in range(20)]
     assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_excludes_clipped_records():
     """Records where both total_pv and pv_estimate exceed clip threshold are excluded."""
-    capacity_kw = 5.0
-    records = [
-        {"pv_actual": 4.8, "pv_export": 0.0, "battery_charge": 0.0,
-         "pv_estimate": 4.9, "clouds": 5, "zenith": 30.0, "azimuth": 180.0}
-        for _ in range(20)
-    ]
-    result = run_tuning(records, capacity_kw, 20, 0.95)
-    assert result is None
+    records = [_irr_record(pv_actual=4.8, pv_estimate=4.9) for _ in range(20)]
+    assert run_tuning(records, 5.0, 20, 0.95) is None
 
 
 def test_run_tuning_excludes_export_limited_records():
     """Records where pv_export >= export_limit * clipping_threshold are excluded."""
-    records = [
-        {"pv_actual": 2.0, "pv_export": 2.9, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0, "azimuth": 180.0}
-        for _ in range(20)
-    ]
+    records = [_irr_record(pv_actual=2.0, pv_export=2.9) for _ in range(20)]
     # pv_export 2.9 >= 3.0 * 0.95 = 2.85 → all records excluded → None
-    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=3.0)
-    assert result is None
+    assert run_tuning(records, 5.0, 20, 0.95, export_limit_kw=3.0) is None
 
 
 def test_run_tuning_zero_export_limit_disables_filter():
     """export_limit_kw=0 (default) does not exclude any records based on export."""
     records = [
-        {"pv_actual": 2.0, "pv_export": 2.9, "battery_charge": 0.0,
-         "pv_estimate": 4.0, "clouds": 5, "zenith": 30.0 + i * 0.1, "azimuth": 180.0 + i * 0.1}
+        _irr_record(pv_actual=2.0, pv_export=2.9, zenith=30.0 + i * 0.5)
         for i in range(20)
     ]
-    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=0.0,
-                        initial_tilt=20.0, initial_azimuth=0.0)
+    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=0.0, fixed_azimuth=0.0)
     if result is None:
         pytest.skip("numpy not available")
     assert result["n_records"] == 20
 
 
+def test_run_tuning_azimuth_is_fixed_not_tuned():
+    """Azimuth is echoed back as the (normalised) fixed input — never tuned."""
+    if not TUNING_AVAILABLE:
+        pytest.skip("numpy not available")
+    records = [_irr_record(zenith=30.0 + i * 0.5, azimuth=170.0 + i) for i in range(20)]
+    result = run_tuning(records, 8.0, 20, 0.95, fixed_azimuth=-6.0)
+    assert result["azimuth"] == pytest.approx(-6.0)
+
+
 # ---------------------------------------------------------------------------
-# _minimize_grid — pure-numpy grid search (scipy replacement)
+# _minimize_tilt — pure-numpy 1-D grid search
 # ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
-def test_minimize_grid_finds_known_minimum():
-    """The coarse-to-fine grid search locates a known quadratic minimum within
-    the finest step (0.25°), with no scipy involved. ``eval_row`` is the batched
-    objective: a 1-D array of RMSEs, one per candidate tilt, for one azimuth."""
-    import numpy as np
-    target_tilt, target_az = 33.0, -42.0
-
-    def eval_row(tilts, az):
-        return (np.asarray(tilts, dtype=float) - target_tilt) ** 2 + (az - target_az) ** 2
-
-    tilt, az, val = _minimize_grid(eval_row, 20.0, 0.0)
-    assert tilt == pytest.approx(target_tilt, abs=0.25)
-    assert az == pytest.approx(target_az, abs=0.25)
-    assert val == pytest.approx(0.0, abs=0.2)
+def test_minimize_tilt_finds_known_minimum():
+    """The coarse-to-fine tilt search locates a known minimum within the finest
+    step (0.25°), independent of the starting point (the full sweep has no seed)."""
+    target = 33.0
+    tilt, val = _minimize_tilt(lambda t: (t - target) ** 2, initial_tilt=5.0)
+    assert tilt == pytest.approx(target, abs=0.25)
+    assert val == pytest.approx(0.0, abs=0.1)
 
 
 @pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
-def test_minimize_grid_normalises_azimuth_into_band():
-    """A best azimuth found in a refinement window past ±180 is wrapped back."""
-    import numpy as np
-
-    def eval_row(tilts, az):
-        # Minimum sits at az = 179.9, near the +180 boundary.
-        d = ((az - 179.9 + 180) % 360) - 180
-        return np.asarray(tilts, dtype=float) ** 2 + d ** 2
-
-    _, az, _ = _minimize_grid(eval_row, 10.0, 175.0)
-    assert -180.0 <= az <= 180.0
+def test_minimize_tilt_clamps_to_bounds():
+    """A minimum outside [0, 90] is clamped to the nearest in-bounds tilt."""
+    tilt, _ = _minimize_tilt(lambda t: (t - 120.0) ** 2)
+    assert tilt == pytest.approx(90.0, abs=0.25)
 
 
 @pytest.mark.skipif(not TUNING_AVAILABLE, reason="numpy not available")
-def test_run_tuning_recovers_synthetic_orientation():
-    """End-to-end: records synthesised from a known panel orientation are tuned
-    back to that orientation (the grid search replaces L-BFGS-B with the same
-    geometry)."""
-    true_tilt, true_az = 30.0, 40.0
-    nom_tilt, nom_az = 20.0, 0.0
-    base_epoch = 1717200000  # ~2024-06-01 UTC
+def test_run_tuning_recovers_synthetic_tilt():
+    """End-to-end: records synthesised (isotropic transposition) from a known tilt
+    are tuned back to it, with the fitted capacity scale recovered too."""
+    true_tilt, fixed_az, true_scale, albedo = 35.0, -6.0, 0.006, 0.2
+
+    def iso_poa(tilt, zen, sun_az, ghi, dni, dhi):
+        tr, ar = math.radians(tilt), math.radians(fixed_az)
+        z = math.radians(zen)
+        caoi = max(
+            0.0, math.cos(z) * math.cos(tr)
+            + math.sin(z) * math.sin(tr) * math.cos(math.radians(sun_az) - ar)
+        )
+        return (dni * caoi + dhi * (1 + math.cos(tr)) / 2
+                + ghi * albedo * (1 - math.cos(tr)) / 2)
+
+    base_epoch = 1717200000
     records = []
     for i in range(200):
         ep = base_epoch + i * 1800
         az, zen = solar_position(ep, -37.9, 145.0)
-        if zen >= 88:
+        if zen >= 85:
             continue
-        nom = _cos_incidence(nom_tilt, nom_az, zen, az)
-        tru = _cos_incidence(true_tilt, true_az, zen, az)
-        if nom < 1e-6:
-            continue
-        pv_est = max(0.0, 5.0 * math.cos(math.radians(zen)))
+        dni, dhi = 850.0, 90.0
+        ghi = dni * math.cos(math.radians(zen)) + dhi
+        obs = true_scale * iso_poa(true_tilt, zen, az, ghi, dni, dhi)
         records.append({
-            "pv_actual": pv_est * (tru / nom),
-            "pv_export": 0.0,
-            "pv_estimate": pv_est,
-            "clouds": 0,
-            "zenith": zen,
-            "azimuth": az,
+            "period_end_epoch": ep, "pv_actual": obs, "pv_export": 0.0,
+            "pv_estimate": 0.0, "clouds": 0, "zenith": zen, "azimuth": az,
+            "ghi": ghi, "dni": dni, "dhi": dhi,
         })
-    result = run_tuning(records, 5.0, 20, 0.95, initial_tilt=nom_tilt, initial_azimuth=nom_az)
+    result = run_tuning(
+        records, 100.0, 20, 0.95, fixed_azimuth=fixed_az, albedo=albedo, model="isotropic"
+    )
     assert result is not None
     assert result["tilt"] == pytest.approx(true_tilt, abs=1.0)
-    assert result["azimuth"] == pytest.approx(true_az, abs=1.0)
-    assert result["rmse_kw"] == pytest.approx(0.0, abs=0.05)
+    assert result["capacity_scale"] == pytest.approx(true_scale, rel=0.02)
+    assert result["mae_kw"] == pytest.approx(0.0, abs=0.01)

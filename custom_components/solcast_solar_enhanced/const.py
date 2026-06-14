@@ -43,6 +43,14 @@ DB_RETENTION_MIN_RECOMMENDED_DAYS = 400
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
 
+# Open-Meteo: keyless source of plane-of-array irradiance components (GHI/DNI/DHI)
+# for transposition-based PV tuning, plus cloud/temperature. Collection is purely
+# additive in this phase (stored alongside each row); it does not yet replace OWM
+# as the cloud source. Defaults on — no API key required.
+CONF_OPENMETEO_ENABLED = "openmeteo_enabled"
+# Ground albedo used by the transposition model (ground-reflected POA term).
+CONF_ALBEDO = "albedo"
+
 CONF_BATTERY_ENABLED = "battery_enabled"
 CONF_BATTERY_MODE = "battery_mode"
 CONF_BATTERY_NET_SENSOR = "battery_net_sensor"
@@ -78,6 +86,8 @@ DEFAULT_AZIMUTH = 0.0
 DEFAULT_DB_ENABLED = True
 # Built-in SQLite file, created in the HA config directory.
 DEFAULT_DB_FILENAME = "solcast_solar_enhanced.db"
+DEFAULT_OPENMETEO_ENABLED = True
+DEFAULT_ALBEDO = 0.2
 DEFAULT_AUTO_TUNING = True
 DEFAULT_AUTO_DAMPENING = True
 DEFAULT_CLOUD_THRESHOLD = 20
@@ -119,6 +129,12 @@ DAMPENING_INTERVAL_HOURS = 6
 TUNING_INTERVAL_HOURS = 24
 STORAGE_VERSION = 1
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
+# Open-Meteo endpoints (keyless). The forecast API serves recent/current data at
+# 15-minute resolution (used for live half-hour collection); the archive API
+# serves historical hourly reanalysis (used by the one-pass backfill tool, which
+# tolerates its ~5-day finalisation lag).
+OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPENMETEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 # Repair-issue id raised when cloud-driven features (tuning/dampening) are enabled
 # but no OpenWeatherMap source is configured. Translation lives under `issues`.

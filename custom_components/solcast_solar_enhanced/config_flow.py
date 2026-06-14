@@ -46,6 +46,7 @@ from .const import (
     CONF_DB_RETENTION_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_OPENMETEO_ENABLED,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_INPUT_MODE,
@@ -63,6 +64,7 @@ from .const import (
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
     DEFAULT_DB_ENABLED,
+    DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_DB_RETENTION_DAYS,
     DEFAULT_EXPORT_LIMIT_KW,
     DEFAULT_LATITUDE,
@@ -298,7 +300,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 2 — Storage. Built-in SQLite store, on by default; no setup needed."""
         if user_input is not None:
             self._data.update(user_input)
-            return await self.async_step_owm()
+            return await self.async_step_weather()
 
         schema = vol.Schema({
             vol.Required(CONF_DB_ENABLED, default=DEFAULT_DB_ENABLED): BooleanSelector(),
@@ -308,19 +310,24 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 
-    async def async_step_owm(self, user_input: dict[str, Any] | None = None):
-        """Step 3 — OpenWeatherMap (optional)."""
+    async def async_step_weather(self, user_input: dict[str, Any] | None = None):
+        """Step 3 — Weather & irradiance. Open-Meteo (keyless, default) supplies the
+        irradiance for PV tuning plus cloud/temperature; OpenWeatherMap is an
+        optional legacy alternative for cloud/temperature."""
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_battery()
 
         schema = vol.Schema({
+            vol.Required(
+                CONF_OPENMETEO_ENABLED, default=DEFAULT_OPENMETEO_ENABLED
+            ): BooleanSelector(),
             vol.Required(CONF_OWM_ENABLED, default=False): BooleanSelector(),
             vol.Optional(CONF_OWM_API_KEY, default=""): TextSelector(
                 TextSelectorConfig(type="password")
             ),
         })
-        return self.async_show_form(step_id="owm", data_schema=schema)
+        return self.async_show_form(step_id="weather", data_schema=schema)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None):
         """Step 4 — Battery Storage (optional)."""
@@ -438,7 +445,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             self._opts.update(user_input)
-            return await self.async_step_owm()
+            return await self.async_step_weather()
 
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema({
@@ -450,19 +457,23 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         })
         return self.async_show_form(step_id="database", data_schema=schema)
 
-    async def async_step_owm(self, user_input: dict[str, Any] | None = None):
+    async def async_step_weather(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             self._opts.update(user_input)
             return await self.async_step_battery()
 
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema({
+            vol.Required(
+                CONF_OPENMETEO_ENABLED,
+                default=current.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED),
+            ): BooleanSelector(),
             vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
             vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
                 TextSelectorConfig(type="password")
             ),
         })
-        return self.async_show_form(step_id="owm", data_schema=schema)
+        return self.async_show_form(step_id="weather", data_schema=schema)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
