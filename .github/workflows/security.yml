@@ -1,0 +1,132 @@
+name: Security
+
+# Report-only security scanning. None of these jobs fail the build — they
+# publish findings to the repo's Security tab (Code scanning) and/or job logs
+# so they can be triaged without blocking PRs. Flip the per-tool exit codes /
+# fail-build flags noted below once the baseline is clean to make them gating.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly re-scan so newly disclosed CVEs surface even without a push.
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+  security-events: write # required to upload SARIF to the Security tab
+  actions: read
+
+jobs:
+  # --- SAST -----------------------------------------------------------------
+  semgrep:
+    name: Semgrep (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Scan
+        # --error is omitted, so a finding never fails the job (report-only).
+        run: |
+          semgrep scan \
+            --sarif --output semgrep.sarif \
+            --config p/python \
+            --config p/security-audit \
+            --config p/secrets \
+            --config p/github-actions
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # --- Secret scanning ------------------------------------------------------
+  gitleaks:
+    name: Gitleaks (secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the whole git log is scanned
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: Scan
+        # --exit-code 0 keeps it report-only; --redact avoids printing secrets.
+        run: |
+          gitleaks detect \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 0
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+  # --- Filesystem: vulns + secrets + misconfig ------------------------------
+  trivy:
+    name: Trivy (fs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy.sarif
+          exit-code: "0" # report-only
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+  # --- Dependency vulnerabilities -------------------------------------------
+  grype:
+    name: Grype (dep CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan
+        id: scan
+        uses: anchore/scan-action@v5
+        with:
+          path: "."
+          fail-build: false # report-only
+          output-format: sarif
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: grype
+
+  # --- SBOM (dependency inventory) ------------------------------------------
+  syft:
+    name: Syft (SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: "."
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+          # Attaches the SBOM as a build artifact (default behaviour).
+          upload-artifact: true

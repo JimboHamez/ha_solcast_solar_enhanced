@@ -10,6 +10,7 @@
 
 [![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
 [![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
+[![Security](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/security.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/security.yml)
 
 A companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) that learns from your own generation history to make your Solcast forecasts more accurate — automatically, and entirely on your device.
 
