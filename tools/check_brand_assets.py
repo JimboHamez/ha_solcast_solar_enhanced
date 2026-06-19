@@ -49,6 +49,9 @@ def _fetch(url: str, token: str | None, timeout: float) -> tuple[int, str, bytes
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected -- URL is built
+        # from a fixed base + the integration's own domain/asset names, not external input;
+        # maintainer-only helper, never runs inside Home Assistant.
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.headers.get("Content-Type", ""), resp.read()
     except urllib.error.HTTPError as err:
