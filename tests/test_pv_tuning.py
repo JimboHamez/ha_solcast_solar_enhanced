@@ -8,11 +8,33 @@ from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
     _cos_incidence,
     _minimize_tilt,
+    clearsky_ghi,
     panel_azimuth_to_internal,
     panel_azimuth_to_solcast,
     run_tuning,
     solar_position,
 )
+
+
+# ---------------------------------------------------------------------------
+# Haurwitz clear-sky GHI (denominator of the clearness-index gate)
+# ---------------------------------------------------------------------------
+
+
+def test_clearsky_ghi_zero_at_and_below_horizon():
+    assert clearsky_ghi(90.0) == 0.0
+    assert clearsky_ghi(95.0) == 0.0
+
+
+def test_clearsky_ghi_peaks_overhead_and_decreases():
+    overhead = clearsky_ghi(0.0)
+    assert 1000.0 < overhead < 1050.0  # ~1098·e^-0.059 ≈ 1035 W/m²
+    assert clearsky_ghi(0.0) > clearsky_ghi(45.0) > clearsky_ghi(80.0) > 0.0
+
+
+def test_clearsky_ghi_winter_noon_reference():
+    # Ormond winter solar noon ~zenith 61° → a few hundred W/m² clear-sky.
+    assert 250.0 < clearsky_ghi(61.0) < 500.0
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .pv_tuning import solar_position
+from .pv_tuning import clearsky_ghi, solar_position
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -123,6 +123,10 @@ class SqliteStore:
         try:
             conn = sqlite3.connect(self._path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            # Expose the pure-Python Haurwitz clear-sky GHI to SQL so the clearness-
+            # index gate can filter in-query (SQLite has no exp()). Registered on
+            # read-only opens too, since the gate runs against reference DBs.
+            conn.create_function("clearsky_ghi", 1, clearsky_ghi)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             if not self._readonly:
@@ -373,33 +377,56 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     async def async_get_records_for_tuning(
-        self, limit: int = 2000, site: str | None = None, cloud_max: int | None = None
+        self,
+        limit: int = 2000,
+        site: str | None = None,
+        cloud_max: int | None = None,
+        kt_threshold: float | None = None,
+        kt_zenith_max: float = 85.0,
+        kt_ghi_cs_floor: float = 40.0,
     ) -> list[dict[str, Any]]:
-        """Fetch recent records for PV tuning.
+        """Fetch recent clear-sky records for PV tuning.
 
-        When ``cloud_max`` is given, the clear-sky filter (``clouds < cloud_max``)
-        is applied **in SQL before the LIMIT**, so the result is the most recent
-        ``limit`` *clear-sky* rows rather than the most recent rows of any weather
-        (of which only a few may be clear in a cloudy season). This lets tuning use
-        clear-sky data spanning all seasons — the sun-angle diversity that actually
-        constrains tilt/azimuth — instead of a recent cloudy window.
+        Two mutually exclusive clear-sky gates, both applied **in SQL before the
+        LIMIT** so the result is the most recent ``limit`` *clear-sky* rows (not the
+        most recent rows of any weather, of which only a few may be clear in a
+        cloudy season). This gives tuning the sun-angle diversity across seasons
+        that actually constrains tilt.
+
+        - ``kt_threshold`` (preferred): measured-irradiance clearness index
+          ``Kt = ghi / clearsky_ghi(zenith) >= kt_threshold``, judged only where the
+          sun is up (``zenith < kt_zenith_max``) and the clear-sky reference is
+          meaningful (``clearsky_ghi(zenith) >= kt_ghi_cs_floor``). Independent of
+          any model cloud %.
+        - ``cloud_max`` (fallback): OWM total-cloud gate ``clouds < cloud_max``.
+
+        If both are given, ``kt_threshold`` wins.
         """
         if self._conn is None:
             return []
         site_clause, site_params = self._site_filter(site)
-        cloud_clause, cloud_params = "", ()
-        if cloud_max is not None:
-            cloud_clause = " AND clouds < ?"
-            cloud_params = (int(cloud_max),)
+        gate_clause, gate_params = "", ()
+        if kt_threshold is not None:
+            # Multiply form avoids dividing by a near-zero clear-sky reference.
+            gate_clause = (
+                " AND ghi > 0 AND zenith < ? AND clearsky_ghi(zenith) >= ? "
+                "AND ghi >= ? * clearsky_ghi(zenith)"
+            )
+            gate_params = (
+                float(kt_zenith_max), float(kt_ghi_cs_floor), float(kt_threshold),
+            )
+        elif cloud_max is not None:
+            gate_clause = " AND clouds < ?"
+            gate_params = (int(cloud_max),)
         sql = (
             "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
             "azimuth, zenith, clouds, ghi, dni, dhi, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
-            f"WHERE pv_actual > 0{site_clause}{cloud_clause} "
+            f"WHERE pv_actual > 0{site_clause}{gate_clause} "
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )
-        params = (*site_params, *cloud_params, limit)
+        params = (*site_params, *gate_params, limit)
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:

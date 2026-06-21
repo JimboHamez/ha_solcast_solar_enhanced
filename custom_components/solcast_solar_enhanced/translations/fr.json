@@ -55,6 +55,7 @@
           "dampening_gate": "Verrouiller l'atténuation jusqu'à ce que le réglage corresponde à l'orientation Solcast",
           "cloud_threshold": "Seuil de nébulosité (%)",
           "cloud_max_include": "Nébulosité maximale à inclure (%)",
+          "kt_threshold": "Seuil d'indice de clarté (ciel clair)",
           "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Verrouiller l'atténuation jusqu'à ce que le réglage corresponde à l'orientation Solcast",
           "cloud_threshold": "Seuil de nébulosité (%)",
           "cloud_max_include": "Nébulosité maximale à inclure (%)",
+          "kt_threshold": "Seuil d'indice de clarté (ciel clair)",
           "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
         }

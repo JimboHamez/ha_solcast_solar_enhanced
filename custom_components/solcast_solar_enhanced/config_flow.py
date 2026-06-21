@@ -40,6 +40,7 @@ from .const import (
     CONF_CAPACITY_KW,
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
+    CONF_KT_THRESHOLD,
     CONF_CLOUD_THRESHOLD,
     CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
@@ -62,6 +63,7 @@ from .const import (
     DEFAULT_CAPACITY_KW,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
+    DEFAULT_KT_THRESHOLD,
     DEFAULT_CLOUD_THRESHOLD,
     DEFAULT_DB_ENABLED,
     DEFAULT_OPENMETEO_ENABLED,
@@ -361,6 +363,9 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_CLOUD_MAX_INCLUDE, default=DEFAULT_CLOUD_MAX_INCLUDE): NumberSelector(
                 NumberSelectorConfig(min=20, max=100, step=1)
             ),
+            vol.Required(CONF_KT_THRESHOLD, default=DEFAULT_KT_THRESHOLD): NumberSelector(
+                NumberSelectorConfig(min=0.5, max=1.0, step=0.05)
+            ),
             vol.Required(CONF_CLIPPING_THRESHOLD, default=DEFAULT_CLIPPING_THRESHOLD): NumberSelector(
                 NumberSelectorConfig(min=0.5, max=1.0, step=0.01)
             ),
@@ -506,6 +511,9 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             ),
             vol.Required(CONF_CLOUD_MAX_INCLUDE, default=current.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE)): NumberSelector(
                 NumberSelectorConfig(min=20, max=100, step=1)
+            ),
+            vol.Required(CONF_KT_THRESHOLD, default=current.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)): NumberSelector(
+                NumberSelectorConfig(min=0.5, max=1.0, step=0.05)
             ),
             vol.Required(CONF_CLIPPING_THRESHOLD, default=current.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)): NumberSelector(
                 NumberSelectorConfig(min=0.5, max=1.0, step=0.01)

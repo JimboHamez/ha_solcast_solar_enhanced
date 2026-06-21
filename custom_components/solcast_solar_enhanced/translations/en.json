@@ -67,6 +67,7 @@
           "dampening_gate": "Gate dampening until tuning agrees with Solcast orientation",
           "cloud_threshold": "Cloud threshold (%)",
           "cloud_max_include": "Max cloud cover to include (%)",
+          "kt_threshold": "Clearness index threshold (clear-sky)",
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         }
@@ -145,6 +146,7 @@
           "dampening_gate": "Gate dampening until tuning agrees with Solcast orientation",
           "cloud_threshold": "Cloud threshold (%)",
           "cloud_max_include": "Max cloud cover to include (%)",
+          "kt_threshold": "Clearness index threshold (clear-sky)",
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         }

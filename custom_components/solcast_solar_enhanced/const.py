@@ -73,6 +73,10 @@ CONF_AUTO_TUNING = "auto_tuning"
 CONF_AUTO_DAMPENING = "auto_dampening"
 CONF_CLOUD_THRESHOLD = "cloud_threshold"
 CONF_CLOUD_MAX_INCLUDE = "cloud_max_include"
+# Clearness-index clear-sky gate. When Open-Meteo irradiance is enabled, tuning
+# selects clear-sky half-hours by Kt = GHI / clear-sky GHI instead of OWM total
+# cloud cover, which over-rejects genuinely clear slots with harmless high/mid cloud.
+CONF_KT_THRESHOLD = "kt_threshold"
 CONF_CLIPPING_THRESHOLD = "clipping_threshold"
 CONF_EXPORT_LIMIT_KW = "export_limit_kw"
 CONF_DAMPENING_GATE = "dampening_gate"
@@ -92,6 +96,12 @@ DEFAULT_AUTO_TUNING = True
 DEFAULT_AUTO_DAMPENING = True
 DEFAULT_CLOUD_THRESHOLD = 20
 DEFAULT_CLOUD_MAX_INCLUDE = 60
+# Clearness index above which a daylight slot counts as clear-sky for tuning.
+DEFAULT_KT_THRESHOLD = 0.75
+# Kt is only judged when the sun is above this band (below it the clear-sky GHI
+# reference is too small to divide by) and the clear-sky GHI exceeds the floor.
+KT_ZENITH_MAX = 85.0
+KT_GHI_CS_FLOOR = 40.0
 DEFAULT_CLIPPING_THRESHOLD = 0.95
 DEFAULT_EXPORT_LIMIT_KW = 0.0
 DEFAULT_DAMPENING_GATE = True

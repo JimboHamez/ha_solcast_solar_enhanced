@@ -55,6 +55,7 @@
           "dampening_gate": "Bloquear la atenuación hasta que el ajuste coincida con la orientación de Solcast",
           "cloud_threshold": "Umbral de nubes (%)",
           "cloud_max_include": "Nubosidad máxima a incluir (%)",
+          "kt_threshold": "Umbral del índice de claridad (cielo despejado)",
           "clipping_threshold": "Umbral de recorte (fracción de la capacidad)",
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Bloquear la atenuación hasta que el ajuste coincida con la orientación de Solcast",
           "cloud_threshold": "Umbral de nubes (%)",
           "cloud_max_include": "Nubosidad máxima a incluir (%)",
+          "kt_threshold": "Umbral del índice de claridad (cielo despejado)",
           "clipping_threshold": "Umbral de recorte (fracción de la capacidad)",
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
         }

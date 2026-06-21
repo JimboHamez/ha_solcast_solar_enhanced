@@ -55,6 +55,7 @@
           "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
+          "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
           "clipping_threshold": "Soglia di clipping (frazione della potenza)",
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
+          "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
           "clipping_threshold": "Soglia di clipping (frazione della potenza)",
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
         }

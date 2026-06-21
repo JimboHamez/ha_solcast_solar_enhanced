@@ -106,6 +106,21 @@ def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float
     return azimuth, zenith
 
 
+def clearsky_ghi(zenith_deg: float) -> float:
+    """Haurwitz clear-sky global horizontal irradiance (W/m²) from solar zenith.
+
+        GHI_cs = 1098 · cos(z) · exp(-0.059 / cos(z)),   for cos(z) > 0 else 0
+
+    Zenith-only and well validated for clear-sky GHI — pure Python, no numpy /
+    scipy. Used as the denominator of the clearness index Kt = GHI / clearsky_ghi,
+    the irradiance-based replacement for the OWM total-cloud clear-sky gate.
+    """
+    cos_z = math.cos(math.radians(zenith_deg))
+    if cos_z <= 0:
+        return 0.0
+    return 1098.0 * cos_z * math.exp(-0.059 / cos_z)
+
+
 def _cos_incidence(tilt_deg: float, azimuth_deg: float, zenith_deg: float, sun_az_deg: float) -> float:
     """Cosine of angle of incidence of sunlight on a tilted panel."""
     tilt = math.radians(tilt_deg)

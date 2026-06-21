@@ -55,6 +55,7 @@
           "dampening_gate": "Wstrzymaj tłumienie, dopóki strojenie nie zgodzi się z orientacją Solcast",
           "cloud_threshold": "Próg zachmurzenia (%)",
           "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
+          "kt_threshold": "Próg wskaźnika przejrzystości (czyste niebo)",
           "clipping_threshold": "Próg przycinania (ułamek mocy)",
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Wstrzymaj tłumienie, dopóki strojenie nie zgodzi się z orientacją Solcast",
           "cloud_threshold": "Próg zachmurzenia (%)",
           "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
+          "kt_threshold": "Próg wskaźnika przejrzystości (czyste niebo)",
           "clipping_threshold": "Próg przycinania (ułamek mocy)",
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
         }

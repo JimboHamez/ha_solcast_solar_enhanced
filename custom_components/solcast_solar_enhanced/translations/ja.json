@@ -55,6 +55,7 @@
           "dampening_gate": "チューニングが Solcast の向きと一致するまでダンピングを保留",
           "cloud_threshold": "雲量しきい値 (%)",
           "cloud_max_include": "含める最大雲量 (%)",
+          "kt_threshold": "晴天指数のしきい値（快晴）",
           "clipping_threshold": "クリッピングしきい値（容量に対する割合）",
           "export_limit_kw": "系統への売電上限 (kW、0 = 無効)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "チューニングが Solcast の向きと一致するまでダンピングを保留",
           "cloud_threshold": "雲量しきい値 (%)",
           "cloud_max_include": "含める最大雲量 (%)",
+          "kt_threshold": "晴天指数のしきい値（快晴）",
           "clipping_threshold": "クリッピングしきい値（容量に対する割合）",
           "export_limit_kw": "系統への売電上限 (kW、0 = 無効)"
         }

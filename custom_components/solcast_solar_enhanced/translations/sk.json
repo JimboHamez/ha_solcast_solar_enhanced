@@ -55,6 +55,7 @@
           "dampening_gate": "Pozastaviť tlmenie, kým sa ladenie nezhoduje s orientáciou Solcast",
           "cloud_threshold": "Prah oblačnosti (%)",
           "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
+          "kt_threshold": "Prah indexu jasnosti (jasná obloha)",
           "clipping_threshold": "Prah orezania (zlomok výkonu)",
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Pozastaviť tlmenie, kým sa ladenie nezhoduje s orientáciou Solcast",
           "cloud_threshold": "Prah oblačnosti (%)",
           "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
+          "kt_threshold": "Prah indexu jasnosti (jasná obloha)",
           "clipping_threshold": "Prah orezania (zlomok výkonu)",
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
         }

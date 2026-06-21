@@ -55,6 +55,7 @@
           "dampening_gate": "Demping blokkeren totdat de afstemming overeenkomt met de Solcast-oriëntatie",
           "cloud_threshold": "Bewolkingsdrempel (%)",
           "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
+          "kt_threshold": "Drempel helderheidsindex (heldere hemel)",
           "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Demping blokkeren totdat de afstemming overeenkomt met de Solcast-oriëntatie",
           "cloud_threshold": "Bewolkingsdrempel (%)",
           "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
+          "kt_threshold": "Drempel helderheidsindex (heldere hemel)",
           "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
         }

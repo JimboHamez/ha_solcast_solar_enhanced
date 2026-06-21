@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from custom_components.solcast_solar_enhanced.sqlite_store import SqliteStore
+
+# Reference database exported from a live Home Assistant install (Ormond, VIC,
+# winter). Trimmed to the property-wide '_total' rows (no site resource_ids) and
+# carries real ghi/zenith/clouds, so it exercises the clear-sky gates on genuine
+# data. See tools/clearness_gate.py for the standalone analysis it mirrors.
+REFERENCE_DB = Path(__file__).parent / "fixtures" / "reference_ha.db"
 
 
 def _record(epoch: int, site: str = "_total", **overrides):
@@ -456,3 +463,52 @@ async def test_tuning_query_no_cloud_max_keeps_all_weather(store):
     await store.async_insert_record(_record(JUNE1 + 1800, clouds=95))
     rows = await store.async_get_records_for_tuning()
     assert len(rows) == 2
+
+
+# ---------------------------------------------------------------------------
+# Clearness-index (Kt) clear-sky gate
+# ---------------------------------------------------------------------------
+
+
+async def test_kt_gate_filters_synthetic_rows(store):
+    """Kt gate keeps a bright slot and rejects a dim one at the same sun angle."""
+    # Zenith 35° → clear-sky GHI ≈ 770 W/m². ghi=720 → Kt≈0.93 (clear);
+    # ghi=200 → Kt≈0.26 (cloudy). clouds is identical so only Kt decides.
+    await store.async_insert_record(_record(JUNE1, zenith=35.0, ghi=720.0, clouds=50))
+    await store.async_insert_record(
+        _record(JUNE1 + 1800, zenith=35.0, ghi=200.0, clouds=50)
+    )
+    rows = await store.async_get_records_for_tuning(kt_threshold=0.75)
+    assert len(rows) == 1
+    assert rows[0]["ghi"] == 720.0
+
+
+async def test_kt_gate_skips_low_sun_and_zero_ghi(store):
+    """Horizon-grazing slots and ghi=0 are excluded regardless of Kt arithmetic."""
+    await store.async_insert_record(_record(JUNE1, zenith=88.0, ghi=300.0))  # sun too low
+    await store.async_insert_record(_record(JUNE1 + 1800, zenith=35.0, ghi=0.0))  # no ghi
+    rows = await store.async_get_records_for_tuning(kt_threshold=0.75)
+    assert rows == []
+
+
+@pytest.mark.skipif(not REFERENCE_DB.exists(), reason="reference DB fixture missing")
+async def test_kt_gate_recovers_clearsky_on_reference_db(hass):
+    """On real winter HA data the OWM total-cloud gate finds zero clear-sky rows,
+    while the Kt gate recovers a usable set — the regression that motivated it."""
+    store = SqliteStore(hass, str(REFERENCE_DB), readonly=True)
+    assert await store.async_connect() is True
+    try:
+        cloud_rows = await store.async_get_records_for_tuning(
+            site="_total", cloud_max=20
+        )
+        kt_rows = await store.async_get_records_for_tuning(
+            site="_total", kt_threshold=0.75
+        )
+    finally:
+        await store.async_close()
+
+    # OWM total cloud rejects every half-hour in this cloudy-winter window.
+    assert len(cloud_rows) == 0
+    # The clearness gate recovers the genuinely clear slots (18 at Kt>=0.75).
+    assert len(kt_rows) == 18
+    assert all(r["ghi"] > 0 for r in kt_rows)

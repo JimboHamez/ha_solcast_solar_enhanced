@@ -55,6 +55,7 @@
           "dampening_gate": "Dämpfung sperren, bis die Abstimmung mit der Solcast-Ausrichtung übereinstimmt",
           "cloud_threshold": "Wolkenschwelle (%)",
           "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
+          "kt_threshold": "Schwellenwert Klarheitsindex (klarer Himmel)",
           "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
         }
@@ -133,6 +134,7 @@
           "dampening_gate": "Dämpfung sperren, bis die Abstimmung mit der Solcast-Ausrichtung übereinstimmt",
           "cloud_threshold": "Wolkenschwelle (%)",
           "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
+          "kt_threshold": "Schwellenwert Klarheitsindex (klarer Himmel)",
           "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
         }

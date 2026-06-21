@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Clearness-index clear-sky gate for tuning (1.7.0b2).** When Open-Meteo
+  irradiance is enabled (the default), PV tuning now selects clear-sky half-hours
+  by a measured clearness index `Kt = GHI ÷ clear-sky GHI` (Haurwitz clear-sky,
+  pure Python — no scipy/pvlib) instead of OpenWeatherMap total cloud cover. Total
+  cloud % conflates non-attenuating high/mid cloud with thick low cloud and so
+  rejects genuinely clear slots — on real winter data the OWM gate selected *zero*
+  clear-sky records while the Kt gate recovered a usable set (validated by a
+  reference-DB regression test). New `kt_threshold` option (default 0.75); the OWM
+  cloud gate remains the fallback when Open-Meteo is off. Translations updated.
 - **Open-Meteo is now the default weather + irradiance source; OpenWeatherMap is
   optional/legacy (Phase 3).** Open-Meteo is keyless and on by default, so it now
   supplies cloud cover and temperature (in addition to the irradiance added in

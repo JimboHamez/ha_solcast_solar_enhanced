@@ -46,6 +46,10 @@ from .const import (
     CONF_LONGITUDE,
     CONF_ALBEDO,
     CONF_OPENMETEO_ENABLED,
+    CONF_KT_THRESHOLD,
+    DEFAULT_KT_THRESHOLD,
+    KT_ZENITH_MAX,
+    KT_GHI_CS_FLOOR,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_INPUT_MODE,
@@ -576,6 +580,31 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     # PV Tuning
     # ------------------------------------------------------------------
 
+    def _clearsky_gate_kwargs(self, opts: dict[str, Any]) -> dict[str, Any]:
+        """Clear-sky gate kwargs for ``async_get_records_for_tuning``.
+
+        Prefer the measured clearness index (Kt) when Open-Meteo irradiance is
+        enabled; otherwise fall back to the OWM total-cloud gate.
+        """
+        if opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED):
+            return {
+                "kt_threshold": float(opts.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)),
+                "kt_zenith_max": KT_ZENITH_MAX,
+                "kt_ghi_cs_floor": KT_GHI_CS_FLOOR,
+            }
+        return {"cloud_max": int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))}
+
+    def _tuning_cloud_threshold(self, opts: dict[str, Any]) -> int:
+        """Cloud threshold passed to ``run_tuning``'s internal cloud filter.
+
+        When the SQL Kt gate already selected clear-sky rows, the in-tuning cloud
+        re-filter is redundant and would wrongly drop them when OWM is absent (then
+        ``clouds`` is the 100% sentinel). A value above 100 disables it.
+        """
+        if opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED):
+            return 101
+        return int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
+
     async def _run_tuning(self, opts: dict[str, Any]) -> None:
         if not self._db:
             return
@@ -583,9 +612,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # double-counts the additive per-site rows. Pull the most recent *clear-sky*
         # rows (filter in SQL before the LIMIT) so tuning fits orientation-relevant
         # data spanning all seasons, not just a recent cloudy window.
-        cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         records = await self._db.async_get_records_for_tuning(
-            site=DEFAULT_SITE_ID, cloud_max=cloud_threshold
+            site=DEFAULT_SITE_ID, **self._clearsky_gate_kwargs(opts)
         )
         if not records:
             _LOGGER.debug("PV tuning skipped: no usable records yet")
@@ -600,7 +628,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             run_tuning,
             records,
             float(opts.get(CONF_CAPACITY_KW, 5.0)),
-            int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)),
+            self._tuning_cloud_threshold(opts),
             float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)),
             export_limit,
             # Azimuth is held fixed at the configured value (not tuned — it is
@@ -628,7 +656,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         site_ids = self._configured_site_ids(groups)
         if not self._db or not site_ids:
             return
-        cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
+        cloud_threshold = self._tuning_cloud_threshold(opts)
+        gate_kwargs = self._clearsky_gate_kwargs(opts)
         clipping_threshold = float(
             opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)
         )
@@ -636,7 +665,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         results: dict[str, dict[str, Any]] = {}
         for site_id in site_ids:
             records = await self._db.async_get_records_for_tuning(
-                site=site_id, cloud_max=cloud_threshold
+                site=site_id, **gate_kwargs
             )
             if not records:
                 continue
