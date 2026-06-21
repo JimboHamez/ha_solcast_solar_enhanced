@@ -35,11 +35,13 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.6.9
+## 🆕 What's new in v1.7.0
 
-A new **MPPT DC Voltage** diagnostic sensor lets you confirm that per-string DC telemetry capture (added in v1.6.8) is actually wired up and reading — it shows your highest string voltage with per-tracker detail in the attributes, and stays *unavailable* until you point it at per-string sensors.
+PV tuning is now driven by **real measured irradiance** instead of cloud-cover guesses. A keyless **Open-Meteo** feed (on by default, no API key) supplies GHI/DNI/DHI, and the tuner **transposes that irradiance to the panel plane** (Hay-Davies) to fit your **tilt** by minimising error against measured generation — replacing the old cosine-ratio method that just echoed your configured orientation back. Open-Meteo also now provides cloud/temperature when OpenWeatherMap isn't configured, so tuning and dampening work **out of the box with no API key** (OWM stays supported as optional/legacy).
 
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.6.9).
+Clear-sky half-hours are now selected by a measured **clearness index** (`Kt = GHI ÷ clear-sky GHI`, pure-Python Haurwitz model) rather than total cloud %, which over-rejects genuinely clear slots — on real winter data the old cloud gate found *zero* clear records while the Kt gate recovered a usable set. New `kt_threshold` option (default 0.75). Azimuth is now held at the configured value (it isn't reliably identifiable from this data). Run `tools/backfill_irradiance.py` to make existing history usable immediately.
+
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.7.0).
 
 ---
 

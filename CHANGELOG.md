@@ -5,10 +5,10 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-06-21
 
 ### Changed
-- **Clearness-index clear-sky gate for tuning (1.7.0b2).** When Open-Meteo
+- **Clearness-index clear-sky gate for tuning.** When Open-Meteo
   irradiance is enabled (the default), PV tuning now selects clear-sky half-hours
   by a measured clearness index `Kt = GHI ÷ clear-sky GHI` (Haurwitz clear-sky,
   pure Python — no scipy/pvlib) instead of OpenWeatherMap total cloud cover. Total
