@@ -694,7 +694,8 @@ class _TuningStore(_FakeStore):
         super().__init__()
         self._by_site = records_by_site
 
-    async def async_get_records_for_tuning(self, site, cloud_max):
+    async def async_get_records_for_tuning(self, site, **kwargs):
+        # Accepts either gate: cloud_max (OWM) or kt_threshold (clearness index).
         return self._by_site.get(site, [])
 
 

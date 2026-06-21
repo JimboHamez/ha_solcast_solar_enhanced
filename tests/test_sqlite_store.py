@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from custom_components.solcast_solar_enhanced.sqlite_store import SqliteStore
+
+# Reference database exported from a live Home Assistant install (Ormond, VIC,
+# winter). Trimmed to the property-wide '_total' rows (no site resource_ids) and
+# carries real ghi/zenith/clouds, so it exercises the clear-sky gates on genuine
+# data. See tools/clearness_gate.py for the standalone analysis it mirrors.
+REFERENCE_DB = Path(__file__).parent / "fixtures" / "reference_ha.db"
 
 
 def _record(epoch: int, site: str = "_total", **overrides):
@@ -80,6 +87,69 @@ async def test_insert_dc_telemetry_defaults_to_zero(store):
     assert rows == [{
         "dc_voltage1": 0.0, "dc_current1": 0.0, "dc_voltage2": 0.0, "dc_current2": 0.0,
     }]
+
+
+_IRR_COLS = "ghi, dni, dhi"
+
+
+async def test_insert_and_read_irradiance(store):
+    await store.async_insert_record(_record(JUNE1, ghi=712.0, dni=540.5, dhi=158.0))
+    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{"ghi": 712.0, "dni": 540.5, "dhi": 158.0}]
+
+
+async def test_insert_irradiance_defaults_to_zero(store):
+    # A record without irradiance fields stores 0 via NOT NULL DEFAULT (no crash).
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data", ())
+    assert rows == [{"ghi": 0.0, "dni": 0.0, "dhi": 0.0}]
+
+
+async def test_connect_adds_irradiance_columns_to_legacy_db(hass, tmp_path):
+    """A DB created before the irradiance columns (but with the DC columns) gets
+    ghi/dni/dhi ALTERed in, legacy rows backfilled to 0, new inserts round-trip."""
+    import sqlite3
+
+    path = str(tmp_path / "pre_irr.db")
+    sql = """
+        CREATE TABLE solcast_data (
+          "index" INTEGER PRIMARY KEY AUTOINCREMENT,
+          period_end TEXT NOT NULL, period_end_epoch INTEGER NOT NULL,
+          period_start TEXT NOT NULL, site TEXT NOT NULL DEFAULT '_total',
+          pv_actual REAL NOT NULL, pv_export REAL NOT NULL DEFAULT 0,
+          pv_estimate REAL NOT NULL, pv_estimate10 REAL NOT NULL,
+          pv_estimate90 REAL NOT NULL, azimuth REAL NOT NULL, zenith REAL NOT NULL,
+          temp REAL NOT NULL, clouds INTEGER NOT NULL, description TEXT NOT NULL,
+          battery_charge REAL NOT NULL DEFAULT 0,
+          dc_voltage1 REAL NOT NULL DEFAULT 0, dc_current1 REAL NOT NULL DEFAULT 0,
+          dc_voltage2 REAL NOT NULL DEFAULT 0, dc_current2 REAL NOT NULL DEFAULT 0,
+          UNIQUE(period_end_epoch, site)
+        );
+    """
+    con = sqlite3.connect(path)
+    con.executescript(sql)
+    con.execute(
+        'INSERT INTO solcast_data (period_end, period_end_epoch, period_start, site,'
+        " pv_actual, pv_estimate, pv_estimate10, pv_estimate90, azimuth, zenith,"
+        " temp, clouds, description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("x", JUNE1, "y", "_total", 3.0, 4.0, 3.0, 5.0, 180.0, 35.0, 20.0, 10, "clear"),
+    )
+    con.commit()
+    con.close()
+
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    # Columns present; legacy row backfilled to 0.
+    assert s._query(f"SELECT {_IRR_COLS} FROM solcast_data", ()) == [
+        {"ghi": 0.0, "dni": 0.0, "dhi": 0.0}
+    ]
+    # A new irradiance-bearing insert round-trips.
+    await s.async_insert_record(_record(JUNE1 + 1800, ghi=500.0, dni=300.0, dhi=120.0))
+    assert s._query(
+        f"SELECT {_IRR_COLS} FROM solcast_data WHERE period_end_epoch = ?",
+        (JUNE1 + 1800,),
+    ) == [{"ghi": 500.0, "dni": 300.0, "dhi": 120.0}]
+    await s.async_close()
 
 
 async def test_connect_adds_dc_columns_to_legacy_db(hass, tmp_path):
@@ -246,10 +316,11 @@ async def test_tuning_orders_desc_and_limits(store):
         await store.async_insert_record(_record(JUNE1 + i * 1800))
     rows = await store.async_get_records_for_tuning(limit=3)
     assert len(rows) == 3
-    # Returned newest-first; tuning rows expose the consumed columns only.
+    # Returned newest-first; tuning rows expose the consumed columns, now including
+    # the irradiance components + epoch for transposition-based tuning.
     assert set(rows[0]) == {
-        "pv_actual", "pv_export", "pv_estimate",
-        "azimuth", "zenith", "clouds", "battery_charge",
+        "period_end_epoch", "pv_actual", "pv_export", "pv_estimate",
+        "azimuth", "zenith", "clouds", "ghi", "dni", "dhi", "battery_charge",
     }
 
 
@@ -392,3 +463,52 @@ async def test_tuning_query_no_cloud_max_keeps_all_weather(store):
     await store.async_insert_record(_record(JUNE1 + 1800, clouds=95))
     rows = await store.async_get_records_for_tuning()
     assert len(rows) == 2
+
+
+# ---------------------------------------------------------------------------
+# Clearness-index (Kt) clear-sky gate
+# ---------------------------------------------------------------------------
+
+
+async def test_kt_gate_filters_synthetic_rows(store):
+    """Kt gate keeps a bright slot and rejects a dim one at the same sun angle."""
+    # Zenith 35° → clear-sky GHI ≈ 770 W/m². ghi=720 → Kt≈0.93 (clear);
+    # ghi=200 → Kt≈0.26 (cloudy). clouds is identical so only Kt decides.
+    await store.async_insert_record(_record(JUNE1, zenith=35.0, ghi=720.0, clouds=50))
+    await store.async_insert_record(
+        _record(JUNE1 + 1800, zenith=35.0, ghi=200.0, clouds=50)
+    )
+    rows = await store.async_get_records_for_tuning(kt_threshold=0.75)
+    assert len(rows) == 1
+    assert rows[0]["ghi"] == 720.0
+
+
+async def test_kt_gate_skips_low_sun_and_zero_ghi(store):
+    """Horizon-grazing slots and ghi=0 are excluded regardless of Kt arithmetic."""
+    await store.async_insert_record(_record(JUNE1, zenith=88.0, ghi=300.0))  # sun too low
+    await store.async_insert_record(_record(JUNE1 + 1800, zenith=35.0, ghi=0.0))  # no ghi
+    rows = await store.async_get_records_for_tuning(kt_threshold=0.75)
+    assert rows == []
+
+
+@pytest.mark.skipif(not REFERENCE_DB.exists(), reason="reference DB fixture missing")
+async def test_kt_gate_recovers_clearsky_on_reference_db(hass):
+    """On real winter HA data the OWM total-cloud gate finds zero clear-sky rows,
+    while the Kt gate recovers a usable set — the regression that motivated it."""
+    store = SqliteStore(hass, str(REFERENCE_DB), readonly=True)
+    assert await store.async_connect() is True
+    try:
+        cloud_rows = await store.async_get_records_for_tuning(
+            site="_total", cloud_max=20
+        )
+        kt_rows = await store.async_get_records_for_tuning(
+            site="_total", kt_threshold=0.75
+        )
+    finally:
+        await store.async_close()
+
+    # OWM total cloud rejects every half-hour in this cloudy-winter window.
+    assert len(cloud_rows) == 0
+    # The clearness gate recovers the genuinely clear slots (18 at Kt>=0.75).
+    assert len(kt_rows) == 18
+    assert all(r["ghi"] > 0 for r in kt_rows)

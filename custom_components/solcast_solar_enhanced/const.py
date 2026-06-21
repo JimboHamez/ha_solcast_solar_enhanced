@@ -43,6 +43,14 @@ DB_RETENTION_MIN_RECOMMENDED_DAYS = 400
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
 
+# Open-Meteo: keyless source of plane-of-array irradiance components (GHI/DNI/DHI)
+# for transposition-based PV tuning, plus cloud/temperature. Collection is purely
+# additive in this phase (stored alongside each row); it does not yet replace OWM
+# as the cloud source. Defaults on — no API key required.
+CONF_OPENMETEO_ENABLED = "openmeteo_enabled"
+# Ground albedo used by the transposition model (ground-reflected POA term).
+CONF_ALBEDO = "albedo"
+
 CONF_BATTERY_ENABLED = "battery_enabled"
 CONF_BATTERY_MODE = "battery_mode"
 CONF_BATTERY_NET_SENSOR = "battery_net_sensor"
@@ -65,6 +73,10 @@ CONF_AUTO_TUNING = "auto_tuning"
 CONF_AUTO_DAMPENING = "auto_dampening"
 CONF_CLOUD_THRESHOLD = "cloud_threshold"
 CONF_CLOUD_MAX_INCLUDE = "cloud_max_include"
+# Clearness-index clear-sky gate. When Open-Meteo irradiance is enabled, tuning
+# selects clear-sky half-hours by Kt = GHI / clear-sky GHI instead of OWM total
+# cloud cover, which over-rejects genuinely clear slots with harmless high/mid cloud.
+CONF_KT_THRESHOLD = "kt_threshold"
 CONF_CLIPPING_THRESHOLD = "clipping_threshold"
 CONF_EXPORT_LIMIT_KW = "export_limit_kw"
 CONF_DAMPENING_GATE = "dampening_gate"
@@ -78,10 +90,18 @@ DEFAULT_AZIMUTH = 0.0
 DEFAULT_DB_ENABLED = True
 # Built-in SQLite file, created in the HA config directory.
 DEFAULT_DB_FILENAME = "solcast_solar_enhanced.db"
+DEFAULT_OPENMETEO_ENABLED = True
+DEFAULT_ALBEDO = 0.2
 DEFAULT_AUTO_TUNING = True
 DEFAULT_AUTO_DAMPENING = True
 DEFAULT_CLOUD_THRESHOLD = 20
 DEFAULT_CLOUD_MAX_INCLUDE = 60
+# Clearness index above which a daylight slot counts as clear-sky for tuning.
+DEFAULT_KT_THRESHOLD = 0.75
+# Kt is only judged when the sun is above this band (below it the clear-sky GHI
+# reference is too small to divide by) and the clear-sky GHI exceeds the floor.
+KT_ZENITH_MAX = 85.0
+KT_GHI_CS_FLOOR = 40.0
 DEFAULT_CLIPPING_THRESHOLD = 0.95
 DEFAULT_EXPORT_LIMIT_KW = 0.0
 DEFAULT_DAMPENING_GATE = True
@@ -119,6 +139,12 @@ DAMPENING_INTERVAL_HOURS = 6
 TUNING_INTERVAL_HOURS = 24
 STORAGE_VERSION = 1
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
+# Open-Meteo endpoints (keyless). The forecast API serves recent/current data at
+# 15-minute resolution (used for live half-hour collection); the archive API
+# serves historical hourly reanalysis (used by the one-pass backfill tool, which
+# tolerates its ~5-day finalisation lag).
+OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPENMETEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 # Repair-issue id raised when cloud-driven features (tuning/dampening) are enabled
 # but no OpenWeatherMap source is configured. Translation lives under `issues`.
