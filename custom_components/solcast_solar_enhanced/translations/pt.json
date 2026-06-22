@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} locais Solcast detetados — esta página de mapeamento por conjunto aparece em sistemas com vários conjuntos. Para cada conjunto, escolha o respetivo sensor de geração; vem pré-preenchido com o sensor de geração FV de todo o sistema, o que é correto quando um inversor alimenta vários conjuntos (caso contrário, escolha o sensor próprio do conjunto). Se vários conjuntos partilharem uma saída CA do inversor, indique também o sensor de potência CC/MPPT de cada um para repartir a produção pela quota CC. Introduza aqui também a tensão/corrente MPPT de cada conjunto — em sistemas com vários conjuntos estes campos estão aqui, não na página do sistema. Deixe um local em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
+        "description": "{count} locais Solcast detetados — esta página de mapeamento por conjunto aparece em sistemas com vários conjuntos. Para cada conjunto, escolha o respetivo sensor de geração (pré-preenchido com o sensor de geração FV de todo o sistema). Se cada conjunto for medido de forma independente — microinversores (p. ex. Enphase) ou um inversor por conjunto —, atribua o seu próprio sensor CA e deixe o CC em branco. Se vários conjuntos partilharem uma saída CA do inversor, indique antes o sensor de potência CC/MPPT de cada um para repartir a produção pela quota CC. Introduza aqui também a tensão/corrente MPPT de cada conjunto — em sistemas com vários conjuntos estes campos estão aqui, não na página do sistema. Deixe um local em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
       },
       "weather": {
         "title": "Weather & Irradiance",

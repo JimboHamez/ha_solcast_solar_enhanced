@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast — táto stránka priradenia pre jednotlivé polia sa zobrazuje pri systémoch s viacerými poľami. Pre každé pole vyberte jeho senzor výroby; je predvyplnený celosystémovým senzorom výroby PV, čo je správne, keď jeden menič napája viacero polí (inak vyberte vlastný senzor poľa). Ak viacero polí zdieľa jeden AC výstup meniča, zadajte aj senzor DC/MPPT výkonu pre každé z nich, aby sa výroba rozdelila podľa podielu DC. Sem zadajte aj napätie/prúd MPPT každého poľa — pri systémoch s viacerými poľami sú tieto polia tu, nie na systémovej stránke. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ je zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast — táto stránka priradenia pre jednotlivé polia sa zobrazuje pri systémoch s viacerými poľami. Pre každé pole vyberte jeho senzor výroby (predvyplnený celosystémovým senzorom výroby PV). Ak sa každé pole meria samostatne — mikromeniče (napr. Enphase) alebo jeden menič na pole —, priraďte jeho vlastný AC senzor a DC nechajte prázdne. Ak viacero polí zdieľa jeden AC výstup meniča, namiesto toho zadajte pre každé senzor DC/MPPT výkonu, aby sa výroba rozdelila podľa podielu DC. Sem zadajte aj napätie/prúd MPPT každého poľa — pri systémoch s viacerými poľami sú tieto polia tu, nie na systémovej stránke. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ je zvyčajne Automatická detekcia."
       },
       "weather": {
         "title": "Weather & Irradiance",

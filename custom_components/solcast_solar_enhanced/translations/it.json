@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "Rilevati {count} siti Solcast — questa pagina di mappatura per stringa compare nei sistemi con più stringhe. Per ogni stringa, scegli il suo sensore di produzione; è precompilato con il sensore di produzione FV dell'intero impianto, corretto quando un inverter alimenta più stringhe (altrimenti scegli il sensore proprio della stringa). Se più stringhe condividono un'uscita CA dell'inverter, indica anche per ciascuna il sensore di potenza CC/MPPT per ripartire la produzione in base alla quota CC. Inserisci qui anche tensione/corrente MPPT di ogni stringa: nei sistemi con più stringhe questi campi sono qui, non nella pagina di sistema. Lascia un sito vuoto per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
+        "description": "Rilevati {count} siti Solcast — questa pagina di mappatura per stringa compare nei sistemi con più stringhe. Per ogni stringa, scegli il suo sensore di produzione (precompilato con il sensore di produzione FV dell'intero impianto). Se ogni stringa è misurata in modo indipendente — microinverter (es. Enphase) o un inverter per stringa —, assegna il suo sensore CA e lascia vuoto il CC. Se più stringhe condividono un'uscita CA dell'inverter, indica invece per ciascuna il sensore di potenza CC/MPPT per ripartire la produzione in base alla quota CC. Inserisci qui anche tensione/corrente MPPT di ogni stringa: nei sistemi con più stringhe questi campi sono qui, non nella pagina di sistema. Lascia un sito vuoto per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
       },
       "weather": {
         "title": "Weather & Irradiance",

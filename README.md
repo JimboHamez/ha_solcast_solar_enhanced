@@ -203,7 +203,10 @@ Full detail — the confidence model, the weighting maths, convergence timelines
 
 When the base integration has more than one rooftop array, each is stored, tuned and dampened separately (keyed by its Solcast `resource_id`) alongside the property-wide aggregate. Single-site behaviour is unchanged.
 
-If several arrays share one AC sensor, the integration splits the measured AC between them using each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Arrays sharing one AC sensor with no DC sensors can't be separated and are left unmapped.
+There are two ways each array gets its own generation figure:
+
+- **Dedicated AC per array (simplest).** If every array is independently metered — microinverters (e.g. Enphase) or one string inverter per array — map each site's own AC/generation sensor and leave its DC field blank. Each site reports its own AC directly; no apportionment needed.
+- **Shared inverter AC.** If several arrays share one AC sensor (a single multi-string inverter, e.g. Fronius), give each array its per-string DC sensor and the integration splits the measured AC between them by each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Arrays sharing one AC sensor with no DC sensors can't be separated and are left unmapped.
 
 ---
 

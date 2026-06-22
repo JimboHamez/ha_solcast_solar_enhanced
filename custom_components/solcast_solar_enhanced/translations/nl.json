@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd — deze toewijzingspagina per veld verschijnt bij systemen met meerdere velden. Kies voor elk veld de opwekkingssensor; deze is vooraf ingevuld met uw systeembrede PV-opwekkingssensor, wat juist is als één omvormer meerdere velden voedt (kies anders de eigen sensor van het veld). Als meerdere velden één AC-uitgang van een omvormer delen, geef dan ook per veld de DC/MPPT-vermogenssensor op zodat de opwek naar DC-aandeel wordt verdeeld. Vul hier ook de MPPT-spanning/stroom per veld in — bij systemen met meerdere velden staan deze hier en niet op de systeempagina. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd — deze toewijzingspagina per veld verschijnt bij systemen met meerdere velden. Kies voor elk veld de opwekkingssensor (vooraf ingevuld met uw systeembrede PV-opwekkingssensor). Als elk veld afzonderlijk wordt gemeten — micro-omvormers (bijv. Enphase) of één omvormer per veld — wijs dan de eigen AC-sensor toe en laat DC leeg. Als meerdere velden één AC-uitgang van een omvormer delen, geef dan in plaats daarvan per veld de DC/MPPT-vermogenssensor op zodat de opwek naar DC-aandeel wordt verdeeld. Vul hier ook de MPPT-spanning/stroom per veld in — bij systemen met meerdere velden staan deze hier en niet op de systeempagina. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
       },
       "weather": {
         "title": "Weather & Irradiance",
