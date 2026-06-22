@@ -34,13 +34,13 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.7.0
+## 🆕 What's new in v1.8.0
 
-PV tuning is now driven by **real measured irradiance** instead of cloud-cover guesses. A keyless **Open-Meteo** feed (on by default, no API key) supplies GHI/DNI/DHI, and the tuner **transposes that irradiance to the panel plane** (Hay-Davies) to fit your **tilt** by minimising error against measured generation — replacing the old cosine-ratio method that just echoed your configured orientation back. Open-Meteo also now provides cloud/temperature when OpenWeatherMap isn't configured, so tuning and dampening work **out of the box with no API key** (OWM stays supported as optional/legacy).
+The setup wizard no longer asks for the same sensor twice. Sensor-mapping fields are now placed **by topology** — single-array systems enter their MPPT voltage/current on the **Site & System** step, while multi-array systems map MPPT trackers **per array** on the per-site step (and the Site & System step hides those fields). The per-array **generation sensor** is pre-filled with your system-wide PV generation sensor, so a single inverter feeding several arrays is a one-click confirm rather than a re-type.
 
-Clear-sky half-hours are now selected by a measured **clearness index** (`Kt = GHI ÷ clear-sky GHI`, pure-Python Haurwitz model) rather than total cloud %, which over-rejects genuinely clear slots — on real winter data the old cloud gate found *zero* clear records while the Kt gate recovered a usable set. New `kt_threshold` option (default 0.75). Azimuth is now held at the configured value (it isn't reliably identifiable from this data). Run `tools/backfill_irradiance.py` to make existing history usable immediately.
+**Upgrading a multi-site setup?** Any MPPT entities you previously entered on the Site & System step are now suggested on your first two arrays for you to confirm, and the old per-inverter fields are retired once you save. Single-array setups need no changes. The "MPPT DC Voltage (max)" diagnostic now also reflects per-array trackers, so it stays populated on multi-site systems.
 
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.7.0).
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.8.0).
 
 ---
 
