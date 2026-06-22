@@ -20,11 +20,11 @@
           "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)"
         },
         "data_description": {
-          "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
+          "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor. Súčet celého systému — systémy s viacerými poľami priraďujú každé pole aj na nasledujúcej stránke pre jednotlivé lokality.",
           "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
           "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
-          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny."
+          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny. Zobrazuje sa len pre systémy s jedným poľom — pri viacerých poliach sa napätie/prúd každého poľa nastavuje v kroku pre jednotlivé lokality."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast — táto stránka priradenia pre jednotlivé polia sa zobrazuje pri systémoch s viacerými poľami. Pre každé pole vyberte jeho senzor výroby; je predvyplnený celosystémovým senzorom výroby PV, čo je správne, keď jeden menič napája viacero polí (inak vyberte vlastný senzor poľa). Ak viacero polí zdieľa jeden AC výstup meniča, zadajte aj senzor DC/MPPT výkonu pre každé z nich, aby sa výroba rozdelila podľa podielu DC. Sem zadajte aj napätie/prúd MPPT každého poľa — pri systémoch s viacerými poľami sú tieto polia tu, nie na systémovej stránke. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ je zvyčajne Automatická detekcia."
       },
       "weather": {
         "title": "Weather & Irradiance",

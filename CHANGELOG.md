@@ -5,6 +5,34 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Setup wizard places sensor fields by topology — no more duplicate entry.**
+  The per-inverter **MPPT voltage/current** fields now appear on Step 1 (Site &
+  System) only for single-array systems; multi-array systems map MPPT trackers
+  per array in the per-site step instead, and Step 1 hides them. Site discovery
+  runs at Step 1 so the wizard knows the topology before rendering. The per-site
+  **generation sensor** is now pre-filled with the system-wide PV generation
+  sensor (correct for a single inverter feeding several arrays — just confirm it;
+  pick the array's own sensor when separately metered). Help text and all
+  translations updated to match.
+- **Clarified the per-site mapping and MPPT help text (config + all
+  translations).** Each field now explains its scope and when it is needed, so the
+  relationship between the system-wide sensors and the per-array mapping is
+  unambiguous.
+- **Upgrade note — existing multi-site installs: flat MPPT entities move to
+  per-array.** If you previously entered MPPT voltage/current on Step 1, those
+  entities are now suggested on the first two arrays in the per-site step for you
+  to confirm, and the old per-inverter fields are cleared once the step is saved.
+  No action is needed for single-array systems.
+
+### Fixed
+- **MPPT diagnostic stays populated on multi-site systems.** The "MPPT DC Voltage
+  (max)" diagnostic now spans the property-wide *and* per-site trackers, so it
+  reports a real value for multi-array setups (which no longer use the flat
+  per-inverter MPPT fields) instead of reading zero.
+
 ## [1.7.0] - 2026-06-21
 
 ### Changed

@@ -22,17 +22,23 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_DB_ENABLED,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
     CONF_OWM_API_KEY,
     CONF_OPENMETEO_ENABLED,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_SENSOR,
     CONF_PV_EXPORT_SENSOR,
+    CONF_SITE_GROUPS,
     CONF_TILT,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
     DOMAIN,
 )
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.fixture(autouse=True)
@@ -173,3 +179,147 @@ async def test_options_flow_completes(hass, mock_config_entry):
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_CLOUD_THRESHOLD] == 25
+
+
+# ---------------------------------------------------------------------------
+# Plan B — topology-based field placement (single- vs multi-array)
+# ---------------------------------------------------------------------------
+
+_MPPT_KEYS = (
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+)
+
+
+def _set_two_sites(hass) -> None:
+    """Auto-discoverable multi-site setup (two base RooftopSensors)."""
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_a", "1.0", {"resource_id": "AAAA", "name": "Array A"}
+    )
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_b", "1.0", {"resource_id": "BBBB", "name": "Array B"}
+    )
+
+
+def _markers(result):
+    return list(result["data_schema"].schema)
+
+
+def _schema_keys(result) -> set[str]:
+    out = set()
+    for m in _markers(result):
+        out.add(str(m.schema if hasattr(m, "schema") else m))
+    return out
+
+
+def _suggested_for_suffix(result, suffix: str) -> list:
+    """Suggested values of every per-site field whose label ends with ``suffix``."""
+    vals = []
+    for m in _markers(result):
+        name = str(m.schema if hasattr(m, "schema") else m)
+        if name.endswith(suffix):
+            vals.append((getattr(m, "description", None) or {}).get("suggested_value"))
+    return vals
+
+
+async def test_site_step_single_site_includes_mppt(hass):
+    """With ≤1 discovered site, the flat MPPT fields appear on Step 1."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    keys = _schema_keys(result)
+    for k in _MPPT_KEYS:
+        assert k in keys
+
+
+async def test_site_step_multi_site_hides_mppt(hass):
+    """With >1 discovered site, the flat MPPT fields are omitted from Step 1
+    (they belong per-array in the sites step)."""
+    _set_two_sites(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    keys = _schema_keys(result)
+    for k in _MPPT_KEYS:
+        assert k not in keys
+    # other Step 1 fields still present
+    assert CONF_PV_ACTUAL_SENSOR in keys
+
+
+async def _advance_to_sites(hass):
+    """Walk the config flow (multi-site) up to the per-site step."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY, STEP_TUNING):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], step_data
+        )
+    return result
+
+
+async def test_multi_site_flow_shows_sites_step(hass):
+    """Multi-site systems reach the per-site mapping step after tuning."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+
+
+async def test_sites_step_prefills_generation_from_system_sensor(hass):
+    """D2a — each per-array generation field is pre-filled with the system-wide
+    PV generation sensor entered on Step 1."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    suggested = _suggested_for_suffix(result, "— generation sensor")
+    assert len(suggested) == 2
+    assert all(v == STEP_SITE[CONF_PV_ACTUAL_SENSOR] for v in suggested)
+
+
+async def test_options_migrates_flat_mppt_to_per_site(hass):
+    """D1a — an existing multi-site entry carrying flat MPPT keys surfaces them as
+    per-array suggestions, and clears the flat keys once the sites step is saved."""
+    _set_two_sites(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            **STEP_SITE,
+            CONF_MPPT1_VOLTAGE_SENSOR: "sensor.mppt1_v",
+            CONF_MPPT1_CURRENT_SENSOR: "sensor.mppt1_i",
+            CONF_MPPT2_VOLTAGE_SENSOR: "sensor.mppt2_v",
+            CONF_MPPT2_CURRENT_SENSOR: "sensor.mppt2_i",
+        },
+        options={},
+        entry_id="test_migrate",
+        title="Solcast Solar Enhanced",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY, STEP_TUNING):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], step_data
+        )
+    assert result["step_id"] == "sites"
+
+    # flat MPPT voltages are suggested on the two arrays' MPPT 1 voltage fields
+    v1_suggestions = set(_suggested_for_suffix(result, "— MPPT 1 voltage (optional)"))
+    assert v1_suggestions == {"sensor.mppt1_v", "sensor.mppt2_v"}
+
+    # Build a valid per-site submission: give each array its own AC sensor.
+    field_keys = _schema_keys(result)
+    submission = {}
+    for k in field_keys:
+        if k.endswith("— generation sensor"):
+            submission[k] = "sensor.ac_a" if "Array A" in k else "sensor.ac_b"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], submission
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    data = result["data"]
+    assert data[CONF_SITE_GROUPS]  # groups derived
+    for k in _MPPT_KEYS:
+        assert data[k] is None  # flat keys retired

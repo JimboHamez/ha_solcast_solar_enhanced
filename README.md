@@ -132,7 +132,7 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | PV Export sensor | Export energy counter (recommended) or a rolling helper |
 | PV Export sensor type | As above, for export |
 | Battery Charge sensor | Battery charge sensor (optional) |
-| MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters |
+| MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
 
 ### Step 2 — Storage
 
@@ -178,7 +178,14 @@ A fallback for systems without a battery sensor mapped in Step 1.
 
 ### Step 6 — Per-site sensor mapping (multi-site only)
 
-Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors. See [Multi-site](#multi-site) for how shared inverters are split between arrays.
+Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors.
+
+This page appears only for multi-array systems — a single-array system relies on the system-wide sensors from Step 1 and never sees it. Each field lives in exactly one place by topology, so nothing is entered twice:
+
+- The per-site **generation sensor** is pre-filled with Step 1's system-wide PV Generation sensor. That's correct when one inverter feeds several arrays (a shared meter) — just confirm it; pick the array's own sensor only when arrays are separately metered.
+- The per-site **MPPT voltage/current** fields are the per-array home for MPPT trackers. For multi-array systems they live *here only* — Step 1 hides its MPPT fields. If you're upgrading from an older version that had MPPT entities on Step 1, they're suggested on the first two arrays here for you to confirm (and cleared from Step 1 on save).
+
+See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 
 > **Heads up:** the base integration's own **automatic dampening** must be **disabled** (Solcast PV Forecast → Configure). While it's on, the base rejects manual dampening, so this integration can't apply its factors — it detects this, skips the push, and logs a warning.
 
