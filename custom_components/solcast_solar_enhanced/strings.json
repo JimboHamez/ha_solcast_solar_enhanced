@@ -20,11 +20,11 @@
           "pv_export_input_mode": "PV Export sensor type"
         },
         "data_description": {
-          "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
+          "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor. Whole-system total — multi-array systems also map each array on the per-site page that follows.",
           "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
           "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
-          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank."
+          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank. Shown only for single-array systems — multi-array systems map each array's MPPT voltage/current in the per-site step instead."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Per-site sensor mapping",
-        "description": "{count} Solcast sites detected. For each array, choose the sensor that measures its generation. If several arrays share one inverter AC output, give each its DC/MPPT sensor too so output can be apportioned. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
+        "description": "{count} Solcast sites detected — this per-array mapping page appears for multi-array systems. For each array, choose its generation sensor; it is pre-filled with your system-wide PV generation sensor, which is correct when one inverter feeds several arrays (otherwise pick the array's own sensor). If several arrays share one inverter AC output, also give each its DC/MPPT power sensor so output is split by DC share. Enter each array's MPPT voltage/current here too — for multi-array systems these live here, not on the system page. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
       },
       "weather": {
         "title": "Weather & Irradiance",

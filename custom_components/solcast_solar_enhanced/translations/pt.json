@@ -20,11 +20,11 @@
           "mppt2_current_sensor": "Sensor de corrente CC do MPPT 2 (opcional)"
         },
         "data_description": {
-          "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
+          "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto. Total de todo o sistema — sistemas com vários conjuntos também mapeiam cada conjunto na página por local que se segue.",
           "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
           "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
           "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado.",
-          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco."
+          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco. Apresentado apenas em sistemas de um único conjunto — em sistemas com vários conjuntos, a tensão/corrente de cada conjunto define-se no passo por local."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} locais Solcast detetados. Para cada conjunto, escolha o sensor que mede a sua geração. Se vários conjuntos partilharem uma saída CA do inversor, atribua a cada um também o respetivo sensor CC/MPPT para que a produção possa ser repartida. Deixe um local em branco para o ignorar. 'Tipo de sensor' é geralmente Detecção automática."
+        "description": "{count} locais Solcast detetados — esta página de mapeamento por conjunto aparece em sistemas com vários conjuntos. Para cada conjunto, escolha o respetivo sensor de geração; vem pré-preenchido com o sensor de geração FV de todo o sistema, o que é correto quando um inversor alimenta vários conjuntos (caso contrário, escolha o sensor próprio do conjunto). Se vários conjuntos partilharem uma saída CA do inversor, indique também o sensor de potência CC/MPPT de cada um para repartir a produção pela quota CC. Introduza aqui também a tensão/corrente MPPT de cada conjunto — em sistemas com vários conjuntos estes campos estão aqui, não na página do sistema. Deixe um local em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
       },
       "weather": {
         "title": "Weather & Irradiance",

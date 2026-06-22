@@ -20,11 +20,11 @@
           "mppt2_current_sensor": "Czujnik prądu DC MPPT 2 (opcjonalnie)"
         },
         "data_description": {
-          "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego.",
+          "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego. Suma całego systemu — systemy z wieloma łańcuchami przypisują też każdy łańcuch na następnej stronie dla poszczególnych lokalizacji.",
           "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
           "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
           "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii.",
-          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym."
+          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym. Wyświetlane tylko dla systemów z jednym łańcuchem — przy wielu łańcuchach napięcie/prąd każdego łańcucha ustawia się w kroku dla poszczególnych lokalizacji."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję. Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, podaj każdemu również jego czujnik DC/MPPT, aby można było rozdzielić produkcję. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+        "description": "Wykryto {count} lokalizacji Solcast — ta strona przypisania dla poszczególnych łańcuchów pojawia się w systemach z wieloma łańcuchami. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję; jest on wstępnie wypełniony ogólnosystemowym czujnikiem produkcji PV, co jest poprawne, gdy jeden falownik zasila kilka łańcuchów (w przeciwnym razie wybierz własny czujnik łańcucha). Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, podaj też dla każdego czujnik mocy DC/MPPT, aby rozdzielić produkcję według udziału DC. Wpisz tutaj również napięcie/prąd MPPT każdego łańcucha — w systemach z wieloma łańcuchami pola te znajdują się tutaj, a nie na stronie systemu. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
       },
       "weather": {
         "title": "Weather & Irradiance",

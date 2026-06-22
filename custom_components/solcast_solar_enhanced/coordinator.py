@@ -1246,9 +1246,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "mppt1_voltage": t[0], "mppt1_current": t[1],
                 "mppt2_voltage": t[2], "mppt2_current": t[3],
             }
+        # max_voltage spans the property-wide trackers AND every per-site tracker,
+        # so the diagnostic stays meaningful for multi-site systems (where the flat
+        # property-wide MPPT fields are unset — each array maps its own trackers).
+        voltages = [total[0], total[2]]
+        for t in sites.values():
+            voltages += [t[0], t[2]]
         return {
             **_pairs(total),
-            "max_voltage": max(total[0], total[2]),
+            "max_voltage": max(voltages),
             "sites": {s: _pairs(t) for s, t in sites.items()},
         }
 

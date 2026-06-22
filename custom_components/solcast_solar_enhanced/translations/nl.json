@@ -20,11 +20,11 @@
           "mppt2_current_sensor": "MPPT 2 DC-stroomsensor (optioneel)"
         },
         "data_description": {
-          "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor.",
+          "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor. Totaal van het hele systeem — systemen met meerdere velden wijzen elk veld ook toe op de volgende pagina per locatie.",
           "pv_export_sensor": "Bij voorkeur een cumulatieve teruglever-energiemeter (Wh/kWh); anders een voortschrijdende mean_linear-helper (kW).",
           "pv_actual_input_mode": "Automatische detectie kiest op basis van de eenheid tussen energiemeter en gemiddeld vermogen (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische detectie op basis van de eenheid. Energiemeter aanbevolen.",
-          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg."
+          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg. Alleen getoond voor systemen met één veld — bij meerdere velden stelt u spanning/stroom per veld in de stap per locatie in."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies voor elk veld de sensor die de opwekking ervan meet. Als meerdere velden één AC-uitgang van een omvormer delen, geef elk ook zijn DC/MPPT-sensor zodat de opbrengst kan worden verdeeld. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd — deze toewijzingspagina per veld verschijnt bij systemen met meerdere velden. Kies voor elk veld de opwekkingssensor; deze is vooraf ingevuld met uw systeembrede PV-opwekkingssensor, wat juist is als één omvormer meerdere velden voedt (kies anders de eigen sensor van het veld). Als meerdere velden één AC-uitgang van een omvormer delen, geef dan ook per veld de DC/MPPT-vermogenssensor op zodat de opwek naar DC-aandeel wordt verdeeld. Vul hier ook de MPPT-spanning/stroom per veld in — bij systemen met meerdere velden staan deze hier en niet op de systeempagina. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
       },
       "weather": {
         "title": "Weather & Irradiance",

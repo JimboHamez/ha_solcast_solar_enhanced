@@ -100,6 +100,52 @@ def _input_mode_selector() -> Any:
     )
 
 
+# Flat per-inverter MPPT keys — entered on Step 1 for single-array systems only.
+_FLAT_MPPT_KEYS = (
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+)
+
+
+def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
+    """Step 1 (Site & System) schema, shared by the config and options flows.
+
+    ``d`` supplies current/suggested values (pass an empty dict for a fresh
+    install — every field then falls back to its default). The flat per-inverter
+    MPPT voltage/current fields are shown only for single-array systems; a
+    multi-array system maps MPPT trackers per array in the per-site step, so they
+    are omitted here to avoid duplicate entry.
+    """
+    fields: dict[Any, Any] = {
+        vol.Required(CONF_LATITUDE, default=d.get(CONF_LATITUDE, DEFAULT_LATITUDE)):
+            NumberSelector(NumberSelectorConfig(min=-90, max=90, step=0.001)),
+        vol.Required(CONF_LONGITUDE, default=d.get(CONF_LONGITUDE, DEFAULT_LONGITUDE)):
+            NumberSelector(NumberSelectorConfig(min=-180, max=180, step=0.001)),
+        vol.Required(CONF_CAPACITY_KW, default=d.get(CONF_CAPACITY_KW, DEFAULT_CAPACITY_KW)):
+            NumberSelector(NumberSelectorConfig(min=0.1, max=1000, step=0.1)),
+        vol.Required(CONF_TILT, default=d.get(CONF_TILT, DEFAULT_TILT)):
+            NumberSelector(NumberSelectorConfig(min=0, max=90, step=0.1)),
+        vol.Required(CONF_AZIMUTH, default=d.get(CONF_AZIMUTH, DEFAULT_AZIMUTH)):
+            NumberSelector(NumberSelectorConfig(min=-180, max=180, step=0.1)),
+        vol.Optional(CONF_PV_ACTUAL_SENSOR, description={"suggested_value": d.get(CONF_PV_ACTUAL_SENSOR)}):
+            _entity_selector(),
+        vol.Required(CONF_PV_ACTUAL_INPUT_MODE, default=d.get(CONF_PV_ACTUAL_INPUT_MODE, DEFAULT_PV_INPUT_MODE)):
+            _input_mode_selector(),
+        vol.Optional(CONF_PV_EXPORT_SENSOR, description={"suggested_value": d.get(CONF_PV_EXPORT_SENSOR)}):
+            _entity_selector(),
+        vol.Required(CONF_PV_EXPORT_INPUT_MODE, default=d.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)):
+            _input_mode_selector(),
+        vol.Optional(CONF_BATTERY_STAT_SENSOR, description={"suggested_value": d.get(CONF_BATTERY_STAT_SENSOR)}):
+            _entity_selector(),
+    }
+    if single_site:
+        for key in _FLAT_MPPT_KEYS:
+            fields[vol.Optional(key, description={"suggested_value": d.get(key)})] = _entity_selector()
+    return vol.Schema(fields)
+
+
 # --- Multi-site mapping helpers -------------------------------------------------
 # The UI collects, per discovered site, a generation sensor, an optional DC/MPPT
 # sensor and an input mode. ``CONF_SITE_GROUPS`` is then *derived* by grouping
@@ -185,14 +231,53 @@ def _derive_groups(assignments: dict[str, dict[str, Any]]) -> list[dict[str, Any
     return groups
 
 
+def _seed_flat_mppt(
+    discovered: list[dict[str, Any]],
+    assignments: dict[str, dict[str, Any]],
+    src: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """One-time migration: pre-fill the per-site MPPT trackers from the old flat
+    per-inverter keys (``src``), so a multi-site install that previously entered
+    MPPT 1/2 on Step 1 sees those entities suggested on the per-site page rather
+    than losing them. MPPT 1 → first discovered site, MPPT 2 → second — a
+    suggestion the user confirms (only they know which tracker feeds which array).
+    Skipped once any per-site tracker is already configured."""
+    if any(a.get("mppts") for a in assignments.values()):
+        return assignments
+    flat = [
+        {"voltage_sensor": src.get(CONF_MPPT1_VOLTAGE_SENSOR),
+         "current_sensor": src.get(CONF_MPPT1_CURRENT_SENSOR)},
+        {"voltage_sensor": src.get(CONF_MPPT2_VOLTAGE_SENSOR),
+         "current_sensor": src.get(CONF_MPPT2_CURRENT_SENSOR)},
+    ]
+    flat = [m for m in flat if m["voltage_sensor"]]
+    for site, m in zip([s["resource_id"] for s in discovered], flat):
+        a = assignments.setdefault(
+            site, {"ac": None, "dc": None, "mode": DEFAULT_PV_INPUT_MODE}
+        )
+        a["mppts"] = [m]
+    return assignments
+
+
+def _clear_flat_mppt(target: dict[str, Any]) -> None:
+    """Retire the flat per-inverter MPPT keys for a multi-site config (their
+    trackers now live per-site). Set to ``None`` rather than popped so the value
+    overrides any stale entry it shadows when merged."""
+    for key in _FLAT_MPPT_KEYS:
+        target[key] = None
+
+
 def _build_sites_schema(
     discovered: list[dict[str, Any]],
     assignments: dict[str, dict[str, Any]],
+    default_ac: str | None = None,
 ) -> tuple[vol.Schema, dict[str, dict[str, str]]]:
     """Build a per-site mapping form. Returns (schema, {rid: {ac,dc,mode field keys}}).
 
     Field keys embed the readable site name so HA renders them as labels without
-    needing per-site translations.
+    needing per-site translations. ``default_ac`` (the system-wide PV generation
+    sensor) seeds each site's generation field when it has no assignment yet, so a
+    shared-meter install confirms rather than re-types the same entity.
     """
     schema_dict: dict[Any, Any] = {}
     field_map: dict[str, dict[str, str]] = {}
@@ -220,7 +305,7 @@ def _build_sites_schema(
             "ac": k_ac, "dc": k_dc, "mode": k_mode,
             "v1": k_v1, "i1": k_i1, "v2": k_v2, "i2": k_i2,
         }
-        schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac")})] = _entity_selector()
+        schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac") or default_ac})] = _entity_selector()
         schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
         schema_dict[vol.Required(k_mode, default=a.get("mode", DEFAULT_PV_INPUT_MODE))] = _input_mode_selector()
         schema_dict[vol.Optional(k_v1, description={"suggested_value": m0.get("voltage_sensor")})] = _entity_selector()
@@ -261,6 +346,18 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._data: dict[str, Any] = {}
         self._discovered: list[dict[str, Any]] | None = None
 
+    def _is_single_site(self) -> bool:
+        """Whether the property has one (or no) auto-discovered Solcast site.
+
+        Drives field placement — single-array systems map MPPT trackers on Step 1
+        and skip the per-site step; multi-array systems do the reverse. Cached so
+        Step 1 and the per-site step agree within one flow."""
+        from .coordinator import discover_sites
+
+        if self._discovered is None:
+            self._discovered = discover_sites(self.hass)
+        return len(self._discovered) <= 1
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         return await self.async_step_site(user_input)
 
@@ -270,32 +367,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_database()
 
-        schema = vol.Schema({
-            vol.Required(CONF_LATITUDE, default=DEFAULT_LATITUDE): NumberSelector(
-                NumberSelectorConfig(min=-90, max=90, step=0.001)
-            ),
-            vol.Required(CONF_LONGITUDE, default=DEFAULT_LONGITUDE): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.001)
-            ),
-            vol.Required(CONF_CAPACITY_KW, default=DEFAULT_CAPACITY_KW): NumberSelector(
-                NumberSelectorConfig(min=0.1, max=1000, step=0.1)
-            ),
-            vol.Required(CONF_TILT, default=DEFAULT_TILT): NumberSelector(
-                NumberSelectorConfig(min=0, max=90, step=0.1)
-            ),
-            vol.Required(CONF_AZIMUTH, default=DEFAULT_AZIMUTH): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.1)
-            ),
-            vol.Optional(CONF_PV_ACTUAL_SENSOR): _entity_selector(),
-            vol.Required(CONF_PV_ACTUAL_INPUT_MODE, default=DEFAULT_PV_INPUT_MODE): _input_mode_selector(),
-            vol.Optional(CONF_PV_EXPORT_SENSOR): _entity_selector(),
-            vol.Required(CONF_PV_EXPORT_INPUT_MODE, default=DEFAULT_PV_INPUT_MODE): _input_mode_selector(),
-            vol.Optional(CONF_BATTERY_STAT_SENSOR): _entity_selector(),
-            vol.Optional(CONF_MPPT1_VOLTAGE_SENSOR): _entity_selector(),
-            vol.Optional(CONF_MPPT1_CURRENT_SENSOR): _entity_selector(),
-            vol.Optional(CONF_MPPT2_VOLTAGE_SENSOR): _entity_selector(),
-            vol.Optional(CONF_MPPT2_CURRENT_SENSOR): _entity_selector(),
-        })
+        schema = _build_site_schema({}, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
@@ -377,19 +449,19 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_sites(self, user_input: dict[str, Any] | None = None):
         """Step 6 — Per-site sensor mapping (multi-site). Skipped if ≤1 site."""
-        from .coordinator import discover_sites
-
-        if self._discovered is None:
-            self._discovered = discover_sites(self.hass)
-        discovered = self._discovered
-        if len(discovered) <= 1:
+        if self._is_single_site():
             return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
+        discovered = self._discovered or []
 
         existing = _groups_to_assignments(self._data.get(CONF_SITE_GROUPS))
-        schema, field_map = _build_sites_schema(discovered, existing)
+        existing = _seed_flat_mppt(discovered, existing, self._data)
+        schema, field_map = _build_sites_schema(
+            discovered, existing, default_ac=self._data.get(CONF_PV_ACTUAL_SENSOR)
+        )
         if user_input is not None:
             assignments = _parse_sites_input(user_input, field_map)
             self._data[CONF_SITE_GROUPS] = _derive_groups(assignments)
+            _clear_flat_mppt(self._data)
             return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
         return self.async_show_form(
             step_id="sites",
@@ -410,6 +482,14 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         self._opts: dict[str, Any] = {}
         self._discovered: list[dict[str, Any]] | None = None
 
+    def _is_single_site(self) -> bool:
+        """See ``SolcastEnhancedConfigFlow._is_single_site``."""
+        from .coordinator import discover_sites
+
+        if self._discovered is None:
+            self._discovered = discover_sites(self.hass)
+        return len(self._discovered) <= 1
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         return await self.async_step_site(user_input)
 
@@ -419,32 +499,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_database()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema({
-            vol.Required(CONF_LATITUDE, default=current.get(CONF_LATITUDE, DEFAULT_LATITUDE)): NumberSelector(
-                NumberSelectorConfig(min=-90, max=90, step=0.001)
-            ),
-            vol.Required(CONF_LONGITUDE, default=current.get(CONF_LONGITUDE, DEFAULT_LONGITUDE)): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.001)
-            ),
-            vol.Required(CONF_CAPACITY_KW, default=current.get(CONF_CAPACITY_KW, DEFAULT_CAPACITY_KW)): NumberSelector(
-                NumberSelectorConfig(min=0.1, max=1000, step=0.1)
-            ),
-            vol.Required(CONF_TILT, default=current.get(CONF_TILT, DEFAULT_TILT)): NumberSelector(
-                NumberSelectorConfig(min=0, max=90, step=0.1)
-            ),
-            vol.Required(CONF_AZIMUTH, default=current.get(CONF_AZIMUTH, DEFAULT_AZIMUTH)): NumberSelector(
-                NumberSelectorConfig(min=-180, max=180, step=0.1)
-            ),
-            vol.Optional(CONF_PV_ACTUAL_SENSOR, description={"suggested_value": current.get(CONF_PV_ACTUAL_SENSOR)}): _entity_selector(),
-            vol.Required(CONF_PV_ACTUAL_INPUT_MODE, default=current.get(CONF_PV_ACTUAL_INPUT_MODE, DEFAULT_PV_INPUT_MODE)): _input_mode_selector(),
-            vol.Optional(CONF_PV_EXPORT_SENSOR, description={"suggested_value": current.get(CONF_PV_EXPORT_SENSOR)}): _entity_selector(),
-            vol.Required(CONF_PV_EXPORT_INPUT_MODE, default=current.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)): _input_mode_selector(),
-            vol.Optional(CONF_BATTERY_STAT_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_STAT_SENSOR)}): _entity_selector(),
-            vol.Optional(CONF_MPPT1_VOLTAGE_SENSOR, description={"suggested_value": current.get(CONF_MPPT1_VOLTAGE_SENSOR)}): _entity_selector(),
-            vol.Optional(CONF_MPPT1_CURRENT_SENSOR, description={"suggested_value": current.get(CONF_MPPT1_CURRENT_SENSOR)}): _entity_selector(),
-            vol.Optional(CONF_MPPT2_VOLTAGE_SENSOR, description={"suggested_value": current.get(CONF_MPPT2_VOLTAGE_SENSOR)}): _entity_selector(),
-            vol.Optional(CONF_MPPT2_CURRENT_SENSOR, description={"suggested_value": current.get(CONF_MPPT2_CURRENT_SENSOR)}): _entity_selector(),
-        })
+        schema = _build_site_schema(current, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema)
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None):
@@ -526,22 +581,24 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_sites(self, user_input: dict[str, Any] | None = None):
         """Per-site sensor mapping (multi-site). Skipped if ≤1 site discovered."""
-        from .coordinator import discover_sites
-
-        if self._discovered is None:
-            self._discovered = discover_sites(self.hass)
-        discovered = self._discovered
-        if len(discovered) <= 1:
+        if self._is_single_site():
             return self.async_create_entry(data=self._opts)
+        discovered = self._discovered or []
 
         current = {**self.config_entry.data, **self.config_entry.options}
         existing = _groups_to_assignments(
             self._opts.get(CONF_SITE_GROUPS) or current.get(CONF_SITE_GROUPS)
         )
-        schema, field_map = _build_sites_schema(discovered, existing)
+        existing = _seed_flat_mppt(discovered, existing, current)
+        schema, field_map = _build_sites_schema(
+            discovered, existing,
+            default_ac=self._opts.get(CONF_PV_ACTUAL_SENSOR)
+            or current.get(CONF_PV_ACTUAL_SENSOR),
+        )
         if user_input is not None:
             assignments = _parse_sites_input(user_input, field_map)
             self._opts[CONF_SITE_GROUPS] = _derive_groups(assignments)
+            _clear_flat_mppt(self._opts)
             return self.async_create_entry(data=self._opts)
         return self.async_show_form(
             step_id="sites",

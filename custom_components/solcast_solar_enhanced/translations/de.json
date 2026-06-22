@@ -20,11 +20,11 @@
           "mppt2_current_sensor": "MPPT-2-DC-Stromsensor (optional)"
         },
         "data_description": {
-          "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor.",
+          "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor. Gesamtwert des Gesamtsystems — bei mehreren Strängen wird jeder Strang zusätzlich auf der folgenden Seite je Standort zugeordnet.",
           "pv_export_sensor": "Bevorzugt ein kumulativer Einspeise-Energiezähler (Wh/kWh); andernfalls ein gleitender mean_linear-Helfer (kW).",
           "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen.",
-          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer."
+          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer. Wird nur für Anlagen mit einem einzelnen Strang angezeigt — bei mehreren Strängen werden Spannung/Strom je Strang stattdessen im Schritt je Standort zugeordnet."
         }
       },
       "database": {
@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+        "description": "{count} Solcast-Standorte erkannt — diese Seite zur Zuordnung je Strang erscheint bei Anlagen mit mehreren Strängen. Wählen Sie für jeden Strang dessen Erzeugungssensor; er ist mit Ihrem anlagenweiten PV-Erzeugungssensor vorbelegt, was korrekt ist, wenn ein Wechselrichter mehrere Stränge versorgt (andernfalls wählen Sie den eigenen Sensor des Strangs). Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC/MPPT-Leistungssensor an, damit die Leistung nach DC-Anteil aufgeteilt wird. Tragen Sie auch Spannung/Strom je Strang hier ein — bei Anlagen mit mehreren Strängen befinden sich diese hier und nicht auf der Systemseite. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
       },
       "weather": {
         "title": "Weather & Irradiance",
