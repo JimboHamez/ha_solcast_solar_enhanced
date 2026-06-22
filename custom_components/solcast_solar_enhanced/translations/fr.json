@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Affectation des capteurs par site",
-        "description": "{count} sites Solcast détectés — cette page d'affectation par champ apparaît pour les systèmes à plusieurs champs. Pour chaque champ, choisissez son capteur de production ; il est prérempli avec votre capteur de production PV global, ce qui est correct lorsqu'un onduleur alimente plusieurs champs (sinon, choisissez le capteur propre au champ). Si plusieurs champs partagent une sortie CA d'onduleur, indiquez aussi le capteur de puissance CC/MPPT de chacun afin de répartir la production selon la part CC. Saisissez aussi ici la tension/le courant MPPT de chaque champ — pour les systèmes à plusieurs champs, ces champs se trouvent ici et non sur la page système. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+        "description": "{count} sites Solcast détectés — cette page d'affectation par champ apparaît pour les systèmes à plusieurs champs. Pour chaque champ, choisissez son capteur de production (prérempli avec votre capteur de production PV global). Si chaque champ est mesuré indépendamment — micro-onduleurs (p. ex. Enphase) ou un onduleur par champ —, affectez son propre capteur CA et laissez le CC vide. Si plusieurs champs partagent une sortie CA d'onduleur, indiquez plutôt le capteur de puissance CC/MPPT de chacun afin de répartir la production selon la part CC. Saisissez aussi ici la tension/le courant MPPT de chaque champ — pour les systèmes à plusieurs champs, ces champs se trouvent ici et non sur la page système. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
       },
       "weather": {
         "title": "Weather & Irradiance",
