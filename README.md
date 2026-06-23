@@ -121,6 +121,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 ### Step 1 — Site & System
 
+![Step 1 — Site & System](images/config-step1-site.png)
+<!-- placeholder: capture the Site & System wizard page -->
+
 | Field | Description |
 |---|---|
 | Latitude / Longitude | Your site coordinates |
@@ -136,6 +139,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 ### Step 2 — Storage
 
+![Step 2 — Storage](images/config-step2-storage.png)
+<!-- placeholder: capture the Storage wizard page -->
+
 | Field | Default | Description |
 |---|---|---|
 | Enable history storage | On | Toggle the built-in store on/off |
@@ -144,6 +150,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path.
 
 ### Step 3 — Weather & Irradiance
+
+![Step 3 — Weather & Irradiance](images/config-step3-weather.png)
+<!-- placeholder: capture the Weather & Irradiance wizard page -->
 
 Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 above](#4-weather--irradiance-open-meteo--keyless-on-by-default)). OpenWeatherMap is an optional legacy alternative for cloud/temperature.
 
@@ -154,6 +163,9 @@ Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 ab
 | OWM API key | — | Free key from openweathermap.org (only if OWM enabled) |
 
 ### Step 4 — Battery Storage
+
+![Step 4 — Battery Storage](images/config-step4-battery.png)
+<!-- placeholder: capture the Battery Storage wizard page -->
 
 A fallback for systems without a battery sensor mapped in Step 1.
 
@@ -166,6 +178,9 @@ A fallback for systems without a battery sensor mapped in Step 1.
 
 ### Step 5 — PV Tuning & Dampening
 
+![Step 5 — PV Tuning & Dampening](images/config-step5-tuning.png)
+<!-- placeholder: capture the PV Tuning & Dampening wizard page -->
+
 | Field | Default | Description |
 |---|---|---|
 | Auto PV tuning | On | Run tilt/azimuth optimisation daily |
@@ -177,6 +192,9 @@ A fallback for systems without a battery sensor mapped in Step 1.
 | Grid export limit (kW) | 0 | Exclude records pegged at this ceiling; 0 = disabled. Read automatically from the base integration if set |
 
 ### Step 6 — Per-site sensor mapping (multi-site only)
+
+![Step 6 — Per-site sensor mapping](images/config-step6-sites.png)
+<!-- placeholder: capture the Per-site mapping page (multi-site setups only) -->
 
 Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors.
 
