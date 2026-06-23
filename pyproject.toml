@@ -1,0 +1,74 @@
+[tool.ruff]
+# Target version corresponds to Home Assistant's runtime minimum environment
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "B",      # flake8-bugbear (Catches subtle thread & async loop logic errors)
+    "BLE",    # flake8-blind-except (so the existing `# noqa: BLE001` directives are valid)
+    "C",      # Complexity configurations
+    "D",      # pydocstyle (Enforces mandatory documentation criteria)
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "G",      # flake8-logging-format (Enforces HA-compliant raw string logs)
+    "I",      # isort (Ensures predictable, sorted import loops)
+    "ICN",    # flake8-import-conventions (Validates "dt_util", "color_util" aliases)
+    "INT",    # flake8-gettext (Validates backend UI localization strings)
+    "LOG",    # flake8-logging (Catches anti-patterns in logger routing)
+    "PLC",    # Pylint Conventions
+    "PLE",    # Pylint Errors
+    "PLR",    # Pylint Refactor (Ensures high quality code complexity)
+    "PLW",    # Pylint Warnings
+    "Q",      # flake8-quotes
+    "RSE",    # flake8-raise
+    "RUF",    # Ruff-specific rules (Detects invalid asyncio/async context)
+    "SIM",    # flake8-simplify
+    "T20",    # flake8-print (Bans forbidden 'print' statements)
+    "TC",     # flake8-type-checking (Cleans up typing layout loops)
+    "TID",    # flake8-tidy-imports
+    "UP",     # pyupgrade (Forces current native Python 3.12+ syntax profiles)
+    "W",      # pycodestyle warnings
+]
+
+ignore = [
+    "D202",   # No blank lines allowed after function docstring
+    "D203",   # 1 blank line required before class docstring (Conflicts with D211)
+    "D213",   # Multi-line docstring summary should start at the second line
+    "EM101",  # Exception must not use a string literal
+    "EM102",  # Exception must not use an f-string literal
+    "G004",   # Logging statement uses f-string (Allowed selectively in HA components)
+    "PLR0911",# Too many return statements
+    "PLR0912",# Too many branches
+    "PLR0913",# Too many arguments in function definition
+    "PLR0915",# Too many statements
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google" # Home Assistant explicitly relies on Google-style documentation blocks
+
+[tool.ruff.lint.flake8-import-conventions.aliases]
+# Hardcodes HA's mandatory custom framework shortcut module bindings
+"homeassistant.helpers.area_registry" = "ar"
+"homeassistant.helpers.category_registry" = "cr"
+"homeassistant.helpers.config_validation" = "cv"
+"homeassistant.helpers.device_registry" = "dr"
+"homeassistant.helpers.entity_registry" = "er"
+"homeassistant.helpers.floor_registry" = "fr"
+"homeassistant.helpers.issue_registry" = "ir"
+"homeassistant.helpers.label_registry" = "lr"
+"homeassistant.util.color" = "color_util"
+"homeassistant.util.dt" = "dt_util"
+"homeassistant.util.json" = "json_util"
+
+[tool.ruff.lint.isort]
+# Forces proper structural grouping separation matching HA's platform components
+combine-as-imports = true
+split-on-trailing-comma = false
+known-first-party = ["homeassistant"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

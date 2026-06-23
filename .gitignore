@@ -25,3 +25,6 @@ data/
 
 # Local-only tests that depend on the git-ignored data/ fixtures
 tests/test_sites_fixtures.py
+
+# MCP server config — contains a Context7 API key, never commit
+.mcp.json

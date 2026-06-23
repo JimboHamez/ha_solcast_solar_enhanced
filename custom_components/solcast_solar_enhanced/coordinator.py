@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import logging
-import math
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
@@ -19,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BASE_DOMAIN,
+    CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
     CONF_AZIMUTH,
@@ -28,50 +27,46 @@ from .const import (
     CONF_BATTERY_NET_SENSOR,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
-    CONF_MPPT1_CURRENT_SENSOR,
-    CONF_MPPT1_VOLTAGE_SENSOR,
-    CONF_MPPT2_CURRENT_SENSOR,
-    CONF_MPPT2_VOLTAGE_SENSOR,
-    MAX_MPPT_TRACKERS,
     CONF_CLIPPING_THRESHOLD,
     CONF_CLOUD_MAX_INCLUDE,
     CONF_CLOUD_THRESHOLD,
     CONF_DAMPENING_GATE,
-    CONF_EXPORT_LIMIT_KW,
     CONF_DB_ENABLED,
     CONF_DB_RETENTION_DAYS,
-    DEFAULT_DB_RETENTION_DAYS,
-    DB_RETENTION_MIN_RECOMMENDED_DAYS,
+    CONF_EXPORT_LIMIT_KW,
+    CONF_KT_THRESHOLD,
     CONF_LATITUDE,
     CONF_LONGITUDE,
-    CONF_ALBEDO,
+    CONF_MPPT1_CURRENT_SENSOR,
+    CONF_MPPT1_VOLTAGE_SENSOR,
+    CONF_MPPT2_CURRENT_SENSOR,
+    CONF_MPPT2_VOLTAGE_SENSOR,
     CONF_OPENMETEO_ENABLED,
-    CONF_KT_THRESHOLD,
-    DEFAULT_KT_THRESHOLD,
-    KT_ZENITH_MAX,
-    KT_GHI_CS_FLOOR,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
     CONF_PV_ACTUAL_INPUT_MODE,
     CONF_PV_ACTUAL_SENSOR,
     CONF_PV_EXPORT_INPUT_MODE,
     CONF_PV_EXPORT_SENSOR,
+    CONF_SITE_AUTODISCOVER,
+    CONF_SITE_GROUPS,
     CONF_TILT,
     DAMPENING_GATE_AZIMUTH_TOL,
     DAMPENING_GATE_MIN_RECORDS,
     DAMPENING_GATE_TILT_TOL,
     DAMPENING_INTERVAL_HOURS,
-    DEFAULT_DAMPENING_GATE,
+    DB_RETENTION_MIN_RECOMMENDED_DAYS,
     DEFAULT_ALBEDO,
-    DEFAULT_DB_ENABLED,
-    DEFAULT_DB_FILENAME,
-    DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
+    DEFAULT_DAMPENING_GATE,
+    DEFAULT_DB_ENABLED,
+    DEFAULT_DB_FILENAME,
+    DEFAULT_DB_RETENTION_DAYS,
     DEFAULT_EXPORT_LIMIT_KW,
-    CONF_SITE_AUTODISCOVER,
-    CONF_SITE_GROUPS,
+    DEFAULT_KT_THRESHOLD,
+    DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_PV_INPUT_MODE,
     DEFAULT_SITE_AUTODISCOVER,
     DEFAULT_SITE_ID,
@@ -81,20 +76,17 @@ from .const import (
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
     ISSUE_DAMPENING_GATED,
     ISSUE_OWM_REQUIRED,
+    KT_GHI_CS_FLOOR,
+    KT_ZENITH_MAX,
+    MAX_MPPT_TRACKERS,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
 )
-from .sqlite_store import SqliteStore
-from .pv_tuning import (
-    normalize_epoch,
-    panel_azimuth_to_internal,
-    panel_azimuth_to_solcast,
-    run_tuning,
-    solar_position,
-)
+from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OpenMeteoClient, OWMClient
+from .sqlite_store import SqliteStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -309,7 +301,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             return await self._do_update()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise UpdateFailed(f"Update failed: {exc}") from exc
 
     async def _do_update(self) -> dict[str, Any]:
@@ -394,10 +386,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         # Persist to DB
         if self._db and opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
-            period_end = datetime.fromtimestamp(period_epoch, tz=timezone.utc).isoformat()
+            period_end = datetime.fromtimestamp(period_epoch, tz=UTC).isoformat()
             start_epoch = pv_actual_start if pv_actual_start else period_epoch - 1800
             period_start = datetime.fromtimestamp(
-                start_epoch, tz=timezone.utc
+                start_epoch, tz=UTC
             ).isoformat()
             # Forecast slots are bucketed on clean half-hour boundaries, so the
             # lookup keys off the snapped slot start (period_end − 30 min), not the
@@ -488,7 +480,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "period_end": period_end,
                     "period_end_epoch": period_epoch,
                     "period_start": datetime.fromtimestamp(
-                        s_start, tz=timezone.utc
+                        s_start, tz=UTC
                     ).isoformat(),
                     "site": site_id,
                     "pv_actual": round(site_kw, 4),
@@ -553,7 +545,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "Update %s: base=%s pv_actual=%.3fkW pv_export=%.3fkW est=%.3fkW "
             "clouds=%s%% battery=%.3f sites=%d db_rows=%s",
-            datetime.fromtimestamp(period_epoch, tz=timezone.utc).isoformat(),
+            datetime.fromtimestamp(period_epoch, tz=UTC).isoformat(),
             self._base_status, pv_actual, pv_export, pv_estimate,
             self._weather.get("clouds"), battery_charge, len(self._sites),
             self._db_record_count,
@@ -908,7 +900,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if export_limit is None:
             export_limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
 
-        tz = dt_util.get_time_zone(self.hass.config.time_zone) or timezone.utc
+        tz = dt_util.get_time_zone(self.hass.config.time_zone) or UTC
         now_local = datetime.fromtimestamp(now_epoch, tz=tz)
         slot_results: list[dict[str, Any]] = []
 
@@ -1168,8 +1160,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             from homeassistant.components.recorder import get_instance, history
         except ImportError:
             return {}
-        start = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
-        end = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
+        start = datetime.fromtimestamp(start_epoch, tz=UTC)
+        end = datetime.fromtimestamp(end_epoch, tz=UTC)
 
         def _job() -> dict[str, Any]:
             return history.get_significant_states(
@@ -1382,7 +1374,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         else:
             return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.timestamp()
 
     def _read_base_auto_dampen(self) -> bool:
