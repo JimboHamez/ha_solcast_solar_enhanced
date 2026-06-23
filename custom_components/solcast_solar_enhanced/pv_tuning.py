@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def panel_azimuth_to_solcast(internal_az: float) -> float:
 
 def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float, float]:
     """Return (azimuth_deg, zenith_deg) for a Unix epoch. Accurate to ±1°."""
-    dt = datetime.fromtimestamp(normalize_epoch(epoch), tz=timezone.utc)
+    dt = datetime.fromtimestamp(normalize_epoch(epoch), tz=UTC)
     doy = dt.timetuple().tm_yday
     hour_utc = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
 
@@ -247,7 +247,7 @@ def run_tuning(
             continue
         epoch = r.get("period_end_epoch")
         doy = (
-            datetime.fromtimestamp(normalize_epoch(epoch), tz=timezone.utc).timetuple().tm_yday
+            datetime.fromtimestamp(normalize_epoch(epoch), tz=UTC).timetuple().tm_yday
             if epoch else 172
         )
         obs.append(total_pv)

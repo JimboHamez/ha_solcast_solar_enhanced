@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
@@ -190,7 +190,7 @@ class OpenMeteoClient:
     @staticmethod
     def _iso_to_epoch(iso: str) -> int:
         """Open-Meteo timestamps are naive UTC (timezone=UTC requested)."""
-        return int(datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp())
+        return int(datetime.fromisoformat(iso).replace(tzinfo=UTC).timestamp())
 
     @staticmethod
     def _num(value: Any) -> float | None:
