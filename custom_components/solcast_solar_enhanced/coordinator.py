@@ -1,12 +1,13 @@
 """DataUpdateCoordinator for Solcast Solar Enhanced."""
+
 from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -88,6 +89,9 @@ from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SqliteStore
 
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -106,7 +110,7 @@ def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
             if not resource_id or "solcast" not in state.entity_id:
                 continue
 
-            def _f(key: str) -> float:
+            def _f(key: str, attrs: Any = attrs) -> float:
                 try:
                     return float(attrs.get(key, 0) or 0)
                 except (ValueError, TypeError):
@@ -133,6 +137,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     """Coordinator that orchestrates all enhanced features."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Initialise the coordinator (refreshes are wall-clock driven, not interval)."""
         # No free-running interval: refreshes are driven by a wall-clock listener
         # (see async_setup) so each cycle fires on the :00/:30 half-hour grid
         # rather than drifting from HA's boot time. This keeps the energy-counter
@@ -187,9 +192,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         # Energy-counter baselines: {key: {"value": kwh, "epoch": int}}.
         # Persisted across restarts so energy-delta readings survive a reload.
-        self._store: Store = Store(
-            hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}_energy_baseline"
-        )
+        self._store: Store = Store(hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}_energy_baseline")
         self._energy_baselines: dict[str, Any] = {}
         self._baselines_dirty: bool = False
 
@@ -213,9 +216,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Could not load energy baselines: %s", exc)
 
         if opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
-            self._db = SqliteStore(
-                self.hass, self.hass.config.path(DEFAULT_DB_FILENAME)
-            )
+            self._db = SqliteStore(self.hass, self.hass.config.path(DEFAULT_DB_FILENAME))
             ok = await self._db.async_connect()
             if not ok:
                 _LOGGER.warning("DB connection failed — DB features disabled for this session")
@@ -253,11 +254,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # cloud source every record's cover is unknown (excluded) and
         # tuning/dampening stay inert — fail loud, not silent. Re-evaluated on every
         # reload, so enabling either source clears the issue.
-        if not self._owm and not self._openmeteo and (
-            opts.get(CONF_AUTO_TUNING, True) or opts.get(CONF_AUTO_DAMPENING, True)
+        if (
+            not self._owm
+            and not self._openmeteo
+            and (opts.get(CONF_AUTO_TUNING, True) or opts.get(CONF_AUTO_DAMPENING, True))
         ):
             ir.async_create_issue(
-                self.hass, DOMAIN, ISSUE_OWM_REQUIRED,
+                self.hass,
+                DOMAIN,
+                ISSUE_OWM_REQUIRED,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_OWM_REQUIRED,
@@ -318,9 +323,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         base_coord = self._get_base_coordinator()
         new_status = "connected" if base_coord is not None else "not_detected"
         if new_status != self._base_status:
-            _LOGGER.debug(
-                "Base integration status: %s -> %s", self._base_status, new_status
-            )
+            _LOGGER.debug("Base integration status: %s -> %s", self._base_status, new_status)
         self._base_status = new_status
 
         # Discover Solcast sites (multiple arrays on one property).
@@ -380,17 +383,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # Forecast data from base integration. forecast_now/today drive the
         # sensors; the in-memory pv_estimate keys are only a fallback for the DB
         # row (see below) since newer base versions don't expose them.
-        forecast_now, forecast_today, pv_estimate, pv_est10, pv_est90 = (
-            self._read_forecast_from_base(base_coord)
-        )
+        forecast_now, forecast_today, pv_estimate, pv_est10, pv_est90 = self._read_forecast_from_base(base_coord)
 
         # Persist to DB
         if self._db and opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
             period_end = datetime.fromtimestamp(period_epoch, tz=UTC).isoformat()
             start_epoch = pv_actual_start if pv_actual_start else period_epoch - 1800
-            period_start = datetime.fromtimestamp(
-                start_epoch, tz=UTC
-            ).isoformat()
+            period_start = datetime.fromtimestamp(start_epoch, tz=UTC).isoformat()
             # Forecast slots are bucketed on clean half-hour boundaries, so the
             # lookup keys off the snapped slot start (period_end − 30 min), not the
             # drifting measured start used for the avg-kW math. Prefer the
@@ -408,13 +407,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # '_total' row uses the property-wide trackers; per-site rows use their
             # own. Banked now (cannot be backfilled); nothing acts on it yet.
             dc_entities = self._collect_dc_entities(opts)
-            dc_hist = await self._interval_values(
-                dc_entities, slot_start_epoch, period_epoch
-            )
+            dc_hist = await self._interval_values(dc_entities, slot_start_epoch, period_epoch)
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
-            total_dc = self._read_mppt_telemetry(
-                self._mppt_list_from_opts(opts), dc_hist
-            ) or (0.0, 0.0, 0.0, 0.0)
+            total_dc = self._read_mppt_telemetry(self._mppt_list_from_opts(opts), dc_hist) or (0.0, 0.0, 0.0, 0.0)
             # Surface the latest reading on the diagnostic sensor (None when no DC
             # sensors are configured, so the entity stays unavailable rather than
             # reporting a misleading 0).
@@ -431,7 +426,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 # of an empty/unparsed detailedForecast attribute.
                 _LOGGER.debug(
                     "No forecast estimate for daylight slot %s (zenith %.1f) from "
-                    "either detailedForecast or base coordinator", period_end, zen
+                    "either detailedForecast or base coordinator",
+                    period_end,
+                    zen,
                 )
             # Coerce unknown weather to the excluded sentinel for the NOT NULL
             # columns (used by both the aggregate and per-site rows below).
@@ -473,34 +470,32 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 s_dc = site_dc.get(site_id, (0.0, 0.0, 0.0, 0.0))
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
-                s_est, s_est10, s_est90 = self._site_forecast_for_period(
-                    site_id, slot_start_epoch
+                s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
+                await self._db.async_insert_record(
+                    {
+                        "period_end": period_end,
+                        "period_end_epoch": period_epoch,
+                        "period_start": datetime.fromtimestamp(s_start, tz=UTC).isoformat(),
+                        "site": site_id,
+                        "pv_actual": round(site_kw, 4),
+                        "pv_export": round(pv_export, 4),
+                        "pv_estimate": round(s_est, 4),
+                        "pv_estimate10": round(s_est10, 4),
+                        "pv_estimate90": round(s_est90, 4),
+                        "azimuth": round(az, 5),
+                        "zenith": round(zen, 5),
+                        "temp": temp_db,
+                        "clouds": clouds_db,
+                        "description": desc_db,
+                        "battery_charge": 0.0,
+                        "dc_voltage1": s_dc[0],
+                        "dc_current1": s_dc[1],
+                        "dc_voltage2": s_dc[2],
+                        "dc_current2": s_dc[3],
+                        # Irradiance is property-wide weather: same values on every site.
+                        **self._irradiance_for_storage(),
+                    }
                 )
-                await self._db.async_insert_record({
-                    "period_end": period_end,
-                    "period_end_epoch": period_epoch,
-                    "period_start": datetime.fromtimestamp(
-                        s_start, tz=UTC
-                    ).isoformat(),
-                    "site": site_id,
-                    "pv_actual": round(site_kw, 4),
-                    "pv_export": round(pv_export, 4),
-                    "pv_estimate": round(s_est, 4),
-                    "pv_estimate10": round(s_est10, 4),
-                    "pv_estimate90": round(s_est90, 4),
-                    "azimuth": round(az, 5),
-                    "zenith": round(zen, 5),
-                    "temp": temp_db,
-                    "clouds": clouds_db,
-                    "description": desc_db,
-                    "battery_charge": 0.0,
-                    "dc_voltage1": s_dc[0],
-                    "dc_current1": s_dc[1],
-                    "dc_voltage2": s_dc[2],
-                    "dc_current2": s_dc[3],
-                    # Irradiance is property-wide weather: same values on every site.
-                    **self._irradiance_for_storage(),
-                })
 
             self._db_record_count = await self._db.async_get_record_count()
             # Diagnostics: newest slot written this cycle + sites seen in the store.
@@ -510,21 +505,22 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # History retention (daily) — independent of auto-tuning, so it still
         # bounds the table when only logging is enabled.
         retention_days = int(opts.get(CONF_DB_RETENTION_DAYS, DEFAULT_DB_RETENTION_DAYS) or 0)
-        if self._db and retention_days > 0:
-            if now_epoch - self._last_prune_ts >= TUNING_INTERVAL_HOURS * 3600:
-                if retention_days < DB_RETENTION_MIN_RECOMMENDED_DAYS:
-                    _LOGGER.warning(
-                        "History retention is set to %d days — seasonal dampening uses a "
-                        "cross-year window and works best with at least ~%d days of history.",
-                        retention_days, DB_RETENTION_MIN_RECOMMENDED_DAYS,
-                    )
-                removed = await self._db.async_prune(retention_days)
-                self._last_prune_ts = float(now_epoch)
-                if removed:
-                    _LOGGER.info(
-                        "Pruned %d record(s) older than %d days from history.",
-                        removed, retention_days,
-                    )
+        if self._db and retention_days > 0 and now_epoch - self._last_prune_ts >= TUNING_INTERVAL_HOURS * 3600:
+            if retention_days < DB_RETENTION_MIN_RECOMMENDED_DAYS:
+                _LOGGER.warning(
+                    "History retention is set to %d days — seasonal dampening uses a "
+                    "cross-year window and works best with at least ~%d days of history.",
+                    retention_days,
+                    DB_RETENTION_MIN_RECOMMENDED_DAYS,
+                )
+            removed = await self._db.async_prune(retention_days)
+            self._last_prune_ts = float(now_epoch)
+            if removed:
+                _LOGGER.info(
+                    "Pruned %d record(s) older than %d days from history.",
+                    removed,
+                    retention_days,
+                )
 
         # PV tuning (daily)
         if opts.get(CONF_AUTO_TUNING, True):
@@ -546,8 +542,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "Update %s: base=%s pv_actual=%.3fkW pv_export=%.3fkW est=%.3fkW "
             "clouds=%s%% battery=%.3f sites=%d db_rows=%s",
             datetime.fromtimestamp(period_epoch, tz=UTC).isoformat(),
-            self._base_status, pv_actual, pv_export, pv_estimate,
-            self._weather.get("clouds"), battery_charge, len(self._sites),
+            self._base_status,
+            pv_actual,
+            pv_export,
+            pv_estimate,
+            self._weather.get("clouds"),
+            battery_charge,
+            len(self._sites),
             self._db_record_count,
         )
 
@@ -604,9 +605,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # double-counts the additive per-site rows. Pull the most recent *clear-sky*
         # rows (filter in SQL before the LIMIT) so tuning fits orientation-relevant
         # data spanning all seasons, not just a recent cloudy window.
-        records = await self._db.async_get_records_for_tuning(
-            site=DEFAULT_SITE_ID, **self._clearsky_gate_kwargs(opts)
-        )
+        records = await self._db.async_get_records_for_tuning(site=DEFAULT_SITE_ID, **self._clearsky_gate_kwargs(opts))
         if not records:
             _LOGGER.debug("PV tuning skipped: no usable records yet")
             return
@@ -650,15 +649,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return
         cloud_threshold = self._tuning_cloud_threshold(opts)
         gate_kwargs = self._clearsky_gate_kwargs(opts)
-        clipping_threshold = float(
-            opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)
-        )
+        clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
         by_id = {s["resource_id"]: s for s in self._sites}
         results: dict[str, dict[str, Any]] = {}
         for site_id in site_ids:
-            records = await self._db.async_get_records_for_tuning(
-                site=site_id, **gate_kwargs
-            )
+            records = await self._db.async_get_records_for_tuning(site=site_id, **gate_kwargs)
             if not records:
                 continue
             site = by_id.get(site_id, {})
@@ -724,10 +719,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     def _weather_for_storage(self) -> tuple[float, int, str]:
-        """Weather coerced for the NOT NULL DB columns. Unknown (``None`` — no OWM,
-        or a failed fetch) becomes the *excluded* 100%-cloud / 0 °C sentinel so a
-        record written without cloud data can never pass the clear-sky filter as
-        clear. Used by both the aggregate ``_total`` and per-site rows."""
+        """Coerce weather for the NOT NULL DB columns.
+
+        Unknown (``None`` — no OWM, or a failed fetch) becomes the *excluded*
+        100%-cloud / 0 °C sentinel so a record written without cloud data can never
+        pass the clear-sky filter as clear. Used by both the aggregate ``_total``
+        and per-site rows.
+        """
         w_temp = self._weather.get("temp")
         w_clouds = self._weather.get("clouds")
         temp = round(w_temp, 2) if w_temp is not None else 0.0
@@ -735,13 +733,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         return temp, clouds, self._weather.get("description") or "unavailable"
 
     def _irradiance_for_storage(self) -> dict[str, float]:
-        """GHI/DNI/DHI rounded for the NOT NULL columns; unknown (no Open-Meteo or a
-        failed fetch) stored as 0 — for a daytime row that reads as "no irradiance"
-        and is simply skipped by the transposition tuner."""
-        return {
-            k: round(v, 2) if v is not None else 0.0
-            for k, v in self._irradiance.items()
-        }
+        """Round GHI/DNI/DHI for the NOT NULL columns.
+
+        Unknown (no Open-Meteo or a failed fetch) is stored as 0 — for a daytime row
+        that reads as "no irradiance" and is simply skipped by the transposition tuner.
+        """
+        return {k: round(v, 2) if v is not None else 0.0 for k, v in self._irradiance.items()}
 
     @staticmethod
     def _angle_diff(a: float, b: float) -> float:
@@ -751,9 +748,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     def _orientation_diverged(
         self, tuning_result: dict[str, Any] | None, seed_tilt: float, seed_az: float
     ) -> dict[str, float] | None:
-        """Divergence info when tuning is *confident* and the tuned orientation
-        differs materially from the configured (Solcast) one; else ``None``.
+        """Return divergence info when confident tuning disagrees with the configured orientation.
 
+        Confident here means the tuned tilt/azimuth differs materially from the
+        configured (Solcast) one; otherwise returns ``None``.
         This is the dampening gate's trigger: a confident tuned tilt/azimuth that
         disagrees with the configured site means the Solcast forecast is built on
         the wrong geometry, so its actual/estimate ratio mixes orientation error
@@ -770,11 +768,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return {"tilt_delta": round(d_tilt, 1), "azimuth_delta": round(d_az, 1)}
         return None
 
-    def _site_orientation_seed(
-        self, site_id: str, opts: dict[str, Any]
-    ) -> tuple[float, float]:
-        """(tilt, azimuth) seed for a site in the tuner frame, matching the seeds
-        used by ``_run_site_tuning`` so the gate compares like with like."""
+    def _site_orientation_seed(self, site_id: str, opts: dict[str, Any]) -> tuple[float, float]:
+        """Return a site's (tilt, azimuth) seed in the tuner frame.
+
+        Matches the seeds used by ``_run_site_tuning`` so the gate compares like with like.
+        """
         site = next((s for s in self._sites if s.get("resource_id") == site_id), None)
         if site is None:
             return float(opts.get(CONF_TILT, 20.0)), float(opts.get(CONF_AZIMUTH, 0.0))
@@ -785,13 +783,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     # Dampening
     # ------------------------------------------------------------------
 
-    async def _run_dampening(
-        self, opts: dict[str, Any], now_epoch: int, lat: float, lon: float
-    ) -> None:
+    async def _run_dampening(self, opts: dict[str, Any], now_epoch: int, lat: float, lon: float) -> None:
         # Aggregate table (drives the dampening sensors) — property-wide '_total' rows.
-        self._dampening_table = await self._compute_dampening_slots(
-            opts, now_epoch, lat, lon, DEFAULT_SITE_ID
-        )
+        self._dampening_table = await self._compute_dampening_slots(opts, now_epoch, lat, lon, DEFAULT_SITE_ID)
 
         # The base integration rejects manual set_dampening while its own
         # automatic dampening is enabled (ServiceValidationError). Skip the push
@@ -822,21 +816,18 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # global dampening for that site). The conflicting global push is
             # skipped so per-site factors are not overwritten.
             for site_id in site_ids:
-                slots = await self._compute_dampening_slots(
-                    opts, now_epoch, lat, lon, site_id
-                )
+                slots = await self._compute_dampening_slots(opts, now_epoch, lat, lon, site_id)
                 hourly = average_slot_pairs([s["factor"] for s in slots])
                 if gate_on:
                     seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
-                    div = self._orientation_diverged(
-                        self._site_tuning_results.get(site_id), seed_tilt, seed_az
-                    )
+                    div = self._orientation_diverged(self._site_tuning_results.get(site_id), seed_tilt, seed_az)
                     if div:
                         any_gated = True
                         _LOGGER.warning(
                             "Dampening gated for site %s: tuned tilt diverges from "
                             "configured (Δtilt %.0f°) — pushing neutral 1.0. Apply the "
-                            "Tuned Panel Tilt value in your Solcast account.", site_id,
+                            "Tuned Panel Tilt value in your Solcast account.",
+                            site_id,
                             div["tilt_delta"],
                         )
                         hourly = [1.0] * len(hourly)
@@ -864,7 +855,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._dampening_gated = any_gated
         if any_gated:
             ir.async_create_issue(
-                self.hass, DOMAIN, ISSUE_DAMPENING_GATED,
+                self.hass,
+                DOMAIN,
+                ISSUE_DAMPENING_GATED,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_DAMPENING_GATED,
@@ -914,9 +907,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         for slot in range(48):
             hour, minute = divmod(slot * 30, 60)
-            slot_local = now_local.replace(
-                hour=hour, minute=minute, second=0, microsecond=0
-            )
+            slot_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
             slot_epoch = int(slot_local.timestamp())
 
             # Sun position at the slot midpoint (+15 min), matching the stored
@@ -925,15 +916,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
             # Night slots — factor = 1.0
             if zen_slot >= 90:
-                slot_results.append({
-                    "factor": 1.0,
-                    "alpha": 0.0,
-                    "source": "night",
-                    "quality_records": 0.0,
-                    "avg_quality": 0.0,
-                    "clipped_excluded": 0,
-                    "forecast_clipped": 0,
-                })
+                slot_results.append(
+                    {
+                        "factor": 1.0,
+                        "alpha": 0.0,
+                        "source": "night",
+                        "quality_records": 0.0,
+                        "avg_quality": 0.0,
+                        "clipped_excluded": 0,
+                        "forecast_clipped": 0,
+                    }
+                )
                 continue
 
             slot_result = compute_dampening(
@@ -950,9 +943,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         return slot_results
 
-    async def _push_dampening(
-        self, hourly_factors: list[float], site: str | None = None
-    ) -> None:
+    async def _push_dampening(self, hourly_factors: list[float], site: str | None = None) -> None:
         """Push factors to the base integration's ``set_dampening`` service.
 
         The base expects ``damp_factor`` as a comma-separated string of 24 (hourly)
@@ -967,12 +958,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # Solcast to boost, so clamp to 1.0 (no dampening). The unclamped value
             # is kept in the dampening sensor attributes for diagnostics.
             clamped = [min(1.0, max(0.0, f)) for f in hourly_factors]
-            n_clamped = sum(1 for c, f in zip(clamped, hourly_factors) if c != f)
+            n_clamped = sum(1 for c, f in zip(clamped, hourly_factors, strict=True) if c != f)
             if n_clamped:
                 _LOGGER.debug(
                     "Clamped %d dampening factor(s) outside [0,1] before push%s "
                     "(forecast under-/over-shoots those hours)",
-                    n_clamped, f" for site {site}" if site else "",
+                    n_clamped,
+                    f" for site {site}" if site else "",
                 )
             damp_factor = ",".join(f"{round(c, 4)}" for c in clamped)
             data: dict[str, Any] = {"damp_factor": damp_factor}
@@ -980,9 +972,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 data["site"] = site
             # blocking=True so a base-side ServiceValidationError surfaces here
             # and is handled, rather than leaking into Home Assistant's core log.
-            await self.hass.services.async_call(
-                BASE_DOMAIN, "set_dampening", data, blocking=True
-            )
+            await self.hass.services.async_call(BASE_DOMAIN, "set_dampening", data, blocking=True)
             _LOGGER.debug(
                 "Pushed %d dampening factors%s",
                 len(hourly_factors),
@@ -996,11 +986,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     async def async_force_pv_tuning(self) -> None:
+        """Run PV tuning immediately (service handler)."""
         opts = {**self._entry.data, **self._entry.options}
         await self._run_tuning(opts)
         self.async_set_updated_data(self.data or {})
 
     async def async_force_dampening_update(self) -> None:
+        """Recompute and push dampening immediately (service handler)."""
         opts = {**self._entry.data, **self._entry.options}
         now_epoch = normalize_epoch(time.time())
         lat = float(opts.get(CONF_LATITUDE, -37.9))
@@ -1009,6 +1001,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(self.data or {})
 
     async def async_force_fetch_weather(self) -> None:
+        """Fetch weather immediately (service handler)."""
         if self._owm:
             self._weather = await self._owm.async_fetch()
         self.async_set_updated_data(self.data or {})
@@ -1040,9 +1033,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         """Discovered Solcast sites (empty when single-site / not detected)."""
         return self._sites
 
-    def _read_site_actuals(
-        self, opts: dict[str, Any], now_epoch: int
-    ) -> dict[str, tuple[float, int | None]]:
+    def _read_site_actuals(self, opts: dict[str, Any], now_epoch: int) -> dict[str, tuple[float, int | None]]:
         """Compute each site's measured generation (average kW) from the group config.
 
         Config model — ``opts[CONF_SITE_GROUPS]`` is a list of measurement groups::
@@ -1119,15 +1110,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     def _mppt_list_from_opts(opts: dict[str, Any]) -> list[dict[str, Any]]:
         """Property-wide / single-inverter MPPT pairs from the flat site-step keys."""
         return [
-            {"voltage_sensor": opts.get(CONF_MPPT1_VOLTAGE_SENSOR),
-             "current_sensor": opts.get(CONF_MPPT1_CURRENT_SENSOR)},
-            {"voltage_sensor": opts.get(CONF_MPPT2_VOLTAGE_SENSOR),
-             "current_sensor": opts.get(CONF_MPPT2_CURRENT_SENSOR)},
+            {
+                "voltage_sensor": opts.get(CONF_MPPT1_VOLTAGE_SENSOR),
+                "current_sensor": opts.get(CONF_MPPT1_CURRENT_SENSOR),
+            },
+            {
+                "voltage_sensor": opts.get(CONF_MPPT2_VOLTAGE_SENSOR),
+                "current_sensor": opts.get(CONF_MPPT2_CURRENT_SENSOR),
+            },
         ]
 
     def _collect_dc_entities(self, opts: dict[str, Any]) -> set[str]:
-        """Every configured MPPT voltage/current entity (for one batched history
-        query per cycle)."""
+        """Return every configured MPPT voltage/current entity.
+
+        Collected for one batched history query per cycle.
+        """
         ids: set[str] = set()
 
         def _add(mppts: list[dict[str, Any]] | None) -> None:
@@ -1143,9 +1140,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 _add(s.get("mppts"))
         return ids
 
-    async def _interval_values(
-        self, entity_ids: set[str], start_epoch: int, end_epoch: int
-    ) -> dict[str, list[float]]:
+    async def _interval_values(self, entity_ids: set[str], start_epoch: int, end_epoch: int) -> dict[str, list[float]]:
         """Recorded numeric values per entity over ``[start, end]`` from the recorder.
 
         One batched ``get_significant_states`` (all states, no attributes) run on
@@ -1157,7 +1152,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if not ids:
             return {}
         try:
-            from homeassistant.components.recorder import get_instance, history
+            from homeassistant.components.recorder import get_instance, history  # noqa: PLC0415
         except ImportError:
             return {}
         start = datetime.fromtimestamp(start_epoch, tz=UTC)
@@ -1165,8 +1160,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         def _job() -> dict[str, Any]:
             return history.get_significant_states(
-                self.hass, start, end, entity_ids=ids,
-                significant_changes_only=False, no_attributes=True,
+                self.hass,
+                start,
+                end,
+                entity_ids=ids,
+                significant_changes_only=False,
+                no_attributes=True,
             )
 
         try:
@@ -1186,13 +1185,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 out[eid] = vals
         return out
 
-    def _interval_extreme(
-        self, entity_id: str | None, mode: str, hist: dict[str, list[float]]
-    ) -> float | None:
-        """``max`` (voltage) or ``min`` (current) over the interval's recorded
-        values plus the current instantaneous reading; ``None`` if nothing is
-        readable. Max-voltage / min-current catch a mid-slot off-MPP excursion that
-        a single boundary sample would miss."""
+    def _interval_extreme(self, entity_id: str | None, mode: str, hist: dict[str, list[float]]) -> float | None:
+        """Return the extreme reading over the interval, or ``None`` if unreadable.
+
+        ``max`` (voltage) or ``min`` (current) over the interval's recorded values
+        plus the current instantaneous reading. Max-voltage / min-current catch a
+        mid-slot off-MPP excursion that a single boundary sample would miss.
+        """
         if not entity_id:
             return None
         vals = list(hist.get(entity_id, ()))
@@ -1206,9 +1205,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     def _read_mppt_telemetry(
         self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]
     ) -> tuple[float, float, float, float] | None:
-        """Aggregate up to ``MAX_MPPT_TRACKERS`` paired (voltage, current) trackers
-        over the interval (max V / min I per ``hist``).
+        """Aggregate up to ``MAX_MPPT_TRACKERS`` paired (voltage, current) trackers.
 
+        Aggregated over the interval (max V / min I per ``hist``).
         Returns a flat ``(v1, i1, v2, i2)`` tuple, zero-filled and padded to
         ``MAX_MPPT_TRACKERS`` pairs, or ``None`` when no tracker sensor is
         *configured* at all (so a site without DC telemetry stays absent). A
@@ -1233,11 +1232,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         sites: dict[str, tuple[float, float, float, float]],
     ) -> dict[str, Any]:
         """Shape the captured DC telemetry for the diagnostic sensor."""
+
         def _pairs(t: tuple[float, float, float, float]) -> dict[str, float]:
             return {
-                "mppt1_voltage": t[0], "mppt1_current": t[1],
-                "mppt2_voltage": t[2], "mppt2_current": t[3],
+                "mppt1_voltage": t[0],
+                "mppt1_current": t[1],
+                "mppt2_voltage": t[2],
+                "mppt2_current": t[3],
             }
+
         # max_voltage spans the property-wide trackers AND every per-site tracker,
         # so the diagnostic stays meaningful for multi-site systems (where the flat
         # property-wide MPPT fields are unset — each array maps its own trackers).
@@ -1276,9 +1279,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 _capture(s.get("site"), s)
         return out
 
-    def _total_forecast_for_period(
-        self, start_epoch: int
-    ) -> tuple[float, float, float]:
+    def _total_forecast_for_period(self, start_epoch: int) -> tuple[float, float, float]:
         """Return (pv_estimate, pv_estimate10, pv_estimate90) for the property total.
 
         Reads the property-wide ``detailedForecast`` attribute off the base
@@ -1290,9 +1291,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         """
         return self._forecast_slot("detailedForecast", start_epoch)
 
-    def _site_forecast_for_period(
-        self, resource_id: str, start_epoch: int
-    ) -> tuple[float, float, float]:
+    def _site_forecast_for_period(self, resource_id: str, start_epoch: int) -> tuple[float, float, float]:
         """Return (pv_estimate, pv_estimate10, pv_estimate90) for a site's slot.
 
         Reads the per-site ``detailedForecast-<resource_id>`` attribute off the base
@@ -1304,9 +1303,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             est = self._forecast_slot(f"detailedForecast_{resource_id}", start_epoch)
         return est
 
-    def _forecast_slot(
-        self, attr_name: str, start_epoch: int
-    ) -> tuple[float, float, float]:
+    def _forecast_slot(self, attr_name: str, start_epoch: int) -> tuple[float, float, float]:
         """Pick the ``detailedForecast`` slot closest to ``start_epoch``.
 
         ``attr_name`` selects the property-wide (``detailedForecast``) or per-site
@@ -1339,7 +1336,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # series produces no usable slot.
             _LOGGER.debug(
                 "%s: no forecast slot within 900s of %s (%d entries)",
-                attr_name, start_epoch, len(series),
+                attr_name,
+                start_epoch,
+                len(series),
             )
             return 0.0, 0.0, 0.0
 
@@ -1406,9 +1405,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 limit = float(raw)
                 if limit > 100:
                     limit = limit / 1000.0
-                _LOGGER.debug(
-                    "Base site_export_limit=%s → %.3f kW", raw, limit
-                )
+                _LOGGER.debug("Base site_export_limit=%s → %.3f kW", raw, limit)
                 return limit
         except Exception:  # noqa: BLE001
             pass
@@ -1525,14 +1522,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if dt <= 0:
             return 0.0, None
         if delta < 0:
-            _LOGGER.debug(
-                "Energy counter %s decreased (reset/rollover); interval skipped", key
-            )
+            _LOGGER.debug("Energy counter %s decreased (reset/rollover); interval skipped", key)
             return 0.0, None
         if dt < expected * ENERGY_DT_MIN_FRACTION or dt > expected * ENERGY_DT_MAX_FRACTION:
-            _LOGGER.debug(
-                "Energy interval for %s was %ss (expected ~%ss); excluded", key, dt, expected
-            )
+            _LOGGER.debug("Energy interval for %s was %ss (expected ~%ss); excluded", key, dt, expected)
             return 0.0, None
 
         avg_kw = delta / (dt / 3600.0)
@@ -1562,9 +1555,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return max(0.0, raw)
         return 0.0
 
-    def _read_forecast_from_base(
-        self, base_coord: Any
-    ) -> tuple[float, float, float, float, float]:
+    def _read_forecast_from_base(self, base_coord: Any) -> tuple[float, float, float, float, float]:
         """Return (forecast_now_kw, forecast_today_kwh, pv_estimate, pv_est10, pv_est90)."""
         try:
             if base_coord is not None and hasattr(base_coord, "data") and base_coord.data:
@@ -1609,10 +1600,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def tuning_tilt(self) -> float | None:
+        """Latest tuned panel tilt in degrees, or None before the first run."""
         return self._tuning_result["tilt"] if self._tuning_result else None
 
     @property
     def tuning_azimuth(self) -> float | None:
+        """Configured azimuth echoed back (not tuned), in the Solcast convention."""
         # Stored internally East-positive; report in the Solcast/base convention
         # (West-positive) so it matches the configured Panel Azimuth and Solcast.
         if not self._tuning_result:
@@ -1621,10 +1614,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def tuning_rmse(self) -> float | None:
+        """RMSE (kW) of the latest tuning fit, or None before the first run."""
         return self._tuning_result["rmse_kw"] if self._tuning_result else None
 
     @property
     def tuning_export_excluded(self) -> int:
+        """Count of records dropped by the export-limit filter in the last run."""
         return self._tuning_result.get("export_limited_excluded", 0) if self._tuning_result else 0
 
     @property
@@ -1634,21 +1629,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def tuning_extra(self) -> dict[str, Any]:
+        """Extra tuning attributes (fit quality, per-site results) for the sensor."""
         if not self._tuning_result and not self._site_tuning_results:
             return {}
         extra: dict[str, Any] = {}
         if self._tuning_result:
-            extra.update({
-                # Azimuth is fixed at the configured value (not tuned); reported in
-                # the Solcast/base convention (West-positive) for reference.
-                "azimuth": panel_azimuth_to_solcast(self._tuning_result.get("azimuth", 0.0)),
-                "azimuth_tuned": False,
-                "rmse_kw": self._tuning_result.get("rmse_kw"),
-                "mae_kw": self._tuning_result.get("mae_kw"),
-                "capacity_scale": self._tuning_result.get("capacity_scale"),
-                "n_records": self._tuning_result.get("n_records"),
-                "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
-            })
+            extra.update(
+                {
+                    # Azimuth is fixed at the configured value (not tuned); reported in
+                    # the Solcast/base convention (West-positive) for reference.
+                    "azimuth": panel_azimuth_to_solcast(self._tuning_result.get("azimuth", 0.0)),
+                    "azimuth_tuned": False,
+                    "rmse_kw": self._tuning_result.get("rmse_kw"),
+                    "mae_kw": self._tuning_result.get("mae_kw"),
+                    "capacity_scale": self._tuning_result.get("capacity_scale"),
+                    "n_records": self._tuning_result.get("n_records"),
+                    "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
+                }
+            )
         if self._site_tuning_results:
             extra["per_site"] = [
                 {
@@ -1665,10 +1663,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def dampening_hours_with_db(self) -> int:
+        """Number of half-hour slots whose dampening is backed by DB history."""
         return sum(1 for s in self._dampening_table if s.get("source") not in ("no_data", "night"))
 
     @property
     def dampening_attributes(self) -> dict[str, Any]:
+        """Per-hour dampening diagnostics (factor + source) for the sensor."""
         attrs: dict[str, Any] = {}
         for h in range(24):
             slot_a = self._dampening_table[h * 2] if h * 2 < len(self._dampening_table) else {}
@@ -1694,7 +1694,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     attrs[f"{key}_forecast_clipped"] = fclip
         sources = [s.get("source") for s in self._dampening_table if s.get("source") != "night"]
         if sources:
-            from collections import Counter
             most_common = Counter(sources).most_common(1)
             attrs["overall_source"] = most_common[0][0] if most_common else "no_data"
         # Gate state: when true, the push was held at neutral 1.0 because a tuned

@@ -8,17 +8,19 @@ Columns added in later versions are applied to existing databases in place via a
 additive ``ALTER TABLE`` (see ``_ADDED_COLUMNS`` / ``_ensure_columns``); one-time
 *data* repairs are gated separately on ``PRAGMA user_version`` (``async_migrate``).
 """
+
 from __future__ import annotations
 
 import logging
 import sqlite3
 import threading
 import time
-from typing import Any
-
-from homeassistant.core import HomeAssistant
+from typing import TYPE_CHECKING, Any
 
 from .pv_tuning import clearsky_ghi, solar_position
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,11 +83,28 @@ _ADDED_COLUMNS = (
 
 # Columns written by an insert, in order. Shared by single and bulk inserts.
 _INSERT_COLUMNS = (
-    "period_end", "period_end_epoch", "period_start", "site",
-    "pv_actual", "pv_export", "pv_estimate", "pv_estimate10", "pv_estimate90",
-    "azimuth", "zenith", "temp", "clouds", "description", "battery_charge",
-    "dc_voltage1", "dc_current1", "dc_voltage2", "dc_current2",
-    "ghi", "dni", "dhi",
+    "period_end",
+    "period_end_epoch",
+    "period_start",
+    "site",
+    "pv_actual",
+    "pv_export",
+    "pv_estimate",
+    "pv_estimate10",
+    "pv_estimate90",
+    "azimuth",
+    "zenith",
+    "temp",
+    "clouds",
+    "description",
+    "battery_charge",
+    "dc_voltage1",
+    "dc_current1",
+    "dc_voltage2",
+    "dc_current2",
+    "ghi",
+    "dni",
+    "dhi",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -100,6 +119,7 @@ class SqliteStore:
     """File-backed SQLite store (async API, all I/O via the executor)."""
 
     def __init__(self, hass: HomeAssistant, path: str, readonly: bool = False) -> None:
+        """Initialise the store for ``path`` (no connection is opened yet)."""
         self._hass = hass
         self._path = path
         self._readonly = readonly
@@ -248,9 +268,7 @@ class SqliteStore:
         cutoff = int(time.time()) - retention_days * 86400
         try:
             with self._lock:
-                cur = self._conn.execute(
-                    "DELETE FROM solcast_data WHERE period_end_epoch < ?", (cutoff,)
-                )
+                cur = self._conn.execute("DELETE FROM solcast_data WHERE period_end_epoch < ?", (cutoff,))
                 self._conn.commit()
                 return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
         except Exception as exc:  # noqa: BLE001
@@ -269,9 +287,7 @@ class SqliteStore:
         """
         if self._conn is None or self._readonly:
             return 0
-        return await self._hass.async_add_executor_job(
-            self._migrate_azimuth, latitude, longitude
-        )
+        return await self._hass.async_add_executor_job(self._migrate_azimuth, latitude, longitude)
 
     def _migrate_azimuth(self, latitude: float, longitude: float) -> int:
         try:
@@ -279,9 +295,7 @@ class SqliteStore:
                 version = self._conn.execute("PRAGMA user_version").fetchone()[0]
                 if version >= SCHEMA_VERSION:
                     return 0
-                rows = self._conn.execute(
-                    'SELECT "index", period_end_epoch, azimuth FROM solcast_data'
-                ).fetchall()
+                rows = self._conn.execute('SELECT "index", period_end_epoch, azimuth FROM solcast_data').fetchall()
                 # Solar azimuth depends only on epoch + site lat/lon (it is the sun
                 # position, shared by every site on the property), so recompute it
                 # from each row's stored epoch at the interval midpoint (epoch-900),
@@ -290,22 +304,18 @@ class SqliteStore:
                 updates = [
                     (round(new_az, 5), idx)
                     for idx, epoch, old_az in rows
-                    if abs(
-                        (new_az := solar_position(int(epoch) - 900, latitude, longitude)[0])
-                        - (old_az or 0.0)
-                    )
+                    if abs((new_az := solar_position(int(epoch) - 900, latitude, longitude)[0]) - (old_az or 0.0))
                     > 0.01
                 ]
                 if updates:
-                    self._conn.executemany(
-                        'UPDATE solcast_data SET azimuth = ? WHERE "index" = ?', updates
-                    )
+                    self._conn.executemany('UPDATE solcast_data SET azimuth = ? WHERE "index" = ?', updates)
                 self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 self._conn.commit()
             if updates:
                 _LOGGER.info(
                     "Repaired solar azimuth on %d of %d stored row(s)",
-                    len(updates), len(rows),
+                    len(updates),
+                    len(rows),
                 )
             return len(updates)
         except Exception as exc:  # noqa: BLE001
@@ -409,11 +419,12 @@ class SqliteStore:
         if kt_threshold is not None:
             # Multiply form avoids dividing by a near-zero clear-sky reference.
             gate_clause = (
-                " AND ghi > 0 AND zenith < ? AND clearsky_ghi(zenith) >= ? "
-                "AND ghi >= ? * clearsky_ghi(zenith)"
+                " AND ghi > 0 AND zenith < ? AND clearsky_ghi(zenith) >= ? AND ghi >= ? * clearsky_ghi(zenith)"
             )
             gate_params = (
-                float(kt_zenith_max), float(kt_ghi_cs_floor), float(kt_threshold),
+                float(kt_zenith_max),
+                float(kt_ghi_cs_floor),
+                float(kt_threshold),
             )
         elif cloud_max is not None:
             gate_clause = " AND clouds < ?"
@@ -441,4 +452,5 @@ class SqliteStore:
 
     @property
     def available(self) -> bool:
+        """Whether the store has an open connection."""
         return self._conn is not None

@@ -7,6 +7,7 @@ locked-down environment (meson permission denial — see BJReplay/ha-solcast-sol
 issue #85). numpy alone is enough here (it is a core Home Assistant dependency and
 ships Pi wheels), so tuning works out of the box on the hardware most HA users run.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 try:
     import numpy as np
+
     TUNING_AVAILABLE = True
 except ImportError:
     TUNING_AVAILABLE = False
@@ -86,10 +88,7 @@ def solar_position(epoch: int, latitude: float, longitude: float) -> tuple[float
     hour_angle = math.radians(hour_angle_deg)
 
     lat_r = math.radians(latitude)
-    cos_zenith = (
-        math.sin(lat_r) * math.sin(decl)
-        + math.cos(lat_r) * math.cos(decl) * math.cos(hour_angle)
-    )
+    cos_zenith = math.sin(lat_r) * math.sin(decl) + math.cos(lat_r) * math.cos(decl) * math.cos(hour_angle)
     cos_zenith = max(-1.0, min(1.0, cos_zenith))
     zenith = math.degrees(math.acos(cos_zenith))
 
@@ -127,10 +126,7 @@ def _cos_incidence(tilt_deg: float, azimuth_deg: float, zenith_deg: float, sun_a
     panel_az = math.radians(azimuth_deg)
     zenith = math.radians(zenith_deg)
     sun_az = math.radians(sun_az_deg)
-    cos_inc = (
-        math.cos(zenith) * math.cos(tilt)
-        + math.sin(zenith) * math.sin(tilt) * math.cos(sun_az - panel_az)
-    )
+    cos_inc = math.cos(zenith) * math.cos(tilt) + math.sin(zenith) * math.sin(tilt) * math.cos(sun_az - panel_az)
     return max(0.0, cos_inc)
 
 
@@ -139,9 +135,9 @@ def _cos_incidence(tilt_deg: float, azimuth_deg: float, zenith_deg: float, sun_a
 # running best. 0.25° final resolution is finer than any real Solcast site config
 # (whole degrees) while staying a handful of evaluations.
 _GRID_STAGES = (
-    (None, 5.0),   # full range, 5° step
-    (5.0, 1.0),    # ±5° around best, 1° step
-    (1.0, 0.25),   # ±1° around best, 0.25° step
+    (None, 5.0),  # full range, 5° step
+    (5.0, 1.0),  # ±5° around best, 1° step
+    (1.0, 0.25),  # ±1° around best, 0.25° step
 )
 _TILT_BOUNDS = (0.0, 90.0)
 # Solar constant (W/m²) for the Hay-Davies anisotropy index Ai = DNI / I0.
@@ -222,7 +218,7 @@ def run_tuning(
         if raw_ghi is None:
             continue
         g = float(raw_ghi)
-        if g <= 0.0:                     # no daytime irradiance (night / not backfilled)
+        if g <= 0.0:  # no daytime irradiance (night / not backfilled)
             continue
         # Distinguish a genuine 0% cloud (clearest sky — the best data) from a
         # missing value, as the old tuner did: a bare ``or 100`` would drop a falsy
@@ -234,7 +230,7 @@ def run_tuning(
         zen = float(r.get("zenith", 90) or 90)
         if zen >= 90.0:
             continue
-        total_pv = float(r.get("pv_actual", 0) or 0)   # AC output incl. export + battery
+        total_pv = float(r.get("pv_actual", 0) or 0)  # AC output incl. export + battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
         # Clipping exclusion: both delivered and forecast pinned at the ceiling.
@@ -246,10 +242,7 @@ def run_tuning(
             export_limited_excluded += 1
             continue
         epoch = r.get("period_end_epoch")
-        doy = (
-            datetime.fromtimestamp(normalize_epoch(epoch), tz=UTC).timetuple().tm_yday
-            if epoch else 172
-        )
+        doy = datetime.fromtimestamp(normalize_epoch(epoch), tz=UTC).timetuple().tm_yday if epoch else 172
         obs.append(total_pv)
         zenith.append(zen)
         sun_az.append(float(r.get("azimuth", 0) or 0))
@@ -260,9 +253,7 @@ def run_tuning(
 
     n_filtered = len(obs)
     if n_filtered < 10:
-        _LOGGER.debug(
-            "Insufficient tuning records with irradiance: %d (need 10)", n_filtered
-        )
+        _LOGGER.debug("Insufficient tuning records with irradiance: %d (need 10)", n_filtered)
         return None
 
     obs_a = np.array(obs)
@@ -280,13 +271,11 @@ def run_tuning(
     def poa(tilt_deg: float) -> np.ndarray:
         """Plane-of-array irradiance over all records for one tilt (W/m²)."""
         tr = math.radians(tilt_deg)
-        cos_aoi = np.maximum(
-            0.0, cos_z * math.cos(tr) + sin_z * math.sin(tr) * np.cos(sun_az_r - fixed_az_r)
-        )
+        cos_aoi = np.maximum(0.0, cos_z * math.cos(tr) + sin_z * math.sin(tr) * np.cos(sun_az_r - fixed_az_r))
         beam = dni_a * cos_aoi
         iso = (1.0 + math.cos(tr)) / 2.0
         if use_hd:
-            rb = cos_aoi / np.maximum(cos_z, 0.035)   # clamp low-sun blow-up
+            rb = cos_aoi / np.maximum(cos_z, 0.035)  # clamp low-sun blow-up
             diffuse = dhi_a * (ai * rb + (1.0 - ai) * iso)
         else:
             diffuse = dhi_a * iso

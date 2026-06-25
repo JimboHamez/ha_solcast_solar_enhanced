@@ -1,4 +1,5 @@
 """Adaptive shading dampening calculation."""
+
 from __future__ import annotations
 
 import logging
@@ -55,8 +56,7 @@ def compute_dampening(
     target_azimuth: float,
     export_limit_kw: float = 0.0,
 ) -> dict[str, Any]:
-    """
-    Compute a single half-hour slot's dampening from database-collected records only.
+    """Compute a single half-hour slot's dampening from database-collected records only.
 
     The factor is the confidence-weighted blend of a neutral 1.0 anchor and the
     DB-measured actual/estimate ratio; no values from the base solcast_solar

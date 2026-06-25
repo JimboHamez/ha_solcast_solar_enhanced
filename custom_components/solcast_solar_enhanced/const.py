@@ -1,4 +1,5 @@
 """Constants for the Solcast Solar Enhanced integration."""
+
 from __future__ import annotations
 
 DOMAIN = "solcast_solar_enhanced"
@@ -155,9 +156,9 @@ ISSUE_OWM_REQUIRED = "owm_required"
 # mis-configured site can't bake orientation error into the dampening curve (the
 # notebook 3.4b "tuned estimate" prerequisite). Per-site aware.
 ISSUE_DAMPENING_GATED = "dampening_gated"
-DAMPENING_GATE_MIN_RECORDS = 50      # tuning confidence before the gate may act
-DAMPENING_GATE_TILT_TOL = 15.0       # ° tilt divergence that trips the gate
-DAMPENING_GATE_AZIMUTH_TOL = 25.0    # ° azimuth divergence that trips the gate
+DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the gate may act
+DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that trips the gate
+DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that trips the gate
 
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"

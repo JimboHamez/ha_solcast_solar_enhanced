@@ -1,10 +1,10 @@
 """Solcast Solar Enhanced integration."""
+
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
@@ -17,6 +17,10 @@ from .const import (
 )
 from .coordinator import SolcastEnhancedCoordinator
 
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant, ServiceCall
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -25,8 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Verify base integration is loaded
     if BASE_DOMAIN not in hass.data and not hass.config_entries.async_entries(BASE_DOMAIN):
         raise ConfigEntryNotReady(
-            f"Base integration '{BASE_DOMAIN}' is not loaded. "
-            "Ensure solcast_solar is configured and running."
+            f"Base integration '{BASE_DOMAIN}' is not loaded. Ensure solcast_solar is configured and running."
         )
 
     coordinator = SolcastEnhancedCoordinator(hass, entry)
@@ -84,4 +87,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the config entry when its options change."""
     await hass.config_entries.async_reload(entry.entry_id)
