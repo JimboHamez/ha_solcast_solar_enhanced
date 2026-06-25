@@ -1,4 +1,5 @@
 """Weather/irradiance clients for Solcast Solar Enhanced."""
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +32,7 @@ class OWMClient:
         longitude: float,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
+        """Store credentials/location and the optional shared aiohttp session."""
         self._api_key = api_key
         self._lat = latitude
         self._lon = longitude
@@ -77,13 +79,9 @@ class OWMClient:
             return {"temp": None, "clouds": None, "description": "unavailable"}
 
     @staticmethod
-    async def _get(
-        session: aiohttp.ClientSession, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _get(session: aiohttp.ClientSession, params: dict[str, Any]) -> dict[str, Any]:
         """Issue the GET and return parsed JSON (15s total timeout)."""
-        async with session.get(
-            OWM_URL, params=params, timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
+        async with session.get(OWM_URL, params=params, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -108,6 +106,7 @@ class OpenMeteoClient:
         longitude: float,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
+        """Store location and the optional shared aiohttp session."""
         self._lat = latitude
         self._lon = longitude
         self._session = session
@@ -137,18 +136,13 @@ class OpenMeteoClient:
             if best_i is None or best_gap > self._MATCH_TOLERANCE_S:
                 return self._empty()
             return {
-                key: self._num(series.get(var, [None] * len(times))[best_i])
-                for var, key in _OPENMETEO_VARS.items()
+                key: self._num(series.get(var, [None] * len(times))[best_i]) for var, key in _OPENMETEO_VARS.items()
             }
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "Open-Meteo fetch failed: %s: %s", type(exc).__name__, exc
-            )
+            _LOGGER.warning("Open-Meteo fetch failed: %s: %s", type(exc).__name__, exc)
             return self._empty()
 
-    async def async_get_archive(
-        self, start_date: str, end_date: str
-    ) -> list[dict[str, Any]]:
+    async def async_get_archive(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
         """Bulk hourly history (``YYYY-MM-DD`` bounds, inclusive, UTC).
 
         Returns one dict per hour with ``epoch`` plus the irradiance/weather keys;
@@ -173,19 +167,16 @@ class OpenMeteoClient:
             out.append(row)
         return out
 
-    async def _fetch(
-        self, params: dict[str, Any], archive: bool = False
-    ) -> dict[str, Any]:
+    async def _fetch(self, params: dict[str, Any], archive: bool = False) -> dict[str, Any]:
         url = OPENMETEO_ARCHIVE_URL if archive else OPENMETEO_FORECAST_URL
         timeout = aiohttp.ClientTimeout(total=60 if archive else 15)
         if self._session is not None:
             async with self._session.get(url, params=params, timeout=timeout) as resp:
                 resp.raise_for_status()
                 return await resp.json()
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=timeout) as resp:
-                resp.raise_for_status()
-                return await resp.json()
+        async with aiohttp.ClientSession() as session, session.get(url, params=params, timeout=timeout) as resp:
+            resp.raise_for_status()
+            return await resp.json()
 
     @staticmethod
     def _iso_to_epoch(iso: str) -> int:
@@ -198,4 +189,4 @@ class OpenMeteoClient:
 
     @staticmethod
     def _empty() -> dict[str, Any]:
-        return {key: None for key in _OPENMETEO_VARS.values()}
+        return dict.fromkeys(_OPENMETEO_VARS.values())

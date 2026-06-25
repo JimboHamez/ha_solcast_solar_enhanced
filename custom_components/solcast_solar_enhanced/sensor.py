@@ -1,16 +1,15 @@
 """Sensor entities for Solcast Solar Enhanced."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfEnergy, UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -33,6 +32,10 @@ from .const import (
 )
 from .coordinator import SolcastEnhancedCoordinator
 
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -41,6 +44,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up the Solcast Solar Enhanced sensors from a config entry."""
     coordinator: SolcastEnhancedCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [
         ForecastNowSensor(coordinator, entry),
