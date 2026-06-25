@@ -58,14 +58,15 @@ solcast_solar_enhanced coordinator
         ├── read pv_export     inverter/grid sensor → avg kW
         ├── read battery       battery sensor (falls back to raw sensor)
         ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
-        ├── fetch OWM weather  (temp °C, clouds 0–100, description)
-        ├── persist records    to SQLite ('_total' + one row per site)
+        ├── fetch OWM weather  (optional: temp °C, clouds 0–100, description)
+        ├── fetch Open-Meteo   (keyless, default-on: plane GHI/DNI/DHI + clouds at period midpoint)
+        ├── persist records    to SQLite ('_total' + one row per site, incl. ghi/dni/dhi)
         ├── run PV tuning      numpy grid search (daily, executor thread; per-site)
         ├── compute dampening  quality-weighted DB ratio blended toward neutral 1.0
         └── push dampening     → base set_dampening service (per-site)
 ```
 
-All forecast data is read from `hass.data["solcast_solar"]` (with a sensor-attribute fallback), so the only external HTTP call added is to OpenWeatherMap. The codebase is linted against HA 2026.5.4 (flake8/pyflakes clean), follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
+All forecast data is read from `hass.data["solcast_solar"]` (with a sensor-attribute fallback), so the external HTTP calls added are the keyless **Open-Meteo** irradiance fetch (default-on) and the optional **OpenWeatherMap** weather fetch. The codebase is linted against HA 2026.5.4 (flake8/pyflakes clean), follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
 
 ---
 
@@ -151,8 +152,8 @@ Recovers panel **tilt** by transposing measured irradiance to the panel plane an
 
 ### Algorithm
 
-1. Fetch up to 2000 recent records (`pv_actual > 0`), now including `ghi`/`dni`/`dhi`.
-2. Filter to clear-sky (`clouds < cloud_threshold`); skip rows lacking irradiance (`ghi = 0`).
+1. Fetch up to 2000 recent **clear-sky** records (`pv_actual > 0`), including `ghi`/`dni`/`dhi`. The clear-sky gate is applied **in SQL before the `LIMIT`** (see *Clear-sky selection* below) so the result is the most recent 2000 *clear-sky* rows, not the most recent rows of any weather.
+2. Skip rows lacking irradiance (`ghi = 0`). The in-tuning cloud re-filter is **disabled** (threshold `101`) when the SQL Kt gate already ran, so it can't wrongly drop rows when OWM is absent and `clouds` is the `100` sentinel.
 3. Exclude clipped records (`total_pv` **and** `pv_estimate` ≥ `capacity × clipping_threshold`).
 4. Exclude export-limited records (`pv_export ≥ export_limit_kw × clipping_threshold`, when set) — see below.
 5. For each candidate **tilt** (azimuth held fixed — see below), transpose to plane-of-array irradiance (Hay-Davies anisotropic sky by default, isotropic fallback), fit a single capacity scale by least squares (`s = Σ(poa·obs)/Σ(poa²)` — closed-form, no scipy), and score **MAE** against `total_pv`.
@@ -162,6 +163,17 @@ Recovers panel **tilt** by transposing measured irradiance to the panel plane an
 **Azimuth is held fixed at the configured value, not tuned.** It is non-identifiable from this data: a shift in the irradiance↔power time alignment is mathematically degenerate with a panel rotation (~1° of azimuth per ~3 min of offset), and morning shading biases any azimuth estimate westward regardless of method. Fitting it would do more harm than good, so the tuner recovers tilt only; the result echoes the configured azimuth back (the dampening gate's azimuth delta is then identically 0). Recovering azimuth would need precisely-timestamped 15-min irradiance *and* shading-aware AM/PM weighting — a separate workstream.
 
 Solar position (azimuth/zenith, ±1°) is computed locally in `pv_tuning.py` from declination, equation of time and hour angle — no extra library — and the same function populates the `azimuth`/`zenith` columns at write time.
+
+### Clear-sky selection — clearness-index (Kt) gate
+
+Tuning needs sun-angle diversity across seasons; the clear-sky rows are chosen in `async_get_records_for_tuning` by one of **two mutually exclusive gates**, both applied in SQL before the `LIMIT`:
+
+- **Kt gate (preferred, used whenever Open-Meteo irradiance is enabled — the default).** A row qualifies when the **measured clearness index** `Kt = ghi / clearsky_ghi(zenith) ≥ CONF_KT_THRESHOLD` (default `0.75`, configurable 0.5–1.0), judged only where the sun is meaningfully up (`zenith < KT_ZENITH_MAX = 85°`) and the clear-sky reference is non-trivial (`clearsky_ghi(zenith) ≥ KT_GHI_CS_FLOOR = 40 W/m²`). `clearsky_ghi` is the pure-Python Haurwitz model registered as a SQLite function so the gate runs in-query; the comparison is written in multiply form (`ghi ≥ Kt × clearsky_ghi`) to avoid dividing by a near-zero reference.
+- **Cloud gate (fallback, only when Open-Meteo is disabled).** The legacy OWM total-cloud gate `clouds < cloud_threshold`.
+
+**Why Kt replaced total cloud.** Total-cloud % over-rejects genuinely clear slots that happen to carry harmless **high/mid cloud** (cirrus, distant cumulus) — those slots have near-full ground irradiance but a non-trivial reported cloud fraction, so a `clouds < 30%` gate discards usable clear-sky data. `Kt` measures the *actual* irradiance reaching the ground relative to a clear-sky reference, so it admits those slots and excludes only real attenuation — independent of any model cloud %. On the real winter DB this widened the clear-sky set roughly 9× (≈2 records under the cloud gate → ≈18 under Kt ≥ 0.75), which is what let the transposition tuner converge where the legacy path returned "insufficient". The Kt gate shipped in **v1.7.0**, built on the Open-Meteo transposition work.
+
+> The dampening clear-sky selection (Feature 3) still uses the cloud-cover gate/weighting; moving it onto measured Kt is a planned follow-up.
 
 ### Export limit filtering
 
@@ -189,9 +201,9 @@ To stop a mis-configured site baking orientation error into the curve, the push 
 
 ### Why cloud filtering is essential
 
-The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor. The per-record cloud percentage comes **only** from OWM, so **OpenWeatherMap is a functional requirement, not an optional extra.**
+The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor, so a cloud signal is needed to filter them. That signal comes from either source: **Open-Meteo** supplies a keyless `cloud_cover` (default-on), and **OWM** supplies one when configured. When OWM is absent, Open-Meteo's `clouds` doubles as the cloud source, so **OWM is now optional** — a cloud source is required, but not specifically OpenWeatherMap. (Tuning's clear-sky selection has moved off cloud cover entirely onto the measured Kt gate — see [Feature 2](#clear-sky-selection--clearness-index-kt-gate); dampening still uses the cloud-cover weighting below.)
 
-The design is **fail-safe**: when OWM is disabled or a fetch fails, cloud cover defaults to *unknown* and is coerced at the DB-write boundary to the **`100` sentinel** — a value the clear-sky filter excludes. So a record written without OWM can never masquerade as clear sky: tuning finds nothing to fit (returns `None`), dampening reports `no_data` (stays neutral, pushes nothing), and the Cloud Cover / Weather sensors show *unavailable* rather than a misleading `0`. `async_setup` raises an `ISSUE_OWM_REQUIRED` repair issue whenever a cloud-driven feature is enabled with no OWM configured.
+The design is **fail-safe**: when *no* cloud source is available (OWM unconfigured **and** Open-Meteo disabled, or a fetch fails), cloud cover defaults to *unknown* and is coerced at the DB-write boundary to the **`100` sentinel** — a value the clear-sky filter excludes. So such a record can never masquerade as clear sky: tuning finds nothing to fit (returns `None`), dampening reports `no_data` (stays neutral, pushes nothing), and the Cloud Cover / Weather sensors show *unavailable* rather than a misleading `0`. `async_setup` raises an `ISSUE_OWM_REQUIRED` repair issue only when a cloud-driven feature is enabled with **neither** Open-Meteo nor OWM configured; enabling either source clears it on reload.
 
 *Why `100`, not `0`:* both are valid real readings, so the unknown sentinel must sit on the excluded side. `0` collides with real clear sky (would be trusted); `100` collides with real overcast (already excluded — safe). The same reasoning fixed the falsy-`0` bug in v1.6.2/3.
 
@@ -330,6 +342,8 @@ Since `ac_total ≈ η × Σ dc` (η ≈ constant), this yields each array's pro
 
 `CONF_SITE_GROUPS` is a list of measurement groups — either a single-site group (`site` + `ac_sensor`) or a DC-apportioned group (a `strings` list of `{site, dc_sensor}`), each optionally carrying an `mppts` list of per-tracker voltage/current capture sensors. The config-flow `sites` step collects per-site fields and `_derive_groups()` groups sites sharing an AC sensor (shared → apportioned; alone → single; shared-without-DC → omitted). Note the two DC roles are distinct: `dc_sensor` is **power** (apportionment ratio only); `mppts` is **instantaneous voltage/current** (curtailment capture).
 
+**Field placement by topology (v1.8.0).** Every field lives in exactly one step, decided by topology so nothing is entered twice. Site discovery runs in Step 1 (`_is_single_site`, cached) so the wizard knows the topology before rendering. `_build_site_schema(..., single_site=)` shows the flat per-inverter MPPT V/I fields (`CONF_MPPT*`) on Step 1 **only** for single-array systems; multi-array systems map MPPT trackers per array in the `sites` step instead, and Step 1 hides them. The `sites` step prefills each array's generation field from `CONF_PV_ACTUAL_SENSOR` (`default_ac`, correct for a single inverter feeding several arrays — the shared-meter case) and migrates any pre-existing flat MPPT keys into per-array suggestions (`_seed_flat_mppt`), clearing them on save (`_clear_flat_mppt`). Because multi-array systems no longer carry the flat keys, `MpptDcSensor`'s `max_voltage` spans the property-wide **and** per-site trackers so the diagnostic stays populated.
+
 The `site` column (default `'_total'`) and `(period_end_epoch, site)` key let each site own its rows. Each cycle writes the `_total` row **plus** one per site; `pv_export` is replicated onto site rows (for export-clip exclusion), `battery_charge` stays on `_total`. Aggregate tuning/dampening pass `site='_total'`; per-site runs pass the `resource_id`. In single-site installs everything is `_total`, so behaviour is identical and per-site logic is inert.
 
 Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, seeded from its Solcast orientation (azimuth converted to the tuner's frame), surfaced as a `per_site` attribute. Per-site **dampening** is pushed via `set_dampening` with the site's `resource_id`, overriding the base global for that site.
@@ -347,7 +361,7 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 | Tuning RMSE | kW | Goodness of fit |
 | Tuning Export Limited Excluded | — | Records dropped by the export-limit filter last run |
 | Database Records | — | Total DB record count |
-| MPPT DC Voltage (max) | V | Diagnostic: latest captured DC telemetry (max string voltage; per-tracker V/I + per-site in attributes). Unavailable when no DC sensors configured |
+| MPPT DC Voltage (max) | V | Diagnostic: latest captured DC telemetry (max string voltage across the property-wide *and* per-site trackers; per-tracker V/I + per-site in attributes). Unavailable when no DC sensors configured |
 | Dampening Hours with DB Data | — | Hours with DB-derived factors (per-hour diagnostics in attributes) |
 | Weather Temperature | °C | OWM temperature |
 | Cloud Cover | % | OWM cloud cover |
@@ -495,7 +509,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.6.9** (DC-telemetry capture + diagnostic sensor). Earlier design-doc revisions covered the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), and the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8).
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.8.0** (config-flow field placement by topology + the multi-site MPPT-diagnostic fix). Earlier milestones: the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
 
 ---
 
