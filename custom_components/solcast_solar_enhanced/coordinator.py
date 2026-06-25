@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
@@ -90,6 +90,8 @@ from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SqliteStore
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -110,7 +112,7 @@ def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
             if not resource_id or "solcast" not in state.entity_id:
                 continue
 
-            def _f(key: str, attrs: Any = attrs) -> float:
+            def _f(key: str, attrs: Mapping[str, Any] = attrs) -> float:
                 try:
                     return float(attrs.get(key, 0) or 0)
                 except (ValueError, TypeError):
@@ -1424,7 +1426,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return 0.0
 
     @staticmethod
-    def _resolve_input_mode(state: Any, configured: str) -> str:
+    def _resolve_input_mode(state: State, configured: str) -> str:
         """Resolve an explicit input mode, or auto-detect it from the sensor.
 
         Detection is **unit-first**: a ``Wh``/``kWh``/``MWh`` unit is a cumulative
