@@ -34,7 +34,9 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.9.0
+## 🆕 What's new in v1.9.1
+
+**v1.9.1 (patch):** the topology selector now shows a proper "How are your arrays measured?" label instead of its raw internal key.
 
 The per-site mapping step now **asks how your arrays are measured** before showing fields, so the two multi-site topologies are explicit instead of guessed:
 
@@ -45,7 +47,7 @@ Choosing the shared-inverter mode is now **validated**: a missing per-array DC s
 
 **Upgrading?** Existing setups carry over: an apportioned (shared-inverter) config opens in the DC-split mode automatically, and single-array installs are unaffected.
 
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.9.0).
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.9.1).
 
 ---
 
