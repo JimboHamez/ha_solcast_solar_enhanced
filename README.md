@@ -103,7 +103,9 @@ Tuning and dampening only learn from *clear-sky* periods (cloudy ones tell you n
 
 ## Installation
 
-![Solcast Solar Enhanced sensors in Home Assistant](images/dashboard.png)
+<p align="center">
+  <a href="images/dashboard.png"><img width="700" alt="Solcast Solar Enhanced sensors in Home Assistant" src="images/dashboard.png"></a>
+</p>
 
 ### HACS (recommended)
 
@@ -128,8 +130,7 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 ### Step 1 — Site & System
 
-![Step 1 — Site & System](images/config-step1-site.png)
-<!-- placeholder: capture the Site & System wizard page -->
+<a href="images/config-step1-site.png"><img align="right" width="340" alt="Step 1 — Site & System" src="images/config-step1-site.png"></a>
 
 | Field | Description |
 |---|---|
@@ -144,10 +145,11 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | Battery Charge sensor | Battery charge sensor (optional) |
 | MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
 
+<br clear="all">
+
 ### Step 2 — Storage
 
-![Step 2 — Storage](images/config-step2-storage.png)
-<!-- placeholder: capture the Storage wizard page -->
+<a href="images/config-step2-storage.png"><img align="right" width="340" alt="Step 2 — Storage" src="images/config-step2-storage.png"></a>
 
 | Field | Default | Description |
 |---|---|---|
@@ -156,10 +158,11 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path.
 
+<br clear="all">
+
 ### Step 3 — Weather & Irradiance
 
-![Step 3 — Weather & Irradiance](images/config-step3-weather.png)
-<!-- placeholder: capture the Weather & Irradiance wizard page -->
+<a href="images/config-step3-weather.png"><img align="right" width="340" alt="Step 3 — Weather & Irradiance" src="images/config-step3-weather.png"></a>
 
 Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 above](#4-weather--irradiance-open-meteo--keyless-on-by-default)). OpenWeatherMap is an optional legacy alternative for cloud/temperature.
 
@@ -169,10 +172,11 @@ Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 ab
 | Enable OWM | **Off** | Optional legacy cloud/temperature source; needs a key |
 | OWM API key | — | Free key from openweathermap.org (only if OWM enabled) |
 
+<br clear="all">
+
 ### Step 4 — Battery Storage
 
-![Step 4 — Battery Storage](images/config-step4-battery.png)
-<!-- placeholder: capture the Battery Storage wizard page -->
+<a href="images/config-step4-battery.png"><img align="right" width="340" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
 
 A fallback for systems without a battery sensor mapped in Step 1.
 
@@ -183,10 +187,11 @@ A fallback for systems without a battery sensor mapped in Step 1.
 | Net battery sensor | Signed power entity (positive = charging) |
 | Charge battery sensor | Charge-only power entity |
 
+<br clear="all">
+
 ### Step 5 — PV Tuning & Dampening
 
-![Step 5 — PV Tuning & Dampening](images/config-step5-tuning.png)
-<!-- placeholder: capture the PV Tuning & Dampening wizard page -->
+<a href="images/config-step5-tuning.png"><img align="right" width="340" alt="Step 5 — PV Tuning & Dampening" src="images/config-step5-tuning.png"></a>
 
 | Field | Default | Description |
 |---|---|---|
@@ -198,10 +203,11 @@ A fallback for systems without a battery sensor mapped in Step 1.
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
 | Grid export limit (kW) | 0 | Exclude records pegged at this ceiling; 0 = disabled. Read automatically from the base integration if set |
 
+<br clear="all">
+
 ### Step 6 — Per-site sensor mapping (multi-site only)
 
-![Step 6 — Per-site sensor mapping](images/config-step6-sites.png)
-<!-- placeholder: capture the Per-site mapping page (multi-site setups only) -->
+<a href="images/config-step6-sites.png"><img align="right" width="340" alt="Step 6 — Per-site sensor mapping" src="images/config-step6-sites.png"></a>
 
 Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors.
 
@@ -216,6 +222,8 @@ See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 > **Heads up:** the base integration's own **automatic dampening** must be **disabled** (Solcast PV Forecast → Configure). While it's on, the base rejects manual dampening, so this integration can't apply its factors — it detects this, skips the push, and logs a warning.
 
 ---
+
+<br clear="all">
 
 ## How it works
 
