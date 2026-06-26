@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
+        "data": {
+          "__site_topology__": "Ako sa merajú vaše polia?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
+        "data": {
+          "__site_topology__": "Ako sa merajú vaše polia?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Affectation des capteurs par site",
-        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique.",
+        "data": {
+          "__site_topology__": "Comment vos champs sont-ils mesurés ?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Affectation des capteurs par site",
-        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique.",
+        "data": {
+          "__site_topology__": "Comment vos champs sont-ils mesurés ?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

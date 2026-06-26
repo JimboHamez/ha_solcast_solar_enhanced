@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
+        "data": {
+          "__site_topology__": "Hoe worden uw arrays gemeten?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
+        "data": {
+          "__site_topology__": "Hoe worden uw arrays gemeten?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
