@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt — diese Seite zur Zuordnung je Strang erscheint bei Anlagen mit mehreren Strängen. Wählen Sie für jeden Strang dessen Erzeugungssensor (mit Ihrem anlagenweiten PV-Erzeugungssensor vorbelegt). Wenn jeder Strang einzeln gemessen wird — Mikrowechselrichter (z. B. Enphase) oder ein Wechselrichter pro Strang —, ordnen Sie dessen eigenen AC-Sensor zu und lassen Sie DC leer. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie stattdessen jedem seinen DC/MPPT-Leistungssensor an, damit die Leistung nach DC-Anteil aufgeteilt wird. Tragen Sie auch Spannung/Strom je Strang hier ein — bei Anlagen mit mehreren Strängen befinden sich diese hier und nicht auf der Systemseite. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Die DC-Aufteilung benötigt für jedes Array einen DC/MPPT-Sensor. Fügen Sie den fehlenden DC-Sensor hinzu oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
+      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie für jeden Strang den Sensor, der dessen Erzeugung misst. Wenn sich mehrere Stränge einen Wechselrichter-AC-Ausgang teilen, geben Sie jedem zusätzlich seinen DC-/MPPT-Sensor an, damit die Leistung aufgeteilt werden kann. Lassen Sie einen Standort leer, um ihn zu überspringen. 'Sensortyp' ist üblicherweise Automatisch erkennen."
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Die DC-Aufteilung benötigt für jedes Array einen DC/MPPT-Sensor. Fügen Sie den fehlenden DC-Sensor hinzu oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
+      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Energiezähler – kWh (empfohlen)",
         "energy_wh": "Energiezähler – Wh (empfohlen)",
         "energy_mwh": "Energiezähler – MWh (empfohlen)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Jedes Array hat einen eigenen Erzeugungssensor (Mikrowechselrichter / ein Wechselrichter pro Array)",
+        "dc_split": "Ein gemeinsamer Wechselrichter, nach DC auf die Arrays aufgeteilt (ein Wechselrichter, mehrere MPPTs)"
       }
     }
   },

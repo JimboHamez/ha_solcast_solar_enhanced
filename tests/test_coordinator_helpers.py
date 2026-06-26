@@ -683,6 +683,102 @@ async def test_do_update_writes_per_site_rows(hass, mock_base_coordinator):
     assert set(coord._db_sites) == {DEFAULT_SITE_ID, rid}
 
 
+async def test_do_update_total_summed_from_sites_when_no_system_sensor(hass, mock_base_coordinator):
+    """No whole-system generation sensor → the '_total' row sums the per-site reads.
+
+    A pure-microinverter setup maps only per-array sensors; the aggregate that
+    drives tuning/dampening must still be populated rather than left at zero.
+    """
+    config = {k: v for k, v in _ORCH_CONFIG.items() if k != CONF_PV_ACTUAL_SENSOR}
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config,
+        options={
+            CONF_DB_ENABLED: True,
+            CONF_SITE_GROUPS: [
+                {"ac_sensor": "sensor.ac_a", "site": "AAAA"},
+                {"ac_sensor": "sensor.ac_b", "site": "BBBB"},
+            ],
+        },
+        entry_id="orch_sum",
+        title="orch",
+    )
+    entry.add_to_hass(hass)
+    coord = SolcastEnhancedCoordinator(hass, entry)
+    coord._db = _FakeStore()
+    hass.states.async_set("sensor.ac_a", "2.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.ac_b", "1.5", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.pv_export_30min", "0.0", {"unit_of_measurement": "kW"})
+
+    result = await coord._do_update()
+
+    assert result["pv_actual"] == pytest.approx(3.5)
+    total_row = next(r for r in coord._db.records if r["site"] == DEFAULT_SITE_ID)
+    assert total_row["pv_actual"] == pytest.approx(3.5)
+
+
+async def test_do_update_system_sensor_takes_precedence_over_site_sum(hass, mock_base_coordinator):
+    """A configured whole-system sensor wins; the per-site sum never overrides it."""
+    coord = _orch_coordinator(
+        hass,
+        {
+            CONF_DB_ENABLED: True,
+            CONF_SITE_GROUPS: [
+                {"ac_sensor": "sensor.ac_a", "site": "AAAA"},
+                {"ac_sensor": "sensor.ac_b", "site": "BBBB"},
+            ],
+        },
+    )
+    coord._db = _FakeStore()
+    _set_pv(hass, actual="3.5", export="0.0")  # system sensor reads 3.5
+    hass.states.async_set("sensor.ac_a", "2.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.ac_b", "10.0", {"unit_of_measurement": "kW"})  # sum 12, ignored
+
+    result = await coord._do_update()
+
+    assert result["pv_actual"] == pytest.approx(3.5)
+
+
+def test_sum_site_actuals_picks_earliest_start():
+    """Energy-counter site reads carry a start epoch → the total takes the earliest."""
+    out = SolcastEnhancedCoordinator._sum_site_actuals(
+        {"A": (2.0, 1_000_900), "B": (1.5, 1_000_000), "C": (0.5, None)}
+    )
+    assert out[0] == pytest.approx(4.0)
+    assert out[1] == 1_000_000  # min of the non-None starts
+
+
+def test_sum_site_actuals_all_power_mode_no_start():
+    """Averaged-power site reads carry no start → start stays None."""
+    assert SolcastEnhancedCoordinator._sum_site_actuals({"A": (2.0, None), "B": (1.5, None)}) == (
+        pytest.approx(3.5),
+        None,
+    )
+
+
+def test_sum_site_actuals_empty():
+    """Degenerate: no site reads → zero total, no start (no crash)."""
+    assert SolcastEnhancedCoordinator._sum_site_actuals({}) == (0.0, None)
+
+
+async def test_do_update_no_system_sensor_no_sites_total_stays_zero(hass, mock_base_coordinator):
+    """No system sensor and no per-site groups → '_total' pv_actual is 0, no error."""
+    config = {k: v for k, v in _ORCH_CONFIG.items() if k != CONF_PV_ACTUAL_SENSOR}
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=config, options={CONF_DB_ENABLED: True}, entry_id="orch_zero", title="orch"
+    )
+    entry.add_to_hass(hass)
+    coord = SolcastEnhancedCoordinator(hass, entry)
+    coord._db = _FakeStore()
+    hass.states.async_set("sensor.pv_export_30min", "0.0", {"unit_of_measurement": "kW"})
+
+    result = await coord._do_update()
+
+    assert result["pv_actual"] == 0.0
+    total_row = next(r for r in coord._db.records if r["site"] == DEFAULT_SITE_ID)
+    assert total_row["pv_actual"] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # _run_tuning / _run_site_tuning
 # ---------------------------------------------------------------------------

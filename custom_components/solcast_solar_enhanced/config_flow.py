@@ -58,6 +58,7 @@ from .const import (
     CONF_PV_EXPORT_INPUT_MODE,
     CONF_PV_EXPORT_SENSOR,
     CONF_SITE_GROUPS,
+    CONF_SITE_TOPOLOGY,
     CONF_TILT,
     DEFAULT_AUTO_DAMPENING,
     DEFAULT_AUTO_TUNING,
@@ -75,9 +76,13 @@ from .const import (
     DEFAULT_LONGITUDE,
     DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_PV_INPUT_MODE,
+    DEFAULT_SITE_TOPOLOGY,
     DEFAULT_TILT,
     DOMAIN,
     PV_INPUT_MODES,
+    SITE_TOPOLOGIES,
+    SITE_TOPOLOGY_DC_SPLIT,
+    SITE_TOPOLOGY_DIRECT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,6 +104,22 @@ def _input_mode_selector() -> Any:
             options=PV_INPUT_MODES,
             mode="dropdown",
             translation_key="pv_input_mode",
+        )
+    )
+
+
+# Fixed, name-free key for the per-site-step topology selector, so it is told apart
+# from the per-site name-embedded field keys during parsing.
+_TOPOLOGY_FIELD = "__site_topology__"
+
+
+def _topology_selector() -> Any:
+    """Dropdown for how multi-array generation is measured (translated labels)."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=SITE_TOPOLOGIES,
+            mode="dropdown",
+            translation_key="site_topology",
         )
     )
 
@@ -201,20 +222,47 @@ def _groups_to_assignments(groups: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _derive_groups(assignments: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build CONF_SITE_GROUPS from per-site assignments.
+def _infer_topology(groups: Any) -> str:
+    """Infer the measurement topology from a stored CONF_SITE_GROUPS list.
 
-    Sites sharing an AC sensor become one DC-apportioned group (strings = those
-    with a DC sensor); a site that owns its AC sensor alone becomes a single-site
-    group. A shared AC sensor with no DC sensors at all cannot be split and is
-    omitted (logged), since per-array generation isn't observable there.
+    Any group carrying ``strings`` implies DC apportionment; otherwise (two or more
+    bare single-site groups, or nothing mapped yet) the safe, no-data-loss default
+    is direct measurement.
     """
-    by_ac: dict[str, list[tuple[str, dict[str, Any]]]] = {}
-    for rid, a in assignments.items():
-        ac = a.get("ac")
-        if not ac:
-            continue
-        by_ac.setdefault(ac, []).append((rid, a))
+    for group in groups or []:
+        if group.get("strings"):
+            return SITE_TOPOLOGY_DC_SPLIT
+    return SITE_TOPOLOGY_DIRECT
+
+
+def _validate_dc_split(assignments: dict[str, dict[str, Any]]) -> str | None:
+    """Validate DC-split assignments, returning an error key or ``None`` if valid.
+
+    Every mapped array must share one AC sensor and carry its own DC sensor, since
+    the shared AC output is apportioned by DC share. Catches the two pitfalls that
+    previously failed silently: a missing DC sensor and non-identical AC sensors.
+    """
+    mapped = [a for a in assignments.values() if a.get("ac")]
+    if not mapped:
+        return None
+    if len({a["ac"] for a in mapped}) > 1:
+        return "dc_split_ac_mismatch"
+    if any(not a.get("dc") for a in mapped):
+        return "dc_split_missing_dc"
+    return None
+
+
+def _derive_groups(
+    assignments: dict[str, dict[str, Any]], *, mode: str = DEFAULT_SITE_TOPOLOGY
+) -> list[dict[str, Any]]:
+    """Build CONF_SITE_GROUPS from per-site assignments for the given topology.
+
+    In ``SITE_TOPOLOGY_DIRECT`` each mapped array becomes its own single-site group
+    (no DC apportionment). In ``SITE_TOPOLOGY_DC_SPLIT`` the arrays sharing one AC
+    sensor become a single group whose ``strings`` carry each array's DC sensor, so
+    the shared AC output is split by DC share (callers validate first via
+    ``_validate_dc_split``).
+    """
 
     def _with_mppts(entry: dict[str, Any], a: dict[str, Any]) -> dict[str, Any]:
         """Attach the optional per-MPPT capture list to a group/string."""
@@ -223,19 +271,33 @@ def _derive_groups(assignments: dict[str, dict[str, Any]]) -> list[dict[str, Any
         return entry
 
     groups: list[dict[str, Any]] = []
-    for ac, members in by_ac.items():
-        mode = members[0][1].get("mode", DEFAULT_PV_INPUT_MODE)
-        if len(members) == 1:
+    if mode == SITE_TOPOLOGY_DIRECT:
+        for rid, a in assignments.items():
+            if not a.get("ac"):
+                continue
             groups.append(
                 _with_mppts(
-                    {"ac_sensor": ac, "ac_mode": mode, "site": members[0][0]},
-                    members[0][1],
+                    {"ac_sensor": a["ac"], "ac_mode": a.get("mode", DEFAULT_PV_INPUT_MODE), "site": rid},
+                    a,
                 )
             )
+        return groups
+
+    by_ac: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for rid, a in assignments.items():
+        ac = a.get("ac")
+        if not ac:
+            continue
+        by_ac.setdefault(ac, []).append((rid, a))
+
+    for ac, members in by_ac.items():
+        ac_mode = members[0][1].get("mode", DEFAULT_PV_INPUT_MODE)
+        if len(members) == 1:
+            groups.append(_with_mppts({"ac_sensor": ac, "ac_mode": ac_mode, "site": members[0][0]}, members[0][1]))
             continue
         strings = [_with_mppts({"site": rid, "dc_sensor": a["dc"]}, a) for rid, a in members if a.get("dc")]
         if strings:
-            groups.append({"ac_sensor": ac, "ac_mode": mode, "strings": strings})
+            groups.append({"ac_sensor": ac, "ac_mode": ac_mode, "strings": strings})
         else:
             _LOGGER.warning(
                 "AC sensor %s is shared by %d sites with no DC sensors; cannot apportion — these sites are not mapped",
@@ -285,15 +347,22 @@ def _build_sites_schema(
     discovered: list[dict[str, Any]],
     assignments: dict[str, dict[str, Any]],
     default_ac: str | None = None,
+    *,
+    mode: str = DEFAULT_SITE_TOPOLOGY,
 ) -> tuple[vol.Schema, dict[str, dict[str, str]]]:
     """Build a per-site mapping form. Returns (schema, {rid: {ac,dc,mode field keys}}).
 
     Field keys embed the readable site name so HA renders them as labels without
     needing per-site translations. ``default_ac`` (the system-wide PV generation
     sensor) seeds each site's generation field when it has no assignment yet, so a
-    shared-meter install confirms rather than re-types the same entity.
+    shared-meter install confirms rather than re-types the same entity. ``mode``
+    selects the measurement topology: in ``SITE_TOPOLOGY_DIRECT`` each site owns its
+    generation sensor and the DC field is omitted; in ``SITE_TOPOLOGY_DC_SPLIT`` one
+    shared AC sensor is apportioned, so the DC field is shown and the generation
+    field is labelled as the shared AC source.
     """
-    schema_dict: dict[Any, Any] = {}
+    dc_split = mode == SITE_TOPOLOGY_DC_SPLIT
+    schema_dict: dict[Any, Any] = {vol.Required(_TOPOLOGY_FIELD, default=mode): _topology_selector()}
     field_map: dict[str, dict[str, str]] = {}
     seen_names: dict[str, int] = {}
     for site in discovered:
@@ -308,8 +377,8 @@ def _build_sites_schema(
         mppts = a.get("mppts") or []
         m0 = mppts[0] if len(mppts) > 0 else {}
         m1 = mppts[1] if len(mppts) > 1 else {}
-        k_ac = f"{name} — generation sensor"
-        k_dc = f"{name} — DC/MPPT sensor (optional)"
+        k_ac = f"{name} — AC generation sensor (shared)" if dc_split else f"{name} — generation sensor"
+        k_dc = f"{name} — DC/MPPT sensor (for split)"
         k_mode = f"{name} — sensor type"
         k_v1 = f"{name} — MPPT 1 voltage (optional)"
         k_i1 = f"{name} — MPPT 1 current (optional)"
@@ -325,7 +394,8 @@ def _build_sites_schema(
             "i2": k_i2,
         }
         schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac") or default_ac})] = _entity_selector()
-        schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
+        if dc_split:
+            schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
         schema_dict[vol.Required(k_mode, default=a.get("mode", DEFAULT_PV_INPUT_MODE))] = _input_mode_selector()
         schema_dict[vol.Optional(k_v1, description={"suggested_value": m0.get("voltage_sensor")})] = _entity_selector()
         schema_dict[vol.Optional(k_i1, description={"suggested_value": m0.get("current_sensor")})] = _entity_selector()
@@ -334,11 +404,24 @@ def _build_sites_schema(
     return vol.Schema(schema_dict), field_map
 
 
+def _read_topology(user_input: dict[str, Any], default: str = DEFAULT_SITE_TOPOLOGY) -> str:
+    """Return the submitted topology mode, falling back to ``default`` when absent."""
+    mode = user_input.get(_TOPOLOGY_FIELD)
+    return mode if mode in SITE_TOPOLOGIES else default
+
+
 def _parse_sites_input(
     user_input: dict[str, Any],
     field_map: dict[str, dict[str, str]],
+    *,
+    mode: str = DEFAULT_SITE_TOPOLOGY,
 ) -> dict[str, dict[str, Any]]:
-    """Collect per-site assignments from submitted form values (AC sensor required)."""
+    """Collect per-site assignments from submitted form values (AC sensor required).
+
+    In ``SITE_TOPOLOGY_DIRECT`` the DC field is not rendered, so each site's ``dc``
+    is forced to ``None`` regardless of any stale submitted value.
+    """
+    dc_split = mode == SITE_TOPOLOGY_DC_SPLIT
     assignments: dict[str, dict[str, Any]] = {}
     for rid, keys in field_map.items():
         ac = user_input.get(keys["ac"])
@@ -346,7 +429,7 @@ def _parse_sites_input(
             continue
         assignments[rid] = {
             "ac": ac,
-            "dc": user_input.get(keys["dc"]) or None,
+            "dc": (user_input.get(keys["dc"]) or None) if dc_split else None,
             "mode": user_input.get(keys["mode"], DEFAULT_PV_INPUT_MODE),
             "mppts": _fields_to_mppts(
                 user_input.get(keys["v1"]),
@@ -367,6 +450,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialise the config flow with empty collected data."""
         self._data: dict[str, Any] = {}
         self._discovered: list[dict[str, Any]] | None = None
+        self._sites_mode: str | None = None
 
     def _is_single_site(self) -> bool:
         """Whether the property has one (or no) auto-discovered Solcast site.
@@ -478,25 +562,50 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="tuning", data_schema=schema)
 
+    def _show_sites_form(
+        self,
+        discovered: list[dict[str, Any]],
+        assignments: dict[str, dict[str, Any]],
+        default_ac: str | None,
+        mode: str,
+        errors: dict[str, str] | None = None,
+    ):
+        """Render the per-site step for ``mode`` and remember it for the next submit."""
+        self._sites_mode = mode
+        schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
+        return self.async_show_form(
+            step_id="sites",
+            data_schema=schema,
+            errors=errors or {},
+            description_placeholders={"count": str(len(discovered))},
+        )
+
     async def async_step_sites(self, user_input: dict[str, Any] | None = None):
         """Step 6 — Per-site sensor mapping (multi-site). Skipped if ≤1 site."""
         if self._is_single_site():
             return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
         discovered = self._discovered or []
+        default_ac = self._data.get(CONF_PV_ACTUAL_SENSOR)
+
+        if user_input is not None:
+            render_mode = self._sites_mode or DEFAULT_SITE_TOPOLOGY
+            submitted_mode = _read_topology(user_input, default=render_mode)
+            _, field_map = _build_sites_schema(discovered, {}, default_ac=default_ac, mode=render_mode)
+            assignments = _parse_sites_input(user_input, field_map, mode=render_mode)
+            if submitted_mode != render_mode:
+                # Topology changed — re-render with the matching fields, keeping entries.
+                return self._show_sites_form(discovered, assignments, default_ac, submitted_mode)
+            if submitted_mode == SITE_TOPOLOGY_DC_SPLIT and (err := _validate_dc_split(assignments)):
+                return self._show_sites_form(discovered, assignments, default_ac, submitted_mode, {"base": err})
+            self._data[CONF_SITE_GROUPS] = _derive_groups(assignments, mode=submitted_mode)
+            self._data[CONF_SITE_TOPOLOGY] = submitted_mode
+            _clear_flat_mppt(self._data)
+            return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
 
         existing = _groups_to_assignments(self._data.get(CONF_SITE_GROUPS))
         existing = _seed_flat_mppt(discovered, existing, self._data)
-        schema, field_map = _build_sites_schema(discovered, existing, default_ac=self._data.get(CONF_PV_ACTUAL_SENSOR))
-        if user_input is not None:
-            assignments = _parse_sites_input(user_input, field_map)
-            self._data[CONF_SITE_GROUPS] = _derive_groups(assignments)
-            _clear_flat_mppt(self._data)
-            return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
-        return self.async_show_form(
-            step_id="sites",
-            data_schema=schema,
-            description_placeholders={"count": str(len(discovered))},
-        )
+        mode = self._data.get(CONF_SITE_TOPOLOGY) or _infer_topology(self._data.get(CONF_SITE_GROUPS))
+        return self._show_sites_form(discovered, existing, default_ac, mode)
 
     @staticmethod
     @callback
@@ -512,6 +621,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         """Initialise the options flow with empty collected options."""
         self._opts: dict[str, Any] = {}
         self._discovered: list[dict[str, Any]] | None = None
+        self._sites_mode: str | None = None
 
     def _is_single_site(self) -> bool:
         """See ``SolcastEnhancedConfigFlow._is_single_site``."""
@@ -636,27 +746,48 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(step_id="tuning", data_schema=schema)
 
+    def _show_sites_form(
+        self,
+        discovered: list[dict[str, Any]],
+        assignments: dict[str, dict[str, Any]],
+        default_ac: str | None,
+        mode: str,
+        errors: dict[str, str] | None = None,
+    ):
+        """Render the per-site step for ``mode`` and remember it for the next submit."""
+        self._sites_mode = mode
+        schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
+        return self.async_show_form(
+            step_id="sites",
+            data_schema=schema,
+            errors=errors or {},
+            description_placeholders={"count": str(len(discovered))},
+        )
+
     async def async_step_sites(self, user_input: dict[str, Any] | None = None):
         """Per-site sensor mapping (multi-site). Skipped if ≤1 site discovered."""
         if self._is_single_site():
             return self.async_create_entry(data=self._opts)
         discovered = self._discovered or []
-
         current = {**self.config_entry.data, **self.config_entry.options}
-        existing = _groups_to_assignments(self._opts.get(CONF_SITE_GROUPS) or current.get(CONF_SITE_GROUPS))
-        existing = _seed_flat_mppt(discovered, existing, current)
-        schema, field_map = _build_sites_schema(
-            discovered,
-            existing,
-            default_ac=self._opts.get(CONF_PV_ACTUAL_SENSOR) or current.get(CONF_PV_ACTUAL_SENSOR),
-        )
+        default_ac = self._opts.get(CONF_PV_ACTUAL_SENSOR) or current.get(CONF_PV_ACTUAL_SENSOR)
+
         if user_input is not None:
-            assignments = _parse_sites_input(user_input, field_map)
-            self._opts[CONF_SITE_GROUPS] = _derive_groups(assignments)
+            render_mode = self._sites_mode or DEFAULT_SITE_TOPOLOGY
+            submitted_mode = _read_topology(user_input, default=render_mode)
+            _, field_map = _build_sites_schema(discovered, {}, default_ac=default_ac, mode=render_mode)
+            assignments = _parse_sites_input(user_input, field_map, mode=render_mode)
+            if submitted_mode != render_mode:
+                return self._show_sites_form(discovered, assignments, default_ac, submitted_mode)
+            if submitted_mode == SITE_TOPOLOGY_DC_SPLIT and (err := _validate_dc_split(assignments)):
+                return self._show_sites_form(discovered, assignments, default_ac, submitted_mode, {"base": err})
+            self._opts[CONF_SITE_GROUPS] = _derive_groups(assignments, mode=submitted_mode)
+            self._opts[CONF_SITE_TOPOLOGY] = submitted_mode
             _clear_flat_mppt(self._opts)
             return self.async_create_entry(data=self._opts)
-        return self.async_show_form(
-            step_id="sites",
-            data_schema=schema,
-            description_placeholders={"count": str(len(discovered))},
-        )
+
+        stored_groups = self._opts.get(CONF_SITE_GROUPS) or current.get(CONF_SITE_GROUPS)
+        existing = _groups_to_assignments(stored_groups)
+        existing = _seed_flat_mppt(discovered, existing, current)
+        mode = self._opts.get(CONF_SITE_TOPOLOGY) or current.get(CONF_SITE_TOPOLOGY) or _infer_topology(stored_groups)
+        return self._show_sites_form(discovered, existing, default_ac, mode)

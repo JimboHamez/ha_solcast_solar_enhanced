@@ -198,10 +198,11 @@ A fallback for systems without a battery sensor mapped in Step 1.
 
 Shown when more than one Solcast site is detected. Sites are auto-discovered from the base integration (orientation and capacity come from Solcast). For each site you map its generation sensor, and optionally its per-string DC sensors.
 
-This page appears only for multi-array systems — a single-array system relies on the system-wide sensors from Step 1 and never sees it. Each field lives in exactly one place by topology, so nothing is entered twice:
+This page appears only for multi-array systems — a single-array system relies on the system-wide sensors from Step 1 and never sees it. It opens by asking **how your arrays are measured**, then shows only the fields that topology needs:
 
-- The per-site **generation sensor** is pre-filled with Step 1's system-wide PV Generation sensor. That's correct when one inverter feeds several arrays (a shared meter) — just confirm it; pick the array's own sensor only when arrays are separately metered.
-- The per-site **MPPT voltage/current** fields are the per-array home for MPPT trackers. For multi-array systems they live *here only* — Step 1 hides its MPPT fields. If you're upgrading from an older version that had MPPT entities on Step 1, they're suggested on the first two arrays here for you to confirm (and cleared from Step 1 on save).
+- **Each array has its own generation sensor** (microinverters, e.g. Enphase, or one inverter per array): map each array's own AC/generation sensor; there's no DC field. The per-site **generation sensor** is pre-filled with Step 1's system-wide PV Generation sensor — pick the array's own sensor when arrays are separately metered.
+- **One shared inverter, split by DC** (a single multi-string inverter, e.g. Fronius): put the *same* whole-system AC sensor on every array and give each its **DC/MPPT sensor**, so the shared AC is split between arrays by DC share. Leaving a DC sensor off an array, or using different AC sensors, is flagged with an error rather than silently dropped.
+- The per-site **MPPT voltage/current** fields are the per-array home for MPPT trackers (diagnostics). For multi-array systems they live *here only* — Step 1 hides its MPPT fields. If you're upgrading from an older version that had MPPT entities on Step 1, they're suggested on the first two arrays here for you to confirm (and cleared from Step 1 on save).
 
 See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 
@@ -221,10 +222,10 @@ Full detail — the confidence model, the weighting maths, convergence timelines
 
 When the base integration has more than one rooftop array, each is stored, tuned and dampened separately (keyed by its Solcast `resource_id`) alongside the property-wide aggregate. Single-site behaviour is unchanged.
 
-There are two ways each array gets its own generation figure:
+The per-site step asks which of these two topologies you have, then shows only the matching fields:
 
-- **Dedicated AC per array (simplest).** If every array is independently metered — microinverters (e.g. Enphase) or one string inverter per array — map each site's own AC/generation sensor and leave its DC field blank. Each site reports its own AC directly; no apportionment needed.
-- **Shared inverter AC.** If several arrays share one AC sensor (a single multi-string inverter, e.g. Fronius), give each array its per-string DC sensor and the integration splits the measured AC between them by each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Arrays sharing one AC sensor with no DC sensors can't be separated and are left unmapped.
+- **Dedicated AC per array (simplest).** If every array is independently metered — microinverters (e.g. Enphase) or one string inverter per array — map each site's own AC/generation sensor. There's no DC field in this mode; each site reports its own AC directly, no apportionment needed.
+- **Shared inverter AC.** If several arrays share one AC sensor (a single multi-string inverter, e.g. Fronius), put that same AC sensor on every array and give each its per-string DC sensor; the integration splits the measured AC between them by each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Every array in this mode needs a DC sensor and they must share one AC sensor — otherwise the wizard shows an error rather than silently dropping an array.
 
 ---
 

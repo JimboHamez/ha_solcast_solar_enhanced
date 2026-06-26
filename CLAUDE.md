@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Home Assistant (HA) Integration Development Standards
 
 ## 1. Context7 Documentation Rules
@@ -17,21 +19,12 @@
 ## 3. Python Coding & Style Guidelines
 - **Formatting:** Code must pass Ruff styling defaults with a 120-character line limit. Run `ruff format` and `ruff check --fix` before completing any file modification.
 - **Import Conventions:** Order imports strictly by standard library, third-party, and then local modules. Ensure constants and dictionary keys are sorted alphabetically. Adhere strictly to Home Assistant's mandatory custom framework shortcut module bindings (e.g., import `homeassistant.util.dt` as `dt_util`).
-- **Type Checking:** Every function signature must be fully typed (arguments and return types). Never use `Any`. Import and use structural types from the core (`HomeAssistant`, `ConfigEntry`, `DiscoveryInfoType`). Include a `py.typed` file in the package root to satisfy PEP-561 compliance.
+- **Type Checking:** Every function signature must be fully typed (arguments and return types). Prefer concrete types over `Any` (some idiomatic HA `Any` remains — config-flow `user_input`, voluptuous schema dicts, raw-JSON payloads). Must pass strict (`mypy`-compliant) analysis; use `assert` to narrow types when Core context is ambiguous. Import and use structural types from the core (`HomeAssistant`, `ConfigEntry`, `DiscoveryInfoType`). Include a `py.typed` file in the package root to satisfy PEP-561 compliance.
 - **Documentation:** Public methods must use Google-style docstrings. Comments must be complete sentences ending in a period.
 - **Logging Restrictions:** Do not include the platform or domain name manually inside log strings (e.g., write `_LOGGER.error("Failed to connect")`, not `_LOGGER.error("[MyDomain] Failed to connect")`). Never log sensitive strings like API keys, tokens, or local passwords. Use `_LOGGER.debug` for developer diagnostics.
 - **Native Constants:** Never hardcode states like `'on'`, `'off'`, `'unavailable'`, or metrics like `'C'`. Always import and use native constants from `homeassistant.const` (e.g., `STATE_ON`, `STATE_OFF`, `STATE_UNAVAILABLE`, `UnitOfTemperature.CELSIUS`).
 - **Entity Naming:** Do not assign a raw string to the `_attr_name` property of an entity. Set `_attr_has_entity_name = True` and use localized device naming keys via translation strings inside the `strings.json` file.
 - **Exception Handling:** Wrap external Python client calls in `homeassistant.exceptions.HomeAssistantError` variations (like `ConfigEntryNotReady`) to trigger safe auto-retries and elegant user-facing UI dialogs.
-
-## Python Coding Style Guidelines (HA Specific):
-- **Formatting:** Code must pass Ruff styling defaults with a 120-character line limit.
-- **Type Checking:** Must pass strict type analysis (`mypy` compliant). Use `assert` to narrow types when Core context is ambiguous.
-- **Documentation:** Public methods must use Google-style docstrings. Comments must be complete sentences ending in a period.
-- **Exceptions:** Wrap external Python client calls in `homeassistant.exceptions.HomeAssistantError` variations to handle graceful user-facing error dialogs.
-
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this project is
 
@@ -48,6 +41,15 @@ pip install numpy>=1.21.0  # already present in Home Assistant; no scipy
 ```
 
 Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search, not scipy** — scipy has no Pi wheel and fails to build under HA (BJReplay/ha-solcast-solar #85). numpy is imported lazily, so tuning disables itself (integration still runs) in the unlikely event numpy is absent.
+
+## Commands
+
+Work in the repo virtualenv: `source venv/bin/activate`. There is no build step.
+
+- **Run the suite:** `pytest` (or `python -m pytest`) from the repo root. Deps in `requirements_test.txt`; uses `pytest-homeassistant-custom-component` (the `hass` fixture, `MockConfigEntry`).
+- **Run one file / test / pattern:** `pytest tests/test_multisite.py`, `pytest "tests/test_config_flow.py::test_sites_step_dc_split_valid_derives_strings"`, `pytest -k topology`.
+- **Lint + format — component only:** `ruff check custom_components/solcast_solar_enhanced/` and `ruff format custom_components/solcast_solar_enhanced/`. The strict `pyproject.toml` ruleset and CI are scoped to the component; `tests/`, `tools/`, and `analysis/` are **intentionally not** kept ruff-clean, so always pass the component path — a bare `ruff check` at the repo root reports hundreds of expected errors in those dirs. `pyproject.toml`: line length 120, target py313, Google docstrings, with a `sensor.py` per-file-ignore for entity-boilerplate docstrings (`D101/D102/D107`).
+- **CI gates (must stay green before merge):** `pytest`, `hassfest`, `HACS`, plus security/SBOM scanners (Semgrep, Gitleaks, Grype, Trivy, Syft). Use `gh pr checks <n>` to watch.
 
 ## Module responsibilities
 
@@ -66,7 +68,7 @@ Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search
 ## Key architecture patterns
 
 **Data flow per 30-min update cycle** (`coordinator._do_update`):
-1. Read `pv_actual` / `pv_export` via `_read_pv_value` (cumulative energy counter → avg kW over the actual interval, or averaged-power kW/W) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups)
+1. Read `pv_actual` / `pv_export` via `_read_pv_value` (cumulative energy counter → avg kW over the actual interval, or averaged-power kW/W) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups). When no `CONF_PV_ACTUAL_SENSOR` is configured (pure-microinverter install), the `_total` `pv_actual` is derived by summing the per-site reads so aggregate tuning/dampening aren't starved; a configured system sensor takes precedence
 2. Fetch OWM weather (if enabled) and Open-Meteo plane-of-array irradiance (GHI/DNI/DHI, default-on, fetched at the interval midpoint `period_end − 15 min`). When OWM is not configured, Open-Meteo's `clouds` doubles as the weather/cloud source (keyless)
 3. Compute solar position (pure Python, no external lib)
 4. Read forecast data from base integration coordinator (`hass.data["solcast_solar"]`); per-site forecast via `_site_forecast_for_period` (`detailedForecast-<resource_id>`)
@@ -82,7 +84,7 @@ Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search
 
 **Storage** (`sqlite_store.py`): the coordinator instantiates `SqliteStore(hass, hass.config.path("solcast_solar_enhanced.db"))` in `async_setup` when `CONF_DB_ENABLED` is set (defaults **on**, `DEFAULT_DB_ENABLED=True`). It's a single file, stdlib `sqlite3`, WAL mode (`synchronous=NORMAL`), every call run via `async_add_executor_job` and serialised by a lock. The base schema is created complete on first run (`has_site_col`/`has_battery_col` are always true), but columns introduced *after* the original schema are added on existing DBs with an additive, idempotent `ALTER TABLE … ADD COLUMN … NOT NULL DEFAULT 0` (`_ensure_columns` over `_ADDED_COLUMNS`: the per-MPPT DC telemetry pairs `dc_voltage1/2`/`dc_current1/2`, and the Open-Meteo `ghi`/`dni`/`dhi` irradiance columns — backfillable on old rows via `tools/backfill_irradiance.py`). Separately, one-time *data* repairs exist via `async_migrate(lat, lon)`, gated by `PRAGMA user_version` (`SCHEMA_VERSION`) so they run silently once; v1 recomputes the solar `azimuth` column for rows written before the hour-angle wrap fix (reconstructable from each row's `period_end_epoch` + lat/lon, rewriting only changed rows). Writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`; the seasonal day-of-year window uses `strftime('%j', period_end_epoch, 'unixepoch')` (UTC) — a full scan (computed expression, no index; see the [roadmap](DESIGN_DOCUMENT.md#roadmap) for the retention/indexed-doy plan). The integration is SQLite-only as of v1.5.0 (MySQL was removed).
 
-**Multi-site**: sites are auto-discovered from the base integration's RooftopSensors via `discover_sites(hass)` (module-level, shared with the config flow). The `CONF_SITE_GROUPS` config model maps a generation sensor (+ optional per-MPPT DC sensors) to one or more sites; the config-flow `sites` step authors it via per-site fields and derives the structure (`_derive_groups`). Each site is stored/tuned/dampened by its Solcast `resource_id`; the property-wide aggregate uses `site='_total'`, so aggregate queries pass `site=DEFAULT_SITE_ID` to avoid summing the additive per-site rows. Per-site `pv_actual` for shared-AC groups is apportioned by DC share (`ac × dcᵢ/Σdc`). Config-flow fields are placed by topology to avoid duplicate entry (`_build_site_schema(..., single_site=)`): the flat per-inverter MPPT V/I fields (`CONF_MPPT*`) show on Step 1 only for single-array systems; multi-array systems map MPPT trackers per array in the `sites` step instead. Site discovery runs in Step 1 (`_is_single_site`, cached) so the topology is known before the step renders. The `sites` step prefills each array's generation field from `CONF_PV_ACTUAL_SENSOR` (`default_ac`, for shared-meter installs) and migrates any pre-existing flat MPPT keys into per-array suggestions (`_seed_flat_mppt`), clearing them on save (`_clear_flat_mppt`). `MpptDcSensor`'s `max_voltage` spans the property-wide and per-site trackers, so it stays populated when the flat keys are absent.
+**Multi-site**: sites are auto-discovered from the base integration's RooftopSensors via `discover_sites(hass)` (module-level, shared with the config flow). The `CONF_SITE_GROUPS` config model maps a generation sensor (+ optional per-MPPT DC sensors) to one or more sites; the config-flow `sites` step authors it via per-site fields and derives the structure (`_derive_groups`). Each site is stored/tuned/dampened by its Solcast `resource_id`; the property-wide aggregate uses `site='_total'`, so aggregate queries pass `site=DEFAULT_SITE_ID` to avoid summing the additive per-site rows. Per-site `pv_actual` for shared-AC groups is apportioned by DC share (`ac × dcᵢ/Σdc`). The `sites` step leads with an explicit measurement-topology selector (`CONF_SITE_TOPOLOGY`: `direct` = each array its own generation sensor, no DC field; `dc_split` = one shared inverter apportioned by per-array DC); `_build_sites_schema(..., mode=)` renders the DC field only in `dc_split`, `_derive_groups(..., mode=)` builds single-site groups (`direct`) or `strings` (`dc_split`), and `_validate_dc_split` rejects a missing per-array DC sensor or mismatched AC sensors with a form error instead of silently dropping the array. The mode is persisted; `_infer_topology` defaults it for pre-selector entries (`strings` ⇒ `dc_split`, else `direct`). Config-flow fields are also placed by inverter-count topology to avoid duplicate entry (`_build_site_schema(..., single_site=)`): the flat per-inverter MPPT V/I fields (`CONF_MPPT*`) show on Step 1 only for single-array systems; multi-array systems map MPPT trackers per array in the `sites` step instead. Site discovery runs in Step 1 (`_is_single_site`, cached) so the topology is known before the step renders. The `sites` step prefills each array's generation field from `CONF_PV_ACTUAL_SENSOR` (`default_ac`, for shared-meter installs) and migrates any pre-existing flat MPPT keys into per-array suggestions (`_seed_flat_mppt`), clearing them on save (`_clear_flat_mppt`). `MpptDcSensor`'s `max_voltage` spans the property-wide and per-site trackers, so it stays populated when the flat keys are absent.
 
 **Energy-counter reads**: `_read_pv_value` supports cumulative energy counters (kWh/Wh/MWh — the recommended input) and averaged-power readings (kW/W, intended for a rolling `mean_linear` helper, *not* a raw instantaneous sensor). Energy mode computes avg kW from the energy delta over the *actual* elapsed time and guards resets/rollovers, first-read, and out-of-band intervals; baselines persist via HA `Store` (`{DOMAIN}_{entry_id}_energy_baseline`). `_resolve_input_mode` auto-detection is **unit-first**: a `…wh` unit → energy counter, a `…w` unit → averaged power; `state_class` is only a fallback when the unit is absent (this prevents a counter that omits `state_class` from being read as instantaneous power). Power mode stays available for per-MPPT DC sensors, which feed only a `dcᵢ/Σdc` ratio.
 

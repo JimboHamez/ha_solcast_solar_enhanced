@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast — ta strona przypisania dla poszczególnych łańcuchów pojawia się w systemach z wieloma łańcuchami. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję (wstępnie wypełniony ogólnosystemowym czujnikiem produkcji PV). Jeśli każdy łańcuch jest mierzony niezależnie — mikrofalowniki (np. Enphase) lub jeden falownik na łańcuch — przypisz jego własny czujnik AC i pozostaw DC pusty. Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, zamiast tego podaj dla każdego czujnik mocy DC/MPPT, aby rozdzielić produkcję według udziału DC. Wpisz tutaj również napięcie/prąd MPPT każdego łańcucha — w systemach z wieloma łańcuchami pola te znajdują się tutaj, a nie na stronie systemu. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Podział DC wymaga czujnika DC/MPPT dla każdego łańcucha. Dodaj brakujący czujnik DC lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
+      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Dla każdego łańcucha wybierz czujnik mierzący jego produkcję. Jeśli kilka łańcuchów współdzieli jedno wyjście AC falownika, podaj każdemu również jego czujnik DC/MPPT, aby można było rozdzielić produkcję. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Podział DC wymaga czujnika DC/MPPT dla każdego łańcucha. Dodaj brakujący czujnik DC lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
+      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Licznik energii — kWh (zalecane)",
         "energy_wh": "Licznik energii — Wh (zalecane)",
         "energy_mwh": "Licznik energii — MWh (zalecane)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Każdy łańcuch ma własny czujnik produkcji (mikroinwertery / jeden inwerter na łańcuch)",
+        "dc_split": "Jeden wspólny inwerter, dzielony między łańcuchy według DC (jeden inwerter, wiele MPPT)"
       }
     }
   },
