@@ -349,6 +349,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # Per-site measured generation (multi-site). Empty unless groups are
         # configured. Reads here so energy baselines advance in one save below.
         site_actuals = self._read_site_actuals(opts, now_epoch)
+        # When no whole-system generation sensor is configured (e.g. a pure
+        # microinverter setup with only per-array sensors), derive the property
+        # total by summing the per-site measured generation, so the aggregate
+        # '_total' row — which drives aggregate tuning and dampening — is not left
+        # at zero. A configured page-1 sensor always takes precedence.
+        if not opts.get(CONF_PV_ACTUAL_SENSOR) and site_actuals:
+            pv_actual, summed_start = self._sum_site_actuals(site_actuals)
+            if summed_start:
+                pv_actual_start = summed_start
         if self._baselines_dirty:
             await self._save_baselines()
         battery_charge = self._read_battery(opts)
@@ -1091,6 +1100,19 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 if site:
                     out[site] = (ac_kw, ac_start)
         return out
+
+    @staticmethod
+    def _sum_site_actuals(site_actuals: dict[str, tuple[float, int | None]]) -> tuple[float, int | None]:
+        """Sum per-site generation into a property total for the ``_total`` row.
+
+        Returns ``(total_kw, earliest_start_epoch)``; the start is the earliest
+        non-``None`` per-site interval start (``None`` when every site read is an
+        averaged-power reading, which carries no start). Used to populate the
+        aggregate row when no whole-system generation sensor is configured.
+        """
+        total = sum(kw for kw, _ in site_actuals.values())
+        starts = [s for _, s in site_actuals.values() if s]
+        return total, (min(starts) if starts else None)
 
     def _read_numeric_state(self, entity_id: str | None) -> float | None:
         """Read a plain numeric sensor state (e.g. DC volts / amps).

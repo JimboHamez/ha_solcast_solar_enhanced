@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared-inverter mode, and the chosen mode is saved (`CONF_SITE_TOPOLOGY`). This
   removes a silent trap where a DC sensor entered on an independently-metered site
   was discarded on save.
+- **Pure-microinverter setups no longer need a whole-system generation sensor.**
+  When no system-wide PV generation sensor is configured, the property total (the
+  `_total` row that drives aggregate tuning and dampening) is now derived by summing
+  the per-array generation, instead of being left at zero. A configured whole-system
+  sensor still takes precedence.
 
 ### Fixed
 - **Shared-inverter DC apportionment no longer fails silently.** Choosing the

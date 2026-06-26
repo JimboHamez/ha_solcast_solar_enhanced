@@ -66,7 +66,7 @@ Storage uses stdlib `sqlite3` (no install). PV tuning uses a **numpy grid search
 ## Key architecture patterns
 
 **Data flow per 30-min update cycle** (`coordinator._do_update`):
-1. Read `pv_actual` / `pv_export` via `_read_pv_value` (cumulative energy counter → avg kW over the actual interval, or averaged-power kW/W) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups)
+1. Read `pv_actual` / `pv_export` via `_read_pv_value` (cumulative energy counter → avg kW over the actual interval, or averaged-power kW/W) and `battery_charge`; read per-site generation via `_read_site_actuals` (DC-ratio apportionment for shared-AC groups). When no `CONF_PV_ACTUAL_SENSOR` is configured (pure-microinverter install), the `_total` `pv_actual` is derived by summing the per-site reads so aggregate tuning/dampening aren't starved; a configured system sensor takes precedence
 2. Fetch OWM weather (if enabled) and Open-Meteo plane-of-array irradiance (GHI/DNI/DHI, default-on, fetched at the interval midpoint `period_end − 15 min`). When OWM is not configured, Open-Meteo's `clouds` doubles as the weather/cloud source (keyless)
 3. Compute solar position (pure Python, no external lib)
 4. Read forecast data from base integration coordinator (`hass.data["solcast_solar"]`); per-site forecast via `_site_forecast_for_period` (`detailedForecast-<resource_id>`)
