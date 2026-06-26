@@ -34,13 +34,18 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.8.0
+## 🆕 What's new in v1.9.0
 
-The setup wizard no longer asks for the same sensor twice. Sensor-mapping fields are now placed **by topology** — single-array systems enter their MPPT voltage/current on the **Site & System** step, while multi-array systems map MPPT trackers **per array** on the per-site step (and the Site & System step hides those fields). The per-array **generation sensor** is pre-filled with your system-wide PV generation sensor, so a single inverter feeding several arrays is a one-click confirm rather than a re-type.
+The per-site mapping step now **asks how your arrays are measured** before showing fields, so the two multi-site topologies are explicit instead of guessed:
 
-**Upgrading a multi-site setup?** Any MPPT entities you previously entered on the Site & System step are now suggested on your first two arrays for you to confirm, and the old per-inverter fields are retired once you save. Single-array setups need no changes. The "MPPT DC Voltage (max)" diagnostic now also reflects per-array trackers, so it stays populated on multi-site systems.
+- **Each array has its own generation sensor** — microinverters (e.g. Enphase) or one inverter per array. Map each array's own AC sensor; there's no DC field.
+- **One shared inverter, split by DC** — a single inverter with multiple MPPTs. Put the same whole-system AC sensor on every array and give each its DC/MPPT sensor, and the shared AC is apportioned by DC share.
 
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.8.0).
+Choosing the shared-inverter mode is now **validated**: a missing per-array DC sensor or non-identical AC sensors raises a clear error instead of the array being silently dropped on save. And a **pure-microinverter setup no longer needs a whole-system generation sensor** — if none is configured, the property total is derived by summing the per-array generation, so tuning and dampening still work.
+
+**Upgrading?** Existing setups carry over: an apportioned (shared-inverter) config opens in the DC-split mode automatically, and single-array installs are unaffected.
+
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.9.0).
 
 ---
 
