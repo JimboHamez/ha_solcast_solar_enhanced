@@ -130,7 +130,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 ### Step 1 — Site & System
 
-<a href="images/config-step1-site.png"><img align="right" width="340" alt="Step 1 — Site & System" src="images/config-step1-site.png"></a>
+<p align="center">
+  <a href="images/config-step1-site.png"><img width="420" alt="Step 1 — Site & System" src="images/config-step1-site.png"></a>
+</p>
 
 | Field | Description |
 |---|---|
@@ -145,11 +147,11 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | Battery Charge sensor | Battery charge sensor (optional) |
 | MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
 
-<br clear="all">
-
 ### Step 2 — Storage
 
-<a href="images/config-step2-storage.png"><img align="right" width="340" alt="Step 2 — Storage" src="images/config-step2-storage.png"></a>
+<p align="center">
+  <a href="images/config-step2-storage.png"><img width="420" alt="Step 2 — Storage" src="images/config-step2-storage.png"></a>
+</p>
 
 | Field | Default | Description |
 |---|---|---|
@@ -158,11 +160,11 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at that path.
 
-<br clear="all">
-
 ### Step 3 — Weather & Irradiance
 
-<a href="images/config-step3-weather.png"><img align="right" width="340" alt="Step 3 — Weather & Irradiance" src="images/config-step3-weather.png"></a>
+<p align="center">
+  <a href="images/config-step3-weather.png"><img width="420" alt="Step 3 — Weather & Irradiance" src="images/config-step3-weather.png"></a>
+</p>
 
 Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 above](#4-weather--irradiance-open-meteo--keyless-on-by-default)). OpenWeatherMap is an optional legacy alternative for cloud/temperature.
 
@@ -172,11 +174,11 @@ Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 ab
 | Enable OWM | **Off** | Optional legacy cloud/temperature source; needs a key |
 | OWM API key | — | Free key from openweathermap.org (only if OWM enabled) |
 
-<br clear="all">
-
 ### Step 4 — Battery Storage
 
-<a href="images/config-step4-battery.png"><img align="right" width="340" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
+<p align="center">
+  <a href="images/config-step4-battery.png"><img width="420" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
+</p>
 
 A fallback for systems without a battery sensor mapped in Step 1.
 
@@ -187,11 +189,11 @@ A fallback for systems without a battery sensor mapped in Step 1.
 | Net battery sensor | Signed power entity (positive = charging) |
 | Charge battery sensor | Charge-only power entity |
 
-<br clear="all">
-
 ### Step 5 — PV Tuning & Dampening
 
-<a href="images/config-step5-tuning.png"><img align="right" width="340" alt="Step 5 — PV Tuning & Dampening" src="images/config-step5-tuning.png"></a>
+<p align="center">
+  <a href="images/config-step5-tuning.png"><img width="420" alt="Step 5 — PV Tuning & Dampening" src="images/config-step5-tuning.png"></a>
+</p>
 
 | Field | Default | Description |
 |---|---|---|
@@ -202,8 +204,6 @@ A fallback for systems without a battery sensor mapped in Step 1.
 | Clearness index threshold | 0.75 | Clear-sky gate when Open-Meteo is on (the default): a half-hour counts as clear when `Kt = GHI ÷ clear-sky GHI` is at or above this. More reliable than total cloud %, which over-rejects clear slots with harmless high/mid cloud |
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
 | Grid export limit (kW) | 0 | Exclude records pegged at this ceiling; 0 = disabled. Read automatically from the base integration if set |
-
-<br clear="all">
 
 ### Step 6 — Per-site sensor mapping (multi-site only)
 
