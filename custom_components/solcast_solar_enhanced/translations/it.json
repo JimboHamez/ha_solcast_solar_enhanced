@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
+        "data": {
+          "__site_topology__": "Come vengono misurate le stringhe?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
+        "data": {
+          "__site_topology__": "Come vengono misurate le stringhe?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

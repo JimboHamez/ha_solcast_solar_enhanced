@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
+        "data": {
+          "__site_topology__": "Wie werden Ihre Arrays gemessen?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen."
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
+        "data": {
+          "__site_topology__": "Wie werden Ihre Arrays gemessen?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

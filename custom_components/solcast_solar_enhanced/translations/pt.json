@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
+        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática.",
+        "data": {
+          "__site_topology__": "Como são medidos os seus arranjos?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
+        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática.",
+        "data": {
+          "__site_topology__": "Como são medidos os seus arranjos?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

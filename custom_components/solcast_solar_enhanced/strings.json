@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Per-site sensor mapping",
-        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
+        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
+        "data": {
+          "__site_topology__": "How are your arrays measured?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Per-site sensor mapping",
-        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect."
+        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
+        "data": {
+          "__site_topology__": "How are your arrays measured?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

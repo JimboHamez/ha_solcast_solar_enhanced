@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
+        "data": {
+          "__site_topology__": "Jak mierzone są Twoje łańcuchy?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne."
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
+        "data": {
+          "__site_topology__": "Jak mierzone są Twoje łańcuchy?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",

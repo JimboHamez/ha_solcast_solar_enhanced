@@ -62,7 +62,10 @@
       },
       "sites": {
         "title": "Asignación de sensores por sitio",
-        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática."
+        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
+        "data": {
+          "__site_topology__": "¿Cómo se miden sus campos?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -145,7 +148,10 @@
       },
       "sites": {
         "title": "Asignación de sensores por sitio",
-        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática."
+        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
+        "data": {
+          "__site_topology__": "¿Cómo se miden sus campos?"
+        }
       },
       "weather": {
         "title": "Weather & Irradiance",
