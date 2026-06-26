@@ -1,7 +1,11 @@
 # Spec: Topology-aware per-site sensor mapping
 
-Status: **draft / pre-implementation** — no code written yet. Decisions in §13 must be
-confirmed before an implementation plan is produced.
+Status: **implemented and shipped in v1.9.0** (PR #34, 2026-06-26). The §13 decisions
+were confirmed and built as PR-A (the topology gate: selector, `_infer_topology`,
+`_validate_dc_split`, mode-aware schema/parse/derive) and PR-B (derive `_total` from the
+per-site sum when no system sensor is configured). The only deferred item is the T3
+`Σ per-site ≈ total` sanity warning (§13.5). This document is retained as the design
+record; behaviour is now documented in `README.md`, `DESIGN_DOCUMENT.md`, and `CLAUDE.md`.
 
 ## 1. Problem
 
