@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast — táto stránka priradenia pre jednotlivé polia sa zobrazuje pri systémoch s viacerými poľami. Pre každé pole vyberte jeho senzor výroby (predvyplnený celosystémovým senzorom výroby PV). Ak sa každé pole meria samostatne — mikromeniče (napr. Enphase) alebo jeden menič na pole —, priraďte jeho vlastný AC senzor a DC nechajte prázdne. Ak viacero polí zdieľa jeden AC výstup meniča, namiesto toho zadajte pre každé senzor DC/MPPT výkonu, aby sa výroba rozdelila podľa podielu DC. Sem zadajte aj napätie/prúd MPPT každého poľa — pri systémoch s viacerými poľami sú tieto polia tu, nie na systémovej stránke. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ je zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Rozdelenie podľa DC vyžaduje snímač DC/MPPT pre každé pole. Pridajte chýbajúci DC snímač alebo prepnite na „každé pole má vlastný snímač výroby“.",
+      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Pre každé pole vyberte senzor, ktorý meria jeho výrobu. Ak viacero polí zdieľa jeden AC výstup meniča, priraďte každému aj jeho DC/MPPT senzor, aby bolo možné výrobu rozdeliť. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ senzora“ býva zvyčajne Automatická detekcia."
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "Rozdelenie podľa DC vyžaduje snímač DC/MPPT pre každé pole. Pridajte chýbajúci DC snímač alebo prepnite na „každé pole má vlastný snímač výroby“.",
+      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Počítadlo energie — kWh (odporúčané)",
         "energy_wh": "Počítadlo energie — Wh (odporúčané)",
         "energy_mwh": "Počítadlo energie — MWh (odporúčané)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Každé pole má vlastný snímač výroby (mikromeniče / jeden menič na pole)",
+        "dc_split": "Jeden zdieľaný menič, rozdelený medzi polia podľa DC (jeden menič, viac MPPT)"
       }
     }
   },

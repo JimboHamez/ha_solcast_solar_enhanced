@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Affectation des capteurs par site",
-        "description": "{count} sites Solcast détectés — cette page d'affectation par champ apparaît pour les systèmes à plusieurs champs. Pour chaque champ, choisissez son capteur de production (prérempli avec votre capteur de production PV global). Si chaque champ est mesuré indépendamment — micro-onduleurs (p. ex. Enphase) ou un onduleur par champ —, affectez son propre capteur CA et laissez le CC vide. Si plusieurs champs partagent une sortie CA d'onduleur, indiquez plutôt le capteur de puissance CC/MPPT de chacun afin de répartir la production selon la part CC. Saisissez aussi ici la tension/le courant MPPT de chaque champ — pour les systèmes à plusieurs champs, ces champs se trouvent ici et non sur la page système. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "La répartition CC nécessite un capteur CC/MPPT pour chaque champ. Ajoutez le capteur CC manquant ou passez à « chaque champ a son propre capteur de production ».",
+      "dc_split_ac_mismatch": "La répartition CC nécessite le même capteur de production CA partagé sur chaque champ. Utilisez un seul capteur CA identique sur toutes les lignes, ou passez à « chaque champ a son propre capteur de production »."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Affectation des capteurs par site",
-        "description": "{count} sites Solcast détectés. Pour chaque champ, choisissez le capteur qui mesure sa production. Si plusieurs champs partagent une sortie CA d'onduleur, indiquez aussi à chacun son capteur CC/MPPT afin de répartir la production. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
+        "description": "{count} sites Solcast détectés. Choisissez d'abord comment vos champs sont mesurés. « Chaque champ a son propre capteur de production » : affectez à chaque champ son propre capteur CA (micro-onduleurs, p. ex. Enphase, ou un onduleur par champ) ; laissez le CC vide. « Un onduleur partagé » : mettez le même capteur CA de l'ensemble du système sur chaque champ et donnez à chacun son capteur CC/MPPT pour répartir la production selon la part CC. Vous pouvez aussi saisir la tension/le courant de chaque MPPT pour le diagnostic. Laissez un site vide pour l'ignorer. « Type de capteur » est généralement Détection automatique."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "La répartition CC nécessite un capteur CC/MPPT pour chaque champ. Ajoutez le capteur CC manquant ou passez à « chaque champ a son propre capteur de production ».",
+      "dc_split_ac_mismatch": "La répartition CC nécessite le même capteur de production CA partagé sur chaque champ. Utilisez un seul capteur CA identique sur toutes les lignes, ou passez à « chaque champ a son propre capteur de production »."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Compteur d'énergie — kWh (recommandé)",
         "energy_wh": "Compteur d'énergie — Wh (recommandé)",
         "energy_mwh": "Compteur d'énergie — MWh (recommandé)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Chaque champ a son propre capteur de production (micro-onduleurs / un onduleur par champ)",
+        "dc_split": "Un onduleur partagé, réparti entre les champs selon le CC (un onduleur, plusieurs MPPT)"
       }
     }
   },

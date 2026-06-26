@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Per-site mapping now asks how your arrays are measured.** The per-site step
+  leads with a topology selector — *each array has its own generation sensor*
+  (microinverters / one inverter per array) or *one shared inverter, split by DC*
+  (single inverter, multiple MPPTs). The DC/MPPT field is shown only for the
+  shared-inverter mode, and the chosen mode is saved (`CONF_SITE_TOPOLOGY`). This
+  removes a silent trap where a DC sensor entered on an independently-metered site
+  was discarded on save.
+
+### Fixed
+- **Shared-inverter DC apportionment no longer fails silently.** Choosing the
+  shared-inverter mode without a DC sensor on every array, or with non-identical
+  AC sensors across arrays, now raises a clear form error
+  (`dc_split_missing_dc` / `dc_split_ac_mismatch`) instead of dropping the array.
+
 ## [1.8.0] - 2026-06-22
 
 ### Changed

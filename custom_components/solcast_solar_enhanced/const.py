@@ -65,6 +65,15 @@ DEFAULT_SITE_ID = "_total"
 # sensor (and optional per-MPPT DC apportionment) to one or more sites.
 CONF_SITES = "sites"
 CONF_SITE_GROUPS = "site_groups"
+# Measurement topology for multi-array properties, authored in the per-site step.
+# "direct": each array has its own generation sensor (microinverters / one inverter
+# per array). "dc_split": one inverter's shared AC output is apportioned across
+# arrays by each array's per-MPPT DC share.
+CONF_SITE_TOPOLOGY = "site_topology"
+SITE_TOPOLOGY_DIRECT = "direct"
+SITE_TOPOLOGY_DC_SPLIT = "dc_split"
+SITE_TOPOLOGIES = [SITE_TOPOLOGY_DIRECT, SITE_TOPOLOGY_DC_SPLIT]
+DEFAULT_SITE_TOPOLOGY = SITE_TOPOLOGY_DIRECT
 # Auto-discover sites from the base integration's per-site RooftopSensors
 # (attributes: resource_id, name, capacity, capacity_dc, azimuth, tilt, ...).
 CONF_SITE_AUTODISCOVER = "site_autodiscover"

@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd — deze toewijzingspagina per veld verschijnt bij systemen met meerdere velden. Kies voor elk veld de opwekkingssensor (vooraf ingevuld met uw systeembrede PV-opwekkingssensor). Als elk veld afzonderlijk wordt gemeten — micro-omvormers (bijv. Enphase) of één omvormer per veld — wijs dan de eigen AC-sensor toe en laat DC leeg. Als meerdere velden één AC-uitgang van een omvormer delen, geef dan in plaats daarvan per veld de DC/MPPT-vermogenssensor op zodat de opwek naar DC-aandeel wordt verdeeld. Vul hier ook de MPPT-spanning/stroom per veld in — bij systemen met meerdere velden staan deze hier en niet op de systeempagina. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "DC-verdeling vereist een DC/MPPT-sensor voor elke array. Voeg de ontbrekende DC-sensor toe of schakel over naar 'elke array heeft een eigen opwekkingssensor'.",
+      "dc_split_ac_mismatch": "DC-verdeling vereist dezelfde gedeelde AC-opwekkingssensor op elke array. Gebruik op alle rijen één identieke AC-sensor of schakel over naar 'elke array heeft een eigen opwekkingssensor'."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies voor elk veld de sensor die de opwekking ervan meet. Als meerdere velden één AC-uitgang van een omvormer delen, geef elk ook zijn DC/MPPT-sensor zodat de opbrengst kan worden verdeeld. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "DC-verdeling vereist een DC/MPPT-sensor voor elke array. Voeg de ontbrekende DC-sensor toe of schakel over naar 'elke array heeft een eigen opwekkingssensor'.",
+      "dc_split_ac_mismatch": "DC-verdeling vereist dezelfde gedeelde AC-opwekkingssensor op elke array. Gebruik op alle rijen één identieke AC-sensor of schakel over naar 'elke array heeft een eigen opwekkingssensor'."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Energiemeter — kWh (aanbevolen)",
         "energy_wh": "Energiemeter — Wh (aanbevolen)",
         "energy_mwh": "Energiemeter — MWh (aanbevolen)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Elke array heeft een eigen opwekkingssensor (micro-omvormers / één omvormer per array)",
+        "dc_split": "Eén gedeelde omvormer, over de arrays verdeeld op basis van DC (één omvormer, meerdere MPPT's)"
       }
     }
   },

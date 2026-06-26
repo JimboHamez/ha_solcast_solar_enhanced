@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "Rilevati {count} siti Solcast — questa pagina di mappatura per stringa compare nei sistemi con più stringhe. Per ogni stringa, scegli il suo sensore di produzione (precompilato con il sensore di produzione FV dell'intero impianto). Se ogni stringa è misurata in modo indipendente — microinverter (es. Enphase) o un inverter per stringa —, assegna il suo sensore CA e lascia vuoto il CC. Se più stringhe condividono un'uscita CA dell'inverter, indica invece per ciascuna il sensore di potenza CC/MPPT per ripartire la produzione in base alla quota CC. Inserisci qui anche tensione/corrente MPPT di ogni stringa: nei sistemi con più stringhe questi campi sono qui, non nella pagina di sistema. Lascia un sito vuoto per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "La ripartizione CC richiede un sensore CC/MPPT per ogni stringa. Aggiungi il sensore CC mancante o passa a «ogni stringa ha il proprio sensore di generazione».",
+      "dc_split_ac_mismatch": "La ripartizione CC richiede lo stesso sensore di generazione CA condiviso su ogni stringa. Usa un unico sensore CA identico su tutte le righe oppure passa a «ogni stringa ha il proprio sensore di generazione»."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "Rilevati {count} siti Solcast. Per ogni stringa, scegliere il sensore che ne misura la produzione. Se più stringhe condividono un'uscita CA dell'inverter, assegnare a ciascuna anche il proprio sensore CC/MPPT per ripartire la produzione. Lasciare vuoto un sito per ignorarlo. 'Tipo di sensore' è di solito Rilevamento automatico."
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "La ripartizione CC richiede un sensore CC/MPPT per ogni stringa. Aggiungi il sensore CC mancante o passa a «ogni stringa ha il proprio sensore di generazione».",
+      "dc_split_ac_mismatch": "La ripartizione CC richiede lo stesso sensore di generazione CA condiviso su ogni stringa. Usa un unico sensore CA identico su tutte le righe oppure passa a «ogni stringa ha il proprio sensore di generazione»."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Contatore di energia — kWh (consigliato)",
         "energy_wh": "Contatore di energia — Wh (consigliato)",
         "energy_mwh": "Contatore di energia — MWh (consigliato)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Ogni stringa ha il proprio sensore di generazione (microinverter / un inverter per stringa)",
+        "dc_split": "Un inverter condiviso, ripartito tra le stringhe in base al CC (un inverter, più MPPT)"
       }
     }
   },

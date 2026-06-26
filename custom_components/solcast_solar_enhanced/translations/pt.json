@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} locais Solcast detetados — esta página de mapeamento por conjunto aparece em sistemas com vários conjuntos. Para cada conjunto, escolha o respetivo sensor de geração (pré-preenchido com o sensor de geração FV de todo o sistema). Se cada conjunto for medido de forma independente — microinversores (p. ex. Enphase) ou um inversor por conjunto —, atribua o seu próprio sensor CA e deixe o CC em branco. Se vários conjuntos partilharem uma saída CA do inversor, indique antes o sensor de potência CC/MPPT de cada um para repartir a produção pela quota CC. Introduza aqui também a tensão/corrente MPPT de cada conjunto — em sistemas com vários conjuntos estes campos estão aqui, não na página do sistema. Deixe um local em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
+        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "A divisão por CC precisa de um sensor CC/MPPT para cada arranjo. Adicione o sensor CC em falta ou mude para «cada arranjo tem o seu próprio sensor de geração».",
+      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração»."
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "Mapeamento de sensores por local",
-        "description": "{count} locais Solcast detetados. Para cada conjunto, escolha o sensor que mede a sua geração. Se vários conjuntos partilharem uma saída CA do inversor, atribua a cada um também o respetivo sensor CC/MPPT para que a produção possa ser repartida. Deixe um local em branco para o ignorar. 'Tipo de sensor' é geralmente Detecção automática."
+        "description": "{count} sites Solcast detetados. Primeiro escolha como os seus arranjos são medidos. «Cada arranjo tem o seu próprio sensor de geração» — atribua a cada arranjo o seu próprio sensor CA (microinversores, p. ex. Enphase, ou um inversor por arranjo); deixe CC em branco. «Um inversor partilhado» — coloque o mesmo sensor CA de todo o sistema em cada arranjo e dê a cada um o seu sensor CC/MPPT para dividir a produção pela quota de CC. Opcionalmente, adicione a tensão/corrente de cada MPPT para diagnóstico. Deixe um site em branco para o ignorar. «Tipo de sensor» é normalmente Deteção automática."
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "A divisão por CC precisa de um sensor CC/MPPT para cada arranjo. Adicione o sensor CC em falta ou mude para «cada arranjo tem o seu próprio sensor de geração».",
+      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração»."
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "Contador de energia — kWh (recomendado)",
         "energy_wh": "Contador de energia — Wh (recomendado)",
         "energy_mwh": "Contador de energia — MWh (recomendado)"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "Cada arranjo tem o seu próprio sensor de geração (microinversores / um inversor por arranjo)",
+        "dc_split": "Um inversor partilhado, dividido entre os arranjos por CC (um inversor, vários MPPT)"
       }
     }
   },

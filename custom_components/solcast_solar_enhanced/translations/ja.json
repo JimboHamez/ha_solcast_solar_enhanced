@@ -62,7 +62,7 @@
       },
       "sites": {
         "title": "サイトごとのセンサー割り当て",
-        "description": "{count} 件の Solcast サイトを検出しました — このアレイごとの割り当てページは複数アレイのシステムで表示されます。各アレイについて、その発電を測定するセンサーを選択してください（システム全体の PV 発電センサーがあらかじめ入力されています）。各アレイが個別に計測されている場合 — マイクロインバーター（例: Enphase）またはアレイごとに 1 台のインバーター — は、そのアレイ専用の AC センサーを割り当て、DC は空欄のままにしてください。複数のアレイが 1 つのインバーター AC 出力を共有している場合は、代わりに各アレイの DC/MPPT 電力センサーを指定すると、DC 比率に応じて出力を按分できます。各アレイの MPPT 電圧/電流もここに入力してください。複数アレイのシステムでは、これらはシステムページではなくここにあります。サイトを空欄にするとスキップします。「センサーの種類」は通常「自動検出」です。"
+        "description": "{count} 件のSolcastサイトを検出しました。まずアレイの測定方法を選択してください。「各アレイに独自の発電センサーがある」：各アレイに固有のACセンサーを割り当てます（マイクロインバーター（例：Enphase）またはアレイごとに1台のインバーター）。DCは空欄のままにします。「1台のインバーターを共有」：各アレイにシステム全体の同じACセンサーを設定し、それぞれにDC/MPPTセンサーを指定して、DC比率で出力を分配します。診断用に各MPPTの電圧/電流を任意で入力できます。サイトを空欄にするとスキップします。「センサータイプ」は通常「自動検出」です。"
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -76,6 +76,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "DC分配には各アレイにDC/MPPTセンサーが必要です。不足しているDCセンサーを追加するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
+      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。"
     }
   },
   "options": {
@@ -141,7 +145,7 @@
       },
       "sites": {
         "title": "サイトごとのセンサー割り当て",
-        "description": "{count} 件の Solcast サイトを検出しました。各アレイについて、その発電を測定するセンサーを選択してください。複数のアレイが 1 つのインバーター AC 出力を共有している場合は、出力を按分できるよう各アレイに DC/MPPT センサーも指定してください。サイトを空欄にするとスキップします。「センサーの種類」は通常「自動検出」です。"
+        "description": "{count} 件のSolcastサイトを検出しました。まずアレイの測定方法を選択してください。「各アレイに独自の発電センサーがある」：各アレイに固有のACセンサーを割り当てます（マイクロインバーター（例：Enphase）またはアレイごとに1台のインバーター）。DCは空欄のままにします。「1台のインバーターを共有」：各アレイにシステム全体の同じACセンサーを設定し、それぞれにDC/MPPTセンサーを指定して、DC比率で出力を分配します。診断用に各MPPTの電圧/電流を任意で入力できます。サイトを空欄にするとスキップします。「センサータイプ」は通常「自動検出」です。"
       },
       "weather": {
         "title": "Weather & Irradiance",
@@ -155,6 +159,10 @@
           "owm_enabled": "Optional legacy alternative for cloud cover and temperature; needs a free API key. When enabled it takes precedence over Open-Meteo for cloud/temperature — irradiance still comes from Open-Meteo."
         }
       }
+    },
+    "error": {
+      "dc_split_missing_dc": "DC分配には各アレイにDC/MPPTセンサーが必要です。不足しているDCセンサーを追加するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
+      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。"
     }
   },
   "entity": {
@@ -173,6 +181,12 @@
         "energy_kwh": "エネルギーカウンター — kWh（推奨）",
         "energy_wh": "エネルギーカウンター — Wh（推奨）",
         "energy_mwh": "エネルギーカウンター — MWh（推奨）"
+      }
+    },
+    "site_topology": {
+      "options": {
+        "direct": "各アレイに独自の発電センサーがある（マイクロインバーター／アレイごとに1台のインバーター）",
+        "dc_split": "1台のインバーターを共有し、DCでアレイに分配（1台のインバーター、複数のMPPT）"
       }
     }
   },

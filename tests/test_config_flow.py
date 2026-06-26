@@ -32,12 +32,16 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_PV_ACTUAL_SENSOR,
     CONF_PV_EXPORT_SENSOR,
     CONF_SITE_GROUPS,
+    CONF_SITE_TOPOLOGY,
     CONF_TILT,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
     DOMAIN,
+    SITE_TOPOLOGY_DC_SPLIT,
+    SITE_TOPOLOGY_DIRECT,
 )
+from custom_components.solcast_solar_enhanced.config_flow import _TOPOLOGY_FIELD
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -276,6 +280,203 @@ async def test_sites_step_prefills_generation_from_system_sensor(hass):
     suggested = _suggested_for_suffix(result, "— generation sensor")
     assert len(suggested) == 2
     assert all(v == STEP_SITE[CONF_PV_ACTUAL_SENSOR] for v in suggested)
+
+
+def _site_for(name: str) -> str:
+    return "A" if "Array A" in name else "B"
+
+
+def _sites_submission(result, mode, ac_map, dc_map=None) -> dict:
+    """Build a per-site-step submission for ``mode`` from the rendered schema."""
+    sub: dict = {_TOPOLOGY_FIELD: mode}
+    for m in _markers(result):
+        name = str(m.schema if hasattr(m, "schema") else m)
+        if name == _TOPOLOGY_FIELD:
+            continue
+        if "generation sensor" in name:
+            sub[name] = ac_map[_site_for(name)]
+        elif name.endswith("(for split)"):
+            val = (dc_map or {}).get(_site_for(name))
+            if val is not None:
+                sub[name] = val
+    return sub
+
+
+async def test_sites_step_shows_topology_selector(hass):
+    """The per-site step renders the topology selector (defaulting to direct)."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    assert _TOPOLOGY_FIELD in _schema_keys(result)
+    # Direct is the default → no DC fields yet.
+    assert not any("(for split)" in k for k in _schema_keys(result))
+
+
+async def test_sites_step_direct_derives_single_site_groups(hass):
+    """Direct mode: each array maps its own AC sensor → two single-site groups."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    submission = _sites_submission(
+        result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.ac_a", "B": "sensor.ac_b"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], submission)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    data = result["data"]
+    assert data[CONF_SITE_TOPOLOGY] == SITE_TOPOLOGY_DIRECT
+    groups = data[CONF_SITE_GROUPS]
+    assert {g["site"] for g in groups} == {"AAAA", "BBBB"}
+    assert all("strings" not in g for g in groups)
+
+
+async def test_sites_step_switch_to_dc_split_rerenders_with_dc(hass):
+    """Switching the selector to dc_split re-renders the form with DC fields."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    submission = _sites_submission(
+        result, SITE_TOPOLOGY_DC_SPLIT, {"A": "sensor.shared", "B": "sensor.shared"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], submission)
+    # Mode changed from the rendered default → stays on the form, now with DC fields.
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert any("(for split)" in k for k in _schema_keys(result))
+
+
+async def test_sites_step_dc_split_missing_dc_errors(hass):
+    """DC-split with a shared AC but a missing DC sensor surfaces a form error."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    # First submit switches into dc_split (re-render with DC fields).
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DC_SPLIT, {"A": "sensor.shared", "B": "sensor.shared"}),
+    )
+    # Now submit dc_split with only one DC sensor filled.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.shared", "B": "sensor.shared"},
+            {"A": "sensor.mppt1"},  # B omitted
+        ),
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "dc_split_missing_dc"}
+
+
+async def test_sites_step_dc_split_valid_derives_strings(hass):
+    """DC-split with shared AC + both DC sensors derives one apportioned group."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DC_SPLIT, {"A": "sensor.shared", "B": "sensor.shared"}),
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.shared", "B": "sensor.shared"},
+            {"A": "sensor.mppt1", "B": "sensor.mppt2"},
+        ),
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    data = result["data"]
+    assert data[CONF_SITE_TOPOLOGY] == SITE_TOPOLOGY_DC_SPLIT
+    groups = data[CONF_SITE_GROUPS]
+    assert len(groups) == 1
+    assert {s["site"] for s in groups[0]["strings"]} == {"AAAA", "BBBB"}
+
+
+async def test_sites_step_dc_split_ac_mismatch_errors(hass):
+    """DC-split with non-identical AC sensors across arrays surfaces a form error."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    # First submit switches into dc_split (re-render with DC fields).
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DC_SPLIT, {"A": "sensor.ac_a", "B": "sensor.ac_b"}),
+    )
+    # Both DC sensors filled, but the AC sensors differ → mismatch (not missing-DC).
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.ac_a", "B": "sensor.ac_b"},
+            {"A": "sensor.mppt1", "B": "sensor.mppt2"},
+        ),
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "dc_split_ac_mismatch"}
+
+
+async def _advance_options_to_sites(hass, entry):
+    """Walk the options flow up to the per-site step for an existing entry."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY, STEP_TUNING):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], step_data)
+    return result
+
+
+def _dc_split_entry(entry_id, *, with_topology):
+    """An existing apportioned (dc_split) multi-site entry."""
+    options = {
+        CONF_SITE_GROUPS: [
+            {
+                "ac_sensor": "sensor.shared",
+                "strings": [
+                    {"site": "AAAA", "dc_sensor": "sensor.mppt1"},
+                    {"site": "BBBB", "dc_sensor": "sensor.mppt2"},
+                ],
+            }
+        ]
+    }
+    if with_topology:
+        options[CONF_SITE_TOPOLOGY] = SITE_TOPOLOGY_DC_SPLIT
+    return MockConfigEntry(
+        domain=DOMAIN, data=STEP_SITE, options=options, entry_id=entry_id, title="Solcast Solar Enhanced"
+    )
+
+
+async def test_options_infers_dc_split_for_legacy_entry(hass):
+    """A pre-selector entry with apportioned groups defaults the step to dc_split."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("legacy", with_topology=False)  # no CONF_SITE_TOPOLOGY stored
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+    # Inferred dc_split → the DC fields are rendered.
+    assert any("(for split)" in k for k in _schema_keys(result))
+
+
+async def test_options_dc_split_to_direct_drops_dc(hass):
+    """Switching an existing dc_split entry to direct derives single-site groups (DC dropped)."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("opt_switch", with_topology=True)
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+    assert any("(for split)" in k for k in _schema_keys(result))  # renders dc_split
+
+    # Switch to direct → re-render without DC fields.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.ac_a", "B": "sensor.ac_b"}),
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert not any("(for split)" in k for k in _schema_keys(result))
+
+    # Final submit in direct mode → single-site groups, no strings/dc carried over.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.ac_a", "B": "sensor.ac_b"}),
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    data = result["data"]
+    assert data[CONF_SITE_TOPOLOGY] == SITE_TOPOLOGY_DIRECT
+    groups = data[CONF_SITE_GROUPS]
+    assert all("strings" not in g for g in groups)
+    assert all("dc_sensor" not in g for g in groups)
 
 
 async def test_options_migrates_flat_mppt_to_per_site(hass):
