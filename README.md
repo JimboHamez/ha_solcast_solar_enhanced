@@ -162,11 +162,11 @@ The store lives at `config/solcast_solar_enhanced.db`. To browse it, point the [
 
 ### Step 3 — Weather & Irradiance
 
-<a href="images/config-step3-weather.png"><img align="right" width="340" alt="Step 3 — Weather & Irradiance" src="images/config-step3-weather.png"></a>
+<p align="center">
+  <a href="images/config-step3-weather.png"><img width="420" alt="Step 3 — Weather & Irradiance" src="images/config-step3-weather.png"></a>
+</p>
 
 Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 above](#4-weather--irradiance-open-meteo--keyless-on-by-default)). OpenWeatherMap is an optional legacy alternative for cloud/temperature.
-
-<br clear="all">
 
 | Field | Default | Description |
 |---|---|---|
@@ -176,11 +176,11 @@ Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 ab
 
 ### Step 4 — Battery Storage
 
-<a href="images/config-step4-battery.png"><img align="right" width="340" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
+<p align="center">
+  <a href="images/config-step4-battery.png"><img width="420" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
+</p>
 
 A fallback for systems without a battery sensor mapped in Step 1.
-
-<br clear="all">
 
 | Field | Description |
 |---|---|
