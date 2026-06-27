@@ -475,6 +475,23 @@ Within Tier 1, each extra DC channel removes a specific failure mode, so more da
 
 **Still to do** before promotion (waiting on accumulated telemetry): the per-string `Vmp`-band calibrator, the `curtailed` flag + `export_limit` column, and wiring detection into the consumers. *Wing-reconstruction* (fit the clear-sky curve to a day's unclipped points and interpolate the clipped midday to recover curtailed days for tuning) remains proposed — Tier-1 perfects the flag, but recovering generation from an off-MPP point still needs the curve fit.
 
+### Full-year geometry anchor for the dampening blend (proposed)
+
+**Problem.** The confidence blend ([Confidence model](#confidence-model-α-blending)) rests low-α slots on a **neutral `1.0`** anchor, so a slot only moves once its *own seasonal* (`±14`-day) window accumulates enough quality-weighted records. A 2026 analysis against [notebook 3.4b](https://solcast.github.io/solcast-api-python-sdk/notebooks/3.4b%20Rooftop%20Shading%20Corrections/) on a ~9-month single-site DB showed this starves exactly the slots that need correcting. Two levers don't fix it:
+
+- **Widening the DOY window can't lift α.** It peaks (~0.29 at noon) around `±45` days then *declines* toward `±180`: the quality-weighted count `x` saturates (off-season records have ~0 zenith-proximity weight) while `avg_quality` collapses, so `midpoint = 30/avg_quality` raises the confidence bar faster than `x` grows. No daylight slot reaches `db_history` (α > 0.95) at any width — confidence is **seasonally local by design**, and only accrues with more *years* at the same day-of-year.
+- **Lowering `BASE_MIDPOINT` releases the clamp but surfaces the wrong signal.** It lets the *midday* slots (highest record count) move first — and their seasonal ratio is the ~0.84 **winter estimate bias**, not shading. The genuinely shaded *morning* slots stay data-starved and near-neutral, so the pushed curve is a symmetric midday trough rather than the real asymmetric morning dip.
+
+**Proposal.** Swap the blend anchor from `1.0` to the **full-DB clear-sky quality-weighted ratio at the slot's sun geometry** `R_full(zenithₜ, azimuthₜ)`:
+
+```
+final(slot) = (1 − α) × R_full(geom)  +  α × db_factor_seasonal(geom)
+```
+
+`R_full` is computed over the *whole* dataset (all days-of-year) at the slot's target geometry, so even when this season's window is thin it is high-confidence (the same morning-elevation geometry is well-sampled across other seasons) and **already encodes the morning-shading dip**. α and `db_factor_seasonal` stay as today, refining the anchor as the seasonal window fills. On the reference DB this surfaces the true **asymmetric morning trough** (push ≈ 0.62 at 08:00, ≈ 0.71 at 09:00) with the afternoon left ≈ neutral — matching the matched-elevation AM/PM asymmetry (the [String-2 morning-shading](#feature-3--adaptive-shading-dampening) fingerprint) — where the `1.0` anchor pushes a near-flat 0.98–1.00.
+
+**Caveats before shipping.** (1) It **abandons the ramp-from-neutral safety** for the anchor — the anchor is trusted from the first computation, so it needs a fallback to `1.0` until the full-DB quality-weighted count clears a threshold (a fresh install has no anchor). (2) Correctness **rides entirely on the year-round tuned-estimate prerequisite** — the anchor bakes in any *year-round* capacity/orientation error as "shading", so it is only as trustworthy as the full-DB ratio (it isolates shading cleanly here only because the site is well-tuned, midday `R_full` ≈ 0.99). (3) The correction is **large** (~38% in the morning), so it must stay behind the existing `dampening_gate`/orientation-divergence check. **Deferred** pending more seasonal coverage and the curtailment-aware filtering above, which sharpens `R_full` on high-sun records.
+
 ---
 
 ## Dependency handling
