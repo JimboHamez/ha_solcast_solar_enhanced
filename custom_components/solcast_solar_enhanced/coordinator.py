@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    APPORTION_AZIMUTH_TOL,
     BASE_DOMAIN,
     CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
@@ -95,6 +96,19 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _azimuth_spread(azimuths: list[float]) -> float:
+    """Largest shortest-arc difference (degrees) between any pair of azimuths.
+
+    Wrap-aware, so 350° and 10° read as 20° apart, not 340°.
+    """
+    spread = 0.0
+    for i in range(len(azimuths)):
+        for j in range(i + 1, len(azimuths)):
+            d = abs(azimuths[i] - azimuths[j]) % 360.0
+            spread = max(spread, min(d, 360.0 - d))
+    return spread
 
 
 def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -1334,7 +1348,50 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         est = self._forecast_slot(f"detailedForecast-{resource_id}", start_epoch)
         if est == (0.0, 0.0, 0.0):
             est = self._forecast_slot(f"detailedForecast_{resource_id}", start_epoch)
-        return est
+        if est != (0.0, 0.0, 0.0):
+            return est
+        # The base integration exposes no per-site detailedForecast on this install,
+        # so per-site pv_estimate would be zero and per-site dampening could never
+        # form a ratio. Fall back to apportioning the property-wide forecast by this
+        # site's capacity share (item 1 P0) — valid only at a shared orientation.
+        return self._apportion_total_forecast(resource_id, start_epoch)
+
+    def _apportion_total_forecast(self, resource_id: str, start_epoch: int) -> tuple[float, float, float]:
+        """Per-site forecast from the property total, split by capacity share.
+
+        Capacity-share apportionment of a half-hourly forecast assumes the same
+        forecast-per-kW shape across arrays, which holds only when they share an
+        azimuth. When azimuths diverge beyond ``APPORTION_AZIMUTH_TOL`` the arrays
+        peak at different times, so a per-slot split would invent phantom timing
+        differences and corrupt per-site dampening — apportionment is skipped and
+        the per-site forecast stays unset (zeros), the pre-existing behaviour.
+
+        Returns the apportioned ``(pv_estimate, pv_estimate10, pv_estimate90)`` (avg
+        kW over the half-hour), or zeros when apportionment is unavailable or unsafe.
+        """
+        sites = self._sites
+        if len(sites) < 2:
+            return 0.0, 0.0, 0.0
+        site = next((s for s in sites if s.get("resource_id") == resource_id), None)
+        if site is None:
+            return 0.0, 0.0, 0.0
+        azimuths = [float(s.get("azimuth") or 0.0) for s in sites]
+        if _azimuth_spread(azimuths) > APPORTION_AZIMUTH_TOL:
+            _LOGGER.debug(
+                "Per-site forecast apportionment skipped: array azimuths diverge by %.0f° (> %.0f°)",
+                _azimuth_spread(azimuths),
+                APPORTION_AZIMUTH_TOL,
+            )
+            return 0.0, 0.0, 0.0
+        total_cap = sum(float(s.get("capacity") or 0.0) for s in sites)
+        site_cap = float(site.get("capacity") or 0.0)
+        if total_cap <= 0.0 or site_cap <= 0.0:
+            return 0.0, 0.0, 0.0
+        total = self._total_forecast_for_period(start_epoch)
+        if total == (0.0, 0.0, 0.0):
+            return 0.0, 0.0, 0.0
+        share = site_cap / total_cap
+        return total[0] * share, total[1] * share, total[2] * share
 
     def _forecast_slot(self, attr_name: str, start_epoch: int) -> tuple[float, float, float]:
         """Pick the ``detailedForecast`` slot closest to ``start_epoch``.

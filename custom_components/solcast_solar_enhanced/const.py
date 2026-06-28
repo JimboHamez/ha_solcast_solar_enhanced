@@ -115,6 +115,11 @@ KT_GHI_CS_FLOOR = 40.0
 DEFAULT_CLIPPING_THRESHOLD = 0.95
 DEFAULT_EXPORT_LIMIT_KW = 0.0
 DEFAULT_DAMPENING_GATE = True
+# Max shortest-arc azimuth spread (degrees) across configured arrays for which the
+# property-wide forecast may be capacity-apportioned to each site. Beyond it the
+# arrays peak at different times, so a per-slot capacity split would invent phantom
+# timing differences and is skipped (per-site forecast stays unset).
+APPORTION_AZIMUTH_TOL = 10.0
 
 # PV input modes — how to interpret the configured pv_actual / pv_export sensors.
 #   auto        : detect from state_class + unit_of_measurement

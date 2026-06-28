@@ -268,6 +268,85 @@ async def test_site_forecast_missing_returns_zeros(hass, coordinator):
     assert coordinator._site_forecast_for_period("nope", 1_000_000) == (0.0, 0.0, 0.0)
 
 
+async def test_site_forecast_apportions_by_capacity_when_no_per_site_detail(hass, coordinator):
+    """No per-site detailedForecast → apportion the property total by capacity share (shared azimuth)."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 0.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            "detailedForecast": [
+                {
+                    "period_start": "2024-09-10T06:30:00+00:00",
+                    "pv_estimate": 4.5,
+                    "pv_estimate10": 3.0,
+                    "pv_estimate90": 6.0,
+                },
+            ],
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, e10, e90 = coordinator._site_forecast_for_period("a", start)
+    assert est == pytest.approx(4.5 * 3.0 / 9.0)  # 1.5
+    assert e10 == pytest.approx(3.0 * 3.0 / 9.0)  # 1.0
+    assert e90 == pytest.approx(6.0 * 3.0 / 9.0)  # 2.0
+
+
+async def test_site_forecast_per_site_detail_takes_precedence_over_apportionment(hass, coordinator):
+    """A real per-site detailedForecast is used as-is, never apportioned."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 0.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            "detailedForecast-a": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 2.2},
+            ],
+            "detailedForecast": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 4.5},
+            ],
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, _, _ = coordinator._site_forecast_for_period("a", start)
+    assert est == pytest.approx(2.2)  # the real per-site value, not 4.5*3/9
+
+
+async def test_site_forecast_apportionment_skipped_on_divergent_azimuth(hass, coordinator):
+    """Arrays peaking at different times can't be capacity-apportioned per slot → zeros."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 90.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {"detailedForecast": [{"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 4.5}]},
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    assert coordinator._site_forecast_for_period("a", start) == (0.0, 0.0, 0.0)
+
+
+def test_azimuth_spread_wraps():
+    from custom_components.solcast_solar_enhanced.coordinator import _azimuth_spread
+
+    assert _azimuth_spread([350.0, 10.0]) == pytest.approx(20.0)
+    assert _azimuth_spread([0.0, 90.0, 5.0]) == pytest.approx(90.0)
+    assert _azimuth_spread([10.0]) == pytest.approx(0.0)
+
+
 # ---------------------------------------------------------------------------
 # _total_forecast_for_period (property-wide detailedForecast)
 # ---------------------------------------------------------------------------

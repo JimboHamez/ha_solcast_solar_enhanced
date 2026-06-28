@@ -351,6 +351,16 @@ ac_arrayᵢ = ac_total × (dcᵢ / Σ dc)
 
 Since `ac_total ≈ η × Σ dc` (η ≈ constant), this yields each array's production in the AC domain (matching Solcast), sums back to the metered total, and handles clipping proportionally. Guarded against `Σ dc ≈ 0`.
 
+### Per-site forecast — apportionment fallback (v1.10.0b1)
+
+Per-site dampening needs both a per-site *actual* (above) **and** a per-site *forecast* to form a ratio. The companion reads the base's `detailedForecast-<resource_id>` attribute, but many base installs don't populate it, so per-site `pv_estimate` would be `0` and per-site dampening could never engage. `_apportion_total_forecast` fills the gap: it splits the property-wide `detailedForecast` by each site's capacity share,
+
+```
+pv_estimateᵢ(slot) = pv_estimate_total(slot) × (capacityᵢ / Σ capacity)
+```
+
+applied **only when the configured arrays share orientation** — `_azimuth_spread(azimuths) ≤ APPORTION_AZIMUTH_TOL` (10°, wrap-aware). Capacity-share apportionment of a *half-hourly* forecast assumes the same forecast-per-kW shape across arrays, which holds only at a common azimuth; differently-oriented arrays peak at different times, so a per-slot split would invent phantom timing differences and corrupt the per-site ratio — those are left unapportioned (per-site forecast `0`, the prior behaviour, so no regression). A real per-site `detailedForecast` always takes precedence. This is the prerequisite that makes **per-site shading dampening** (`_run_dampening`'s per-site `set_dampening` loop, already present) actually engage.
+
 ### Discovery, config model and storage
 
 `discover_sites(hass)` (shared by coordinator and config flow) enumerates the base RooftopSensors, reading `resource_id`, `name`, `capacity`, `capacity_dc`, `tilt`, `azimuth`, `compass_degrees`. Orientation seeds per-site tuning; `resource_id` keys storage and targets `set_dampening`.

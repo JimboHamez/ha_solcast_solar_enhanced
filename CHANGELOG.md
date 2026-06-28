@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partly-cloudy slots and near sunrise/sunset, which compounds with the Kt weighting
   above (both make the partly-cloudy records dampening relies on more accurate).
 
+### Added
+- **Per-site shading dampening now engages for multi-site systems.** Per-site dampening
+  was already wired but starved of a per-site forecast (most base installs don't expose
+  `detailedForecast-<resource_id>`, so per-site `pv_estimate` was 0 and no ratio could
+  form). The companion now apportions the property-wide forecast to each array by
+  **capacity share** when no per-site detail is available — but only when the arrays
+  **share orientation** (azimuths within 10°), since differently-oriented arrays peak at
+  different times and a per-slot capacity split would invent phantom timing. A real
+  per-site forecast always takes precedence; divergent-azimuth systems are unchanged.
+
 ### Notes
 - No configuration change: the existing **Clearness index threshold** option (already
   used by tuning) now also governs dampening.
