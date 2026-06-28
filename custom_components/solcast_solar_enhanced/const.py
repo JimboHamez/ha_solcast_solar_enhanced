@@ -190,6 +190,7 @@ SENSOR_PV_ACTUAL = "pv_actual"
 SENSOR_PV_EXPORT = "pv_export"
 SENSOR_BASE_STATUS = "base_status"
 SENSOR_MPPT_DC = "mppt_dc"
+SENSOR_PV_CONFIDENCE = "pv_forecast_confidence"
 
 # Services
 SERVICE_RUN_PV_TUNING = "run_pv_tuning"

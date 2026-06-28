@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import Counter
+from collections import Counter, deque
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -85,6 +85,7 @@ from .const import (
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
 )
+from .load_advisory import CONFIDENCE_HORIZON_HOURS, RECENT_BIAS_LOOKBACK_S, compute_confidence
 from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OpenMeteoClient, OWMClient
@@ -184,6 +185,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._tuning_result: dict[str, Any] | None = None
         self._site_tuning_results: dict[str, dict[str, Any]] = {}
         self._dampening_table: list[dict[str, Any]] = []
+        # Recent (epoch, pv_actual, pv_estimate) daylight slots driving the
+        # short-horizon forecast-confidence advisory (item 3). Bounded; older than
+        # the lookback window is ignored at compute time.
+        self._recent_bias: deque[tuple[int, float, float]] = deque(maxlen=16)
+        self._confidence: dict[str, Any] = compute_confidence([])
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._last_prune_ts: float = 0.0
@@ -485,6 +491,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 **self._irradiance_for_storage(),
             }
             await self._db.async_insert_record(record)
+
+            # Feed the short-horizon confidence advisory (item 3): record this
+            # completed daylight slot's measured-vs-forecast pair and recompute how
+            # well recent output is tracking the forecast. Daylight only (a non-zero
+            # estimate); night/no-forecast slots carry no signal.
+            if pv_estimate > 0:
+                self._recent_bias.append((period_epoch, round(pv_actual, 4), round(pv_estimate, 4)))
+            self._confidence = compute_confidence(
+                [(a, e) for (ep, a, e) in self._recent_bias if period_epoch - ep <= RECENT_BIAS_LOOKBACK_S]
+            )
 
             # Per-site rows (multi-site). The property-wide '_total' row above
             # remains the source for aggregate tuning/dampening; per-site rows are
@@ -1755,6 +1771,22 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     def dampening_hours_with_db(self) -> int:
         """Number of half-hour slots whose dampening is backed by DB history."""
         return sum(1 for s in self._dampening_table if s.get("source") not in ("no_data", "night"))
+
+    @property
+    def confidence(self) -> int | None:
+        """Short-horizon forecast-confidence score (0–100), or None until there's data."""
+        return self._confidence.get("confidence")
+
+    @property
+    def confidence_attributes(self) -> dict[str, Any]:
+        """Diagnostics for the confidence sensor: rating, recent bias, what it's based on."""
+        return {
+            "rating": self._confidence.get("rating", "unknown"),
+            "recent_bias": self._confidence.get("recent_bias"),
+            "n_slots": self._confidence.get("n_slots", 0),
+            "horizon_hours": CONFIDENCE_HORIZON_HOURS,
+            "based_on": "recent measured output vs Solcast forecast",
+        }
 
     @property
     def dampening_attributes(self) -> dict[str, Any]:

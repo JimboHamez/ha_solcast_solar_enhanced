@@ -6,7 +6,14 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfEnergy, UnitOfPower, UnitOfTemperature
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -22,6 +29,7 @@ from .const import (
     SENSOR_FORECAST_TODAY,
     SENSOR_MPPT_DC,
     SENSOR_PV_ACTUAL,
+    SENSOR_PV_CONFIDENCE,
     SENSOR_PV_EXPORT,
     SENSOR_TUNING_AZIMUTH,
     SENSOR_TUNING_EXPORT_EXCLUDED,
@@ -62,6 +70,7 @@ async def async_setup_entry(
         PvActualSensor(coordinator, entry),
         PvExportSensor(coordinator, entry),
         BaseIntegrationSensor(coordinator, entry),
+        PvForecastConfidenceSensor(coordinator, entry),
     ]
     async_add_entities(entities)
 
@@ -293,6 +302,30 @@ class DampeningSensor(_EnhancedSensorBase):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.coordinator.dampening_attributes
+
+
+class PvForecastConfidenceSensor(_EnhancedSensorBase):
+    """How well recent measured output agrees with the Solcast forecast (0–100).
+
+    A decision aid for scheduling heavy loads, not a forecast: high means the next
+    few hours can be trusted at this site; low means local conditions are diverging.
+    """
+
+    _attr_name = "PV Forecast Confidence"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:check-decagram"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_PV_CONFIDENCE)
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.confidence
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.confidence_attributes
 
 
 class WeatherTempSensor(_EnhancedSensorBase):

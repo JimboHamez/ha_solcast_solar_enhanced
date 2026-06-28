@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above (both make the partly-cloudy records dampening relies on more accurate).
 
 ### Added
+- **New "PV Forecast Confidence" sensor — a load-scheduling decision aid.** Scores 0–100
+  how well your array's *recently measured* output is tracking the Solcast forecast
+  (energy-weighted bias over the last ~4 h), with a `rating` of high/medium/low. High
+  means the next few hours can be trusted — a good time to commit a heavy load (EV, pool
+  pump, hot water); low means local conditions are diverging from the forecast, so hold.
+  It is **not** a forecast and is never pushed to Solcast — it annotates how much to trust
+  the forecast using ground truth the base integration can't see. (The Good/Next Load
+  Window entities that build on it are the planned next step.)
 - **Per-site shading dampening now engages for multi-site systems.** Per-site dampening
   was already wired but starved of a per-site forecast (most base installs don't expose
   `detailedForecast-<resource_id>`, so per-site `pv_estimate` was 0 and no ratio could

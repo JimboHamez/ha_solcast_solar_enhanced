@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **A companion integration for BJReplay/ha-solcast-solar**
-**Version 1.14 — June 2026**
+**Version 1.15 — June 2026**
 
 ---
 
@@ -9,13 +9,14 @@
 
 This document describes the `solcast_solar_enhanced` integration and the design thinking behind it. It is a **standalone companion** to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) — it installs alongside the base integration and depends on it, but is built and versioned independently rather than merged into it.
 
-It adds three capabilities:
+It adds four capabilities:
 
 1. **Built-in SQLite storage** of PV power, forecasts, solar position, weather and battery data — a single zero-config file via the stdlib `sqlite3` module (no server, no credentials, no extra dependency).
 2. **Automatic Rooftop PV Tuning** — tilt/azimuth optimisation via a numpy grid search (no scipy), based on Solcast SDK notebook 3.4.
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from stored actual-vs-forecast history (it never reads the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates, based on Solcast SDK notebook 3.4b.
+4. **Short-horizon forecast confidence** (v1.10.0b1) — a load-scheduling *decision aid* scoring how well recent measured output tracks the forecast; advisory only, never a rival forecast. See [Feature 7](#feature-7--short-horizon-forecast-confidence-load-scheduling-aid).
 
-A fourth capability, **Short-range Forecast Correction**, was designed and **dropped** — see [Feature 4](#feature-4--short-range-forecast-correction-dropped).
+The original **Short-range Forecast *Correction*** was designed and **dropped**, then re-scoped into capability 4 — see [Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7).
 
 The integration runs standalone, reading all Solcast data from the base coordinator (**zero additional Solcast API calls**) and pushing improved dampening back via the base `set_dampening` service.
 
@@ -42,7 +43,8 @@ solcast_solar_enhanced/
 ├── pv_tuning.py             Tilt/azimuth optimisation (numpy grid search)
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
-├── sensor.py                15 HA sensor entities
+├── load_advisory.py         Short-horizon forecast-confidence (item 3 load aid)
+├── sensor.py                16 HA sensor entities
 ├── services.yaml            Service definitions
 └── translations/            UI strings (11 languages)
 ```
@@ -295,18 +297,18 @@ overall_source:           db_blended
 
 ---
 
-## Feature 4 — Short-range Forecast Correction (Dropped)
+## Feature 4 — Short-range Forecast Correction (Dropped → re-scoped as Feature 7)
 
-> **Status: evaluated and dropped (v1.3.0).** Recorded for the design record.
+> **Status: dropped as a forecast *correction* (v1.3.0); re-scoped as a *decision aid* in v1.10.0b1 — see [Feature 7](#feature-7--short-horizon-forecast-confidence-load-scheduling-aid).** Recorded for the design record.
 
-The idea was to nudge the next 1–6 hours of forecast from the recent `total_pv / pv_estimate` ratio with an exponentially-decaying correction. It was dropped because:
+The idea was to nudge the next 1–6 hours of forecast from the recent `total_pv / pv_estimate` ratio with an exponentially-decaying correction. It was dropped **as a forecast correction** because:
 
 - The near-term deviation signal is cloud-driven and decays within an hour or two, so the nudge approaches a no-op by +3 — exactly where forecast error is largest.
 - It would second-guess Solcast's imagery-based near-term product with a cruder single-inverter ratio plus coarse OWM cloud.
 - A now-relative, decaying, per-horizon correction can't go through `set_dampening` (indexed by local time-of-day), so it would fork the forecast into separate "corrected" sensors, forcing users to rewire automations.
 - The durable, predictable part is already captured by the DB-driven dampening, whose ±14-day window also covers individual missing slots.
 
-No implementation is planned.
+Re-scoping it to a **decision aid that never publishes a rival forecast** (Feature 7) sidesteps these: it targets the +0–90 min window where local persistence skill is *highest*, emits a confidence score rather than a corrected kW number, and is purely advisory (no `set_dampening`, no forked forecast).
 
 ---
 
@@ -442,7 +444,26 @@ The three features were added in order of increasing risk, each independent and 
 2. **Adaptive dampening.** `shading_dampening.py`; 6-hourly recalculation; the DB factor blended via the confidence model. Inert when the DB is disabled. **No new dependencies.**
 3. **PV tuning (optional).** `pv_tuning.py`; daily tilt/azimuth optimisation behind the `auto_tuning` toggle; lazy numpy import. **New dependency: `numpy>=1.21.0`** (ships with HA; no scipy).
 
-A fourth feature, short-range forecast correction, was designed and dropped ([Feature 4](#feature-4--short-range-forecast-correction-dropped)).
+A fourth feature, short-range forecast correction, was designed and dropped, then re-scoped as the Feature 7 decision aid ([Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7)).
+
+---
+
+## Feature 7 — Short-horizon forecast confidence (load-scheduling aid)
+
+> **Status: v1.10.0b1 (MVP — confidence signal).** Re-scopes the dropped [Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7).
+
+A **decision aid** for scheduling deferrable heavy loads (EV, pool pump, hot water): *"can I trust the next few hours enough to turn this on now?"* It is **not** a forecast — it never publishes a rival kW number and never feeds `set_dampening`. The only defensible unique value is the **closed loop**: the base integration is open-loop (Solcast → you), while this companion measures actual production and compares it back, so the advisory annotates trust using ground truth the base never sees.
+
+**Confidence signal (`load_advisory.compute_confidence`).** Each completed daylight slot's `(pv_actual, pv_estimate)` is appended to a bounded in-memory deque (`_recent_bias`). The energy-weighted recent bias over the last `RECENT_BIAS_LOOKBACK_S` (4 h),
+
+```
+bias = Σ pv_actual / Σ pv_estimate        (daylight slots, non-zero estimate)
+confidence = round(100 · exp(−|ln(bias)| / CONFIDENCE_SCALE))   # 0–100
+```
+
+reads ~100 when output tracks the forecast and falls as they diverge (local cloud, shading, or an uncaught bias). `CONFIDENCE_SCALE = 0.45` calibrates the bands: tracking within ~±18% → **high** (≥67), within ~±40% → **medium** (≥34), beyond → **low**. Surfaced on `PvForecastConfidenceSensor` (0–100, `%`) with `rating`, `recent_bias`, `n_slots`, `horizon_hours` and `based_on` attributes. In-memory by design (rebuilds within a couple of daylight hours after a restart); needs collection (DB) enabled.
+
+**Planned next slice — Load Window entities.** A `binary_sensor` "Good Load Window" (the actionable now/not-now trigger) and a timestamp `sensor` "Next Load Window", combining the *base* forecast + battery state + export headroom + this confidence into a recommended window. The hard part is the **battery-aware usable surplus** (PV beyond what the battery and baseload will already consume, not a raw PV total) — its own design step, hence deferred from the MVP. An independent Open-Meteo forward-irradiance "second opinion" (divergence → confidence) is a later upgrade. Full design: `docs/short-horizon-nowcast-spec.md`.
 
 ---
 

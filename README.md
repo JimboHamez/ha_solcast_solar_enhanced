@@ -42,6 +42,8 @@ This integration brings that back, on your own hardware. It records your actual-
 - The dampening sensor exposes a new `clear_sky_basis` attribute (`kt` or `cloud`) so you can see which signal is active.
 - If you've disabled Open-Meteo, dampening falls back to the old cloud-cover bands, unchanged.
 
+**New — PV Forecast Confidence (load scheduling):** a 0–100 sensor (with a high/medium/low rating) for *"can I trust the next few hours enough to run a heavy load right now?"* It scores how well your recent measured output is tracking the Solcast forecast — high = go (run the EV/pool pump), low = local conditions are diverging, so hold. It's a decision aid, not a forecast, and never changes your Solcast figures. (Automatable "Good/Next Load Window" entities are coming next.)
+
 **Multi-site:** **per-site shading dampening now actually engages.** It needs a per-site forecast to compare against per-site output, which most Solcast setups don't expose — so when it's missing the property forecast is split across your arrays by capacity share (only when they share orientation, so timing stays correct). Each array can now get its own dampening for its own shading.
 
 **Also:** Open-Meteo irradiance is now recorded as a true **half-hour mean** (the two 15-minute samples covering each period, averaged) instead of a single point sample — so it lines up with your half-hour-averaged generation. No extra API calls; biggest improvement on partly-cloudy slots and around sunrise/sunset.
