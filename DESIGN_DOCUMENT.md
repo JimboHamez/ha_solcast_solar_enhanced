@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **A companion integration for BJReplay/ha-solcast-solar**
-**Version 1.13 — June 2026**
+**Version 1.14 — June 2026**
 
 ---
 
@@ -173,7 +173,7 @@ Tuning needs sun-angle diversity across seasons; the clear-sky rows are chosen i
 
 **Why Kt replaced total cloud.** Total-cloud % over-rejects genuinely clear slots that happen to carry harmless **high/mid cloud** (cirrus, distant cumulus) — those slots have near-full ground irradiance but a non-trivial reported cloud fraction, so a `clouds < 30%` gate discards usable clear-sky data. `Kt` measures the *actual* irradiance reaching the ground relative to a clear-sky reference, so it admits those slots and excludes only real attenuation — independent of any model cloud %. On the real winter DB this widened the clear-sky set roughly 9× (≈2 records under the cloud gate → ≈18 under Kt ≥ 0.75), which is what let the transposition tuner converge where the legacy path returned "insufficient". The Kt gate shipped in **v1.7.0**, built on the Open-Meteo transposition work.
 
-> The dampening clear-sky selection (Feature 3) still uses the cloud-cover gate/weighting; moving it onto measured Kt is a planned follow-up.
+> As of **v1.10.0b1**, dampening's clear-sky **quality weighting** also uses measured Kt when Open-Meteo is enabled (see [Feature 3 → Clear-sky quality weighting](#clear-sky-quality-weighting)), falling back to the cloud bands only when Open-Meteo is off.
 
 ### Export limit filtering
 
@@ -201,13 +201,28 @@ To stop a mis-configured site baking orientation error into the curve, the push 
 
 ### Why cloud filtering is essential
 
-The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor, so a cloud signal is needed to filter them. That signal comes from either source: **Open-Meteo** supplies a keyless `cloud_cover` (default-on), and **OWM** supplies one when configured. When OWM is absent, Open-Meteo's `clouds` doubles as the cloud source, so **OWM is now optional** — a cloud source is required, but not specifically OpenWeatherMap. (Tuning's clear-sky selection has moved off cloud cover entirely onto the measured Kt gate — see [Feature 2](#clear-sky-selection--clearness-index-kt-gate); dampening still uses the cloud-cover weighting below.)
+The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor, so a cloud signal is needed to filter them. That signal comes from either source: **Open-Meteo** supplies a keyless `cloud_cover` (default-on), and **OWM** supplies one when configured. When OWM is absent, Open-Meteo's `clouds` doubles as the cloud source, so **OWM is now optional** — a cloud source is required, but not specifically OpenWeatherMap. (Tuning's clear-sky selection has moved off cloud cover entirely onto the measured Kt gate — see [Feature 2](#clear-sky-selection--clearness-index-kt-gate); as of v1.10.0b1 dampening's quality weighting does too — see [below](#clear-sky-quality-weighting) — falling back to the cloud bands only when Open-Meteo is disabled.)
 
 The design is **fail-safe**: when *no* cloud source is available (OWM unconfigured **and** Open-Meteo disabled, or a fetch fails), cloud cover defaults to *unknown* and is coerced at the DB-write boundary to the **`100` sentinel** — a value the clear-sky filter excludes. So such a record can never masquerade as clear sky: tuning finds nothing to fit (returns `None`), dampening reports `no_data` (stays neutral, pushes nothing), and the Cloud Cover / Weather sensors show *unavailable* rather than a misleading `0`. `async_setup` raises an `ISSUE_OWM_REQUIRED` repair issue only when a cloud-driven feature is enabled with **neither** Open-Meteo nor OWM configured; enabling either source clears it on reload.
 
 *Why `100`, not `0`:* both are valid real readings, so the unknown sentinel must sit on the excluded side. `0` collides with real clear sky (would be trusted); `100` collides with real overcast (already excluded — safe). The same reasoning fixed the falsy-`0` bug in v1.6.2/3.
 
-### Cloud quality weighting
+### Clear-sky quality weighting
+
+Each record's quality weight grades how clear its sky was — clearer being the best data for a shading ratio. The basis depends on whether Open-Meteo irradiance is available, exposed per slot as `clear_sky_basis` (`kt` or `cloud`):
+
+**Kt basis (default, Open-Meteo on — v1.10.0b1).** The measured clearness index `Kt = ghi / clearsky_ghi(zenith)` drives the weight, graded down from the configured `CONF_KT_THRESHOLD` (default `0.75`):
+
+| Clearness index Kt | Weight |
+|---|---|
+| ≥ threshold | 1.0 — clear sky, full quality |
+| threshold − 0.15 to threshold | 0.6 — marginal |
+| threshold − 0.35 to threshold − 0.15 | 0.3 — poor but usable |
+| below threshold − 0.35 | 0.0 — excluded (overcast) |
+
+Records where the clear-sky reference is below `KT_GHI_CS_FLOOR` (40 W/m², near-horizon sun) yield no meaningful Kt and are dropped, matching the tuning gate. This replaces the cloud bands because the model cloud field is biased high and false-overcasts clear days — over-rejecting exactly the clear records a shading ratio needs.
+
+**Cloud basis (fallback, Open-Meteo off).** The legacy three-band total-cloud weight:
 
 | Cloud cover | Weight |
 |---|---|
@@ -216,7 +231,7 @@ The design is **fail-safe**: when *no* cloud source is available (OWM unconfigur
 | 1.5× threshold to max\_include | 0.3 — poor but usable |
 | Above max\_include | 0.0 — excluded |
 
-Default threshold 20% (configurable 10–50%); default max\_include 60%.
+Default cloud threshold 20% (configurable 10–50%); default max\_include 60%. Either basis feeds the same clear-sky clipping detection (a clear-sky slot pinned at the clip ceiling is curtailment, not shading).
 
 ### Geometric proximity weighting
 
@@ -225,7 +240,7 @@ Each record is weighted by how close its solar geometry is to the target slot, s
 ```python
 zenith_weight  = exp(-0.5 × (Δzenith  / 10°)²)
 azimuth_weight = exp(-0.5 × (Δazimuth / 20°)²)
-combined_weight = cloud_weight × zenith_weight × azimuth_weight
+combined_weight = quality_weight × zenith_weight × azimuth_weight   # quality_weight = Kt- or cloud-based
 ```
 
 ### Seasonal window
@@ -511,7 +526,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.8.0** (config-flow field placement by topology + the multi-site MPPT-diagnostic fix). Earlier milestones: the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
 
 ---
 

@@ -897,6 +897,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
+        # Clear-sky basis for the per-record quality weight. Prefer measured Kt when
+        # Open-Meteo irradiance is on (the cloud field is unreliable); fall back to
+        # the OWM cloud bands otherwise. Mirrors the tuning gate's preference.
+        use_kt = bool(opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED))
+        kt_threshold = float(opts.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)) if use_kt else None
+        clear_sky_basis = "kt" if use_kt else "cloud"
         # Export limit for curtailment-aware forecast clipping — prefer the base's
         # site_export_limit, fall back to the manual option (0 = disabled). Same
         # source the tuner uses, so dampening and tuning agree on the ceiling.
@@ -932,6 +938,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "factor": 1.0,
                         "alpha": 0.0,
                         "source": "night",
+                        "clear_sky_basis": clear_sky_basis,
                         "quality_records": 0.0,
                         "avg_quality": 0.0,
                         "clipped_excluded": 0,
@@ -949,6 +956,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 target_zenith=zen_slot,
                 target_azimuth=az_slot,
                 export_limit_kw=export_limit,
+                kt_threshold=kt_threshold,
             )
             slot_results.append(slot_result)
 
@@ -1720,6 +1728,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if sources:
             most_common = Counter(sources).most_common(1)
             attrs["overall_source"] = most_common[0][0] if most_common else "no_data"
+        # Which clear-sky signal weighted the records: measured Kt (Open-Meteo
+        # irradiance) or the legacy OWM cloud bands. Uniform across all slots.
+        if self._dampening_table:
+            attrs["clear_sky_basis"] = self._dampening_table[0].get("clear_sky_basis", "cloud")
         # Gate state: when true, the push was held at neutral 1.0 because a tuned
         # orientation diverges from the configured Solcast value (see repair issue).
         attrs["gated"] = self._dampening_gated

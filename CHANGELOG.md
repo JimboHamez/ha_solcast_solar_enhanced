@@ -5,6 +5,28 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b1] - 2026-06-28
+
+> Beta. Adaptive dampening now selects clear-sky records by **measured irradiance
+> (clearness index Kt)** instead of model cloud cover, when Open-Meteo is enabled.
+
+### Changed
+- **Dampening's clear-sky quality weighting moved from cloud cover to the measured
+  clearness index `Kt = ghi / clearsky_ghi(zenith)`.** When Open-Meteo irradiance is
+  enabled (the default) each record's quality weight is now graded by Kt rather than
+  the OWM/Open-Meteo total-cloud field, which is biased high and false-overcasts clear
+  days — so it was over-rejecting exactly the clear records a shading ratio depends on.
+  This mirrors the clear-sky gate PV tuning already uses. When Open-Meteo is disabled,
+  dampening falls back to the legacy cloud bands unchanged.
+- The dampening sensor now exposes a `clear_sky_basis` attribute (`kt` or `cloud`) so
+  you can confirm which signal is active.
+
+### Notes
+- No configuration change: the existing **Clearness index threshold** option (already
+  used by tuning) now also governs dampening.
+- The push remains gated by the base integration's automatic dampening and by the
+  orientation-divergence gate, as before.
+
 ## [1.9.2] - 2026-06-26
 
 ### Documentation

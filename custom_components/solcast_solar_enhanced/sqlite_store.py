@@ -374,7 +374,7 @@ class SqliteStore:
         site_clause, site_params = self._site_filter(site)
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, pv_estimate10, "
-            "pv_estimate90, azimuth, zenith, clouds, "
+            "pv_estimate90, azimuth, zenith, clouds, ghi, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
             "WHERE pv_actual > 0 AND pv_estimate > 0 "

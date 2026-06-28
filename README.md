@@ -34,20 +34,19 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.9.2
+## 🆕 What's new in v1.10.0b1 (beta)
 
-**v1.9.2 (docs):** added screenshots of every config-wizard step and the dashboard to this README. **v1.9.1 (patch):** the topology selector now shows a proper "How are your arrays measured?" label instead of its raw internal key.
+**Adaptive dampening now finds clear-sky periods from measured irradiance, not cloud cover.** Each historical record's quality weight is graded by the **clearness index** `Kt = GHI / clear-sky GHI` (from Open-Meteo, on by default) instead of the model total-cloud field. That cloud field is biased high and often reports "overcast" on genuinely clear days — so it was rejecting exactly the clear-sky records a shading ratio depends on. This brings dampening in line with the clear-sky filter PV tuning already uses.
 
-The per-site mapping step now **asks how your arrays are measured** before showing fields, so the two multi-site topologies are explicit instead of guessed:
+- **Nothing to configure** — the existing **Clearness index threshold** option (already used by tuning) now also governs dampening.
+- The dampening sensor exposes a new `clear_sky_basis` attribute (`kt` or `cloud`) so you can see which signal is active.
+- If you've disabled Open-Meteo, dampening falls back to the old cloud-cover bands, unchanged.
 
-- **Each array has its own generation sensor** — microinverters (e.g. Enphase) or one inverter per array. Map each array's own AC sensor; there's no DC field.
-- **One shared inverter, split by DC** — a single inverter with multiple MPPTs. Put the same whole-system AC sensor on every array and give each its DC/MPPT sensor, and the shared AC is apportioned by DC share.
+**Upgrading?** Drop-in — no config changes, no migration. Existing setups simply start weighting their clear-sky records by Kt on the next dampening cycle.
 
-Choosing the shared-inverter mode is now **validated**: a missing per-array DC sensor or non-identical AC sensors raises a clear error instead of the array being silently dropped on save. And a **pure-microinverter setup no longer needs a whole-system generation sensor** — if none is configured, the property total is derived by summing the per-array generation, so tuning and dampening still work.
+> Earlier (v1.9.x): config-wizard screenshots in the README, the "How are your arrays measured?" topology selector with validation, and pure-microinverter setups no longer needing a whole-system generation sensor.
 
-**Upgrading?** Existing setups carry over: an apportioned (shared-inverter) config opens in the DC-split mode automatically, and single-array installs are unaffected.
-
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.9.2).
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases).
 
 ---
 

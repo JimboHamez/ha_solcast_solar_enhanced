@@ -6,6 +6,9 @@ import logging
 import math
 from typing import Any
 
+from .const import KT_GHI_CS_FLOOR
+from .pv_tuning import clearsky_ghi
+
 _LOGGER = logging.getLogger(__name__)
 
 BASE_MIDPOINT = 30.0
@@ -16,6 +19,14 @@ EARLY_CLAMP_PCT = 0.15  # ±15% clamp when α < 0.5
 # NOT seed this from the base solcast_solar integration's dampening factors.
 NEUTRAL_FACTOR = 1.0
 
+# Kt (clearness-index) quality bands — the irradiance-based replacement for the
+# OWM cloud bands when Open-Meteo GHI is available. A higher Kt is a clearer sky
+# and the best data for a shading ratio, mirroring `_cloud_weight`'s intent
+# without the unreliable cloud field. Bands step down from the configured
+# clear-sky Kt threshold so the gate and the weighting stay in step.
+KT_BAND_MID_OFFSET = 0.15  # Weight 0.6 down to (kt_threshold − 0.15).
+KT_BAND_LOW_OFFSET = 0.35  # Weight 0.3 down to (kt_threshold − 0.35); below → 0.
+
 
 def _cloud_weight(clouds: int, threshold: int, max_include: int) -> float:
     """Three-band cloud quality weight."""
@@ -24,6 +35,23 @@ def _cloud_weight(clouds: int, threshold: int, max_include: int) -> float:
     if clouds < int(threshold * 1.5):
         return 0.6
     if clouds <= max_include:
+        return 0.3
+    return 0.0
+
+
+def _kt_weight(kt: float, kt_threshold: float) -> float:
+    """Three-band clear-sky-index quality weight (the Kt analogue of ``_cloud_weight``).
+
+    A higher Kt is a clearer sky and the highest-quality data for a shading ratio.
+    Bands step down from the configured clear-sky threshold; below the low band the
+    sky is too overcast to trust and the record is dropped (weight 0), mirroring the
+    cloud weight's max-include cutoff.
+    """
+    if kt >= kt_threshold:
+        return 1.0
+    if kt >= kt_threshold - KT_BAND_MID_OFFSET:
+        return 0.6
+    if kt >= kt_threshold - KT_BAND_LOW_OFFSET:
         return 0.3
     return 0.0
 
@@ -55,6 +83,7 @@ def compute_dampening(
     target_zenith: float,
     target_azimuth: float,
     export_limit_kw: float = 0.0,
+    kt_threshold: float | None = None,
 ) -> dict[str, Any]:
     """Compute a single half-hour slot's dampening from database-collected records only.
 
@@ -62,14 +91,21 @@ def compute_dampening(
     DB-measured actual/estimate ratio; no values from the base solcast_solar
     integration are consulted.
 
+    Each record's quality weight comes from its clear-sky basis. When
+    ``kt_threshold`` is given (Open-Meteo irradiance available) the measured
+    clearness index ``Kt = ghi / clearsky_ghi(zenith)`` drives the weight, since the
+    model cloud field is biased and false-overcasts clear days; when it is ``None``
+    the legacy OWM cloud bands are used instead.
+
     When ``export_limit_kw > 0`` the forecast is clipped to the achievable ceiling
     for export-curtailed records (see the loop below) so curtailment is not
     mistaken for shading.
 
-    Returns dict with: factor, alpha, source, quality_records, avg_quality,
-    clipped_excluded, forecast_clipped
+    Returns dict with: factor, alpha, source, clear_sky_basis, quality_records,
+    avg_quality, clipped_excluded, forecast_clipped
     """
     clip_kw = capacity_kw * clipping_threshold
+    basis = "kt" if kt_threshold is not None else "cloud"
 
     total_weight = 0.0
     weighted_ratio_sum = 0.0
@@ -94,12 +130,34 @@ def compute_dampening(
         if pv_est <= 0:
             continue
 
-        # Clipping exclusion
-        if total_pv >= clip_kw and pv_est >= clip_kw and clouds < cloud_threshold:
+        # Clear-sky basis. Prefer the measured clearness index
+        # ``Kt = ghi / clearsky_ghi(zenith)`` when Open-Meteo irradiance is available
+        # (``kt_threshold`` set): the model cloud field is biased high and
+        # false-overcasts clear days, so it over-rejects exactly the clear records a
+        # shading ratio needs. Kt is judged only where the clear-sky reference is
+        # meaningful — near-horizon sun gives a tiny, noisy denominator — so such
+        # records get no Kt and drop out of the Kt path. Falls back to the cloud
+        # bands when Open-Meteo is disabled.
+        kt: float | None = None
+        if kt_threshold is not None:
+            ghi = float(r.get("ghi", 0) or 0)
+            cs = clearsky_ghi(zenith)
+            if ghi > 0 and cs >= KT_GHI_CS_FLOOR:
+                kt = ghi / cs
+            is_clear = kt is not None and kt >= kt_threshold
+        else:
+            is_clear = clouds < cloud_threshold
+
+        # Clipping exclusion — a clear-sky slot whose actual and forecast both pin
+        # the clip ceiling is curtailment, not shading.
+        if total_pv >= clip_kw and pv_est >= clip_kw and is_clear:
             clipped_excluded += 1
             continue
 
-        cw = _cloud_weight(clouds, cloud_threshold, cloud_max_include)
+        if kt_threshold is not None:
+            cw = _kt_weight(kt, kt_threshold) if kt is not None else 0.0
+        else:
+            cw = _cloud_weight(clouds, cloud_threshold, cloud_max_include)
         if cw <= 0:
             continue
 
@@ -137,6 +195,7 @@ def compute_dampening(
             "factor": NEUTRAL_FACTOR,
             "alpha": 0.0,
             "source": "no_data",
+            "clear_sky_basis": basis,
             "quality_records": 0.0,
             "avg_quality": 0.0,
             "clipped_excluded": clipped_excluded,
@@ -168,6 +227,7 @@ def compute_dampening(
         "factor": round(blended, 4),
         "alpha": round(alpha, 4),
         "source": source,
+        "clear_sky_basis": basis,
         "quality_records": round(total_weight, 2),
         "avg_quality": round(avg_quality, 3),
         "clipped_excluded": clipped_excluded,
