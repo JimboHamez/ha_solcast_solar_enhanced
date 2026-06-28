@@ -101,6 +101,31 @@ async def test_read_mppt_telemetry_pairs_and_padding(hass, coordinator):
     assert coordinator._read_mppt_telemetry([{"voltage_sensor": None}], {}) is None
 
 
+async def test_interval_median_is_robust_to_spikes(hass, coordinator):
+    # Median ignores an off-MPP spike that max would catch (700 here).
+    assert coordinator._interval_median("sensor.v", {"sensor.v": [300.0, 700.0, 320.0]}) == 320.0
+    # No history → instantaneous fallback.
+    hass.states.async_set("sensor.v2", "415.0")
+    assert coordinator._interval_median("sensor.v2", {}) == 415.0
+    assert coordinator._interval_median(None, {}) is None
+    assert coordinator._interval_median("sensor.absent", {}) is None
+
+
+async def test_read_mppt_vmed_per_tracker_median(hass, coordinator):
+    hass.states.async_set("sensor.v1", "300.0")  # instantaneous fallback for the no-history case
+    mppts = [
+        {"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"},
+        {"voltage_sensor": "sensor.v2", "current_sensor": "sensor.i2"},
+    ]
+    # v1 median([380,320,350]) = 350; v2 median([200,205,210,800]) = 207.5 (spike ignored).
+    hist = {"sensor.v1": [380.0, 320.0, 350.0], "sensor.v2": [200.0, 205.0, 210.0, 800.0]}
+    assert coordinator._read_mppt_vmed(mppts, hist) == (350.0, 207.5)
+    # No history for the configured tracker → instantaneous; second tracker absent → 0.
+    assert coordinator._read_mppt_vmed([{"voltage_sensor": "sensor.v1"}], {}) == (300.0, 0.0)
+    # Nothing configured → zero-filled (the column defaults to 0, not None).
+    assert coordinator._read_mppt_vmed([], {}) == (0.0, 0.0)
+
+
 async def test_read_mppt_telemetry_uses_interval_max_v_min_i(hass, coordinator):
     """A mid-slot off-MPP excursion (voltage spike, current dip) is caught by the
     interval max-voltage / min-current even when the boundary sample looks normal."""

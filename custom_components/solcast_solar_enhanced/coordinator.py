@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import statistics
 import time
 from collections import Counter, deque
 from datetime import UTC, datetime
@@ -448,6 +449,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             dc_hist = await self._interval_values(dc_entities, slot_start_epoch, period_epoch)
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
             total_dc = self._read_mppt_telemetry(self._mppt_list_from_opts(opts), dc_hist) or (0.0, 0.0, 0.0, 0.0)
+            # Median operating voltage per tracker (reduction of the same per-sec
+            # series) — the shading-mechanism ingredient; forward-only, unconsumed.
+            total_vmed = self._read_mppt_vmed(self._mppt_list_from_opts(opts), dc_hist)
+            site_vmed = self._read_site_vmed(opts, dc_hist)
             # Surface the latest reading on the diagnostic sensor (None when no DC
             # sensors are configured, so the entity stays unavailable rather than
             # reporting a misleading 0).
@@ -494,6 +499,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "dc_current1": total_dc[1],
                 "dc_voltage2": total_dc[2],
                 "dc_current2": total_dc[3],
+                "dc_vmed1": total_vmed[0],
+                "dc_vmed2": total_vmed[1],
                 **self._irradiance_for_storage(),
             }
             await self._db.async_insert_record(record)
@@ -516,6 +523,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             for site_id, (site_kw, site_start) in site_actuals.items():
                 s_start = site_start if site_start else period_epoch - 1800
                 s_dc = site_dc.get(site_id, (0.0, 0.0, 0.0, 0.0))
+                s_vmed = site_vmed.get(site_id, (0.0, 0.0))
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
@@ -540,6 +548,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "dc_current1": s_dc[1],
                         "dc_voltage2": s_dc[2],
                         "dc_current2": s_dc[3],
+                        "dc_vmed1": s_vmed[0],
+                        "dc_vmed2": s_vmed[1],
                         # Irradiance is property-wide weather: same values on every site.
                         **self._irradiance_for_storage(),
                     }
@@ -1281,6 +1291,52 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if not vals:
             return None
         return max(vals) if mode == "max" else min(vals)
+
+    def _interval_median(self, entity_id: str | None, hist: dict[str, list[float]]) -> float | None:
+        """Median recorded value over the interval — the representative operating point.
+
+        Unlike ``_interval_extreme``'s max-V/min-I (off-MPP curtailment capture), the
+        median is the value the tracker held for most of the slot — the operating
+        voltage that separates uniform dimming (holds near Vmp) from a bypass/partial
+        shadow (collapses). Falls back to the instantaneous read when no history exists.
+        """
+        if not entity_id:
+            return None
+        vals = hist.get(entity_id)
+        if vals:
+            return statistics.median(vals)
+        return self._read_numeric_state(entity_id)
+
+    def _read_mppt_vmed(self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]) -> tuple[float, float]:
+        """Per-tracker median operating voltage ``(vmed1, vmed2)`` over the slot, zero-filled.
+
+        Forward-only groundwork for the shading-mechanism classifier; a tracker with
+        no voltage sensor (or none configured) reads 0.0.
+        """
+        pairs = list(mppts or [])[:MAX_MPPT_TRACKERS]
+        out: list[float] = []
+        for i in range(MAX_MPPT_TRACKERS):
+            m = pairs[i] if i < len(pairs) else {}
+            v = self._interval_median(m.get("voltage_sensor"), hist)
+            out.append(round(v or 0.0, 3))
+        return out[0], out[1]
+
+    def _read_site_vmed(self, opts: dict[str, Any], hist: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+        """Per-site median operating voltage ``site → (vmed1, vmed2)``; sites with no DC V absent."""
+        out: dict[str, tuple[float, float]] = {}
+
+        def _capture(site: str | None, cfg: dict[str, Any]) -> None:
+            if not site:
+                return
+            vm = self._read_mppt_vmed(cfg.get("mppts"), hist)
+            if any(vm):
+                out[site] = vm
+
+        for group in opts.get(CONF_SITE_GROUPS) or []:
+            _capture(group.get("site"), group)
+            for s in group.get("strings") or []:
+                _capture(s.get("site"), s)
+        return out
 
     def _read_mppt_telemetry(
         self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]

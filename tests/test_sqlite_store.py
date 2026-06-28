@@ -105,6 +105,21 @@ async def test_insert_irradiance_defaults_to_zero(store):
     assert rows == [{"ghi": 0.0, "dni": 0.0, "dhi": 0.0}]
 
 
+_VMED_COLS = "dc_vmed1, dc_vmed2"
+
+
+async def test_insert_and_read_vmed(store):
+    await store.async_insert_record(_record(JUNE1, dc_vmed1=355.5, dc_vmed2=318.0))
+    rows = store._query(f"SELECT {_VMED_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{"dc_vmed1": 355.5, "dc_vmed2": 318.0}]
+
+
+async def test_insert_vmed_defaults_to_zero(store):
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_VMED_COLS} FROM solcast_data", ())
+    assert rows == [{"dc_vmed1": 0.0, "dc_vmed2": 0.0}]
+
+
 async def test_connect_adds_irradiance_columns_to_legacy_db(hass, tmp_path):
     """A DB created before the irradiance columns (but with the DC columns) gets
     ghi/dni/dhi ALTERed in, legacy rows backfilled to 0, new inserts round-trip."""
@@ -143,6 +158,8 @@ async def test_connect_adds_irradiance_columns_to_legacy_db(hass, tmp_path):
     assert s._query(f"SELECT {_IRR_COLS} FROM solcast_data", ()) == [
         {"ghi": 0.0, "dni": 0.0, "dhi": 0.0}
     ]
+    # The dc_vmed columns (also post-dating this legacy schema) are added too.
+    assert s._query(f"SELECT {_VMED_COLS} FROM solcast_data", ()) == [{"dc_vmed1": 0.0, "dc_vmed2": 0.0}]
     # A new irradiance-bearing insert round-trips.
     await s.async_insert_record(_record(JUNE1 + 1800, ghi=500.0, dni=300.0, dhi=120.0))
     assert s._query(

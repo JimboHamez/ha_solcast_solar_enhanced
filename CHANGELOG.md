@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **share orientation** (azimuths within 10°), since differently-oriented arrays peak at
   different times and a per-slot capacity split would invent phantom timing. A real
   per-site forecast always takes precedence; divergent-azimuth systems are unchanged.
+- **Per-tracker median operating voltage captured to the DB (`dc_vmed1/2`).** For string
+  inverters with per-MPPT DC voltage sensors, each slot now stores the *median* DC voltage
+  over the just-completed 30 minutes — "where the MPP actually sat" — reduced from the same
+  per-second recorder history already read for the curtailment capture (no extra reads). It's
+  the signal that distinguishes uniform shading (voltage holds) from a hard partial shadow
+  (voltage collapses), confirmed for one site by a 30-day 1-sec analysis. **Groundwork only —
+  nothing consumes it yet**; optimiser/microinverter sites (no physical string voltage) store 0.
 
 ### Notes
 - No configuration change: the existing **Clearness index threshold** option (already

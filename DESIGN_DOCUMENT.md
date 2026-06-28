@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **A companion integration for BJReplay/ha-solcast-solar**
-**Version 1.16 — June 2026**
+**Version 1.17 — June 2026**
 
 ---
 
@@ -126,11 +126,15 @@ CREATE TABLE solcast_data (
   ghi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo global horizontal irradiance (W/m²)
   dni              REAL NOT NULL DEFAULT 0,        -- Open-Meteo direct normal irradiance (W/m²)
   dhi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo diffuse horizontal irradiance (W/m²)
+  dc_vmed1         REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC voltage, slot median (operating point, V)
+  dc_vmed2         REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC voltage, slot median (operating point, V)
   UNIQUE(period_end_epoch, site)
 );
 ```
 
-The four `dc_*` columns are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+The `dc_*` voltage/current pairs (`dc_voltage1/2`, `dc_current1/2`) are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+
+The `dc_vmed1/2` columns add the per-tracker **median operating voltage** over the slot — a second reduction of the *same* per-second recorder series the curtailment capture reads (`_interval_median` vs the max-V/min-I `_interval_extreme`). Where max-V/min-I is the off-MPP excursion (curtailment), the median is "where the MPP actually sat" — the voltage that distinguishes **uniform dimming** (holds near Vmp) from a **bypass/partial shadow** (collapses). This is forward-only groundwork for a per-site **shading-mechanism classifier** (validated manually in `analysis/session-2026-06-28-vi-shading-mechanism.md`); nothing consumes the columns yet, and only string-inverter sites with per-MPPT DC voltage sensors populate them (optimiser/microinverter strings have no physical Vmp signal — SolarEdge regulates string voltage, microinverters expose no DC string).
 
 The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless). Open-Meteo's `minutely_15` radiation is a *preceding-15-minute mean* (timestamp = end of interval), so the stored value is the **half-hour mean** over `[period_start, period_end)` — the two samples at `period_end − 15 min` and `period_end` averaged (`async_get_interval`) — which matches `pv_actual` (also a half-hour average) instead of a single point sample biased toward one half of the period. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (the archive is *hourly* only, so backfilled rows are hourly-interpolated to the midpoint — a negligible difference from the forward half-hour mean, mainly on clear days) instead of waiting for fresh collection.
 

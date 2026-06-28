@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   ghi              REAL NOT NULL DEFAULT 0,
   dni              REAL NOT NULL DEFAULT 0,
   dhi              REAL NOT NULL DEFAULT 0,
+  dc_vmed1         REAL NOT NULL DEFAULT 0,
+  dc_vmed2         REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -79,6 +81,12 @@ _ADDED_COLUMNS = (
     ("ghi", "REAL NOT NULL DEFAULT 0"),
     ("dni", "REAL NOT NULL DEFAULT 0"),
     ("dhi", "REAL NOT NULL DEFAULT 0"),
+    # Per-tracker MEDIAN operating voltage over the slot (the "where the MPP sat"
+    # point), distinct from the max-V curtailment capture above. Forward-only
+    # groundwork for the per-site shading-mechanism classifier (uniform dimming vs
+    # bypass/partial-shadow) and the Vmp-band calibrator; nothing consumes it yet.
+    ("dc_vmed1", "REAL NOT NULL DEFAULT 0"),
+    ("dc_vmed2", "REAL NOT NULL DEFAULT 0"),
 )
 
 # Columns written by an insert, in order. Shared by single and bulk inserts.
@@ -105,6 +113,8 @@ _INSERT_COLUMNS = (
     "ghi",
     "dni",
     "dhi",
+    "dc_vmed1",
+    "dc_vmed2",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -224,6 +234,8 @@ class SqliteStore:
             record.get("ghi", 0.0) or 0.0,
             record.get("dni", 0.0) or 0.0,
             record.get("dhi", 0.0) or 0.0,
+            record.get("dc_vmed1", 0.0) or 0.0,
+            record.get("dc_vmed2", 0.0) or 0.0,
         )
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:
