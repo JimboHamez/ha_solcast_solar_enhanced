@@ -72,6 +72,12 @@ async def async_setup_entry(
         BaseIntegrationSensor(coordinator, entry),
         PvForecastConfidenceSensor(coordinator, entry),
     ]
+    # One per-site visibility sensor per configured array (multi-site only); each
+    # surfaces that array's dampening/shading, tuning and confidence.
+    entities.extend(
+        SiteShadingSensor(coordinator, entry, site_id, name)
+        for site_id, name in coordinator.configured_sites_for_entities()
+    )
     async_add_entities(entities)
 
 
@@ -326,6 +332,29 @@ class PvForecastConfidenceSensor(_EnhancedSensorBase):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.coordinator.confidence_attributes
+
+
+class SiteShadingSensor(_EnhancedSensorBase):
+    """Per-array visibility: average daytime dampening (shading) plus tuning/confidence attrs.
+
+    State is the array's average daytime dampening factor (1.0 = no shading correction,
+    below 1.0 = the measured structural shading being applied to that array).
+    """
+
+    _attr_icon = "mdi:home-roof"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, f"site_shading_{site_id}")
+        self._site_id = site_id
+        self._attr_name = f"{name} Shading"
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_shading(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_visibility_attributes(self._site_id)
 
 
 class WeatherTempSensor(_EnhancedSensorBase):

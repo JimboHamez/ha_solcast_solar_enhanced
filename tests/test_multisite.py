@@ -348,6 +348,127 @@ def test_azimuth_spread_wraps():
 
 
 # ---------------------------------------------------------------------------
+# Per-site visibility sensors
+# ---------------------------------------------------------------------------
+
+
+async def test_site_shading_averages_daytime_factors(hass, coordinator):
+    coordinator._site_dampening_tables = {
+        "a": [
+            {"factor": 0.8, "source": "db_blended"},
+            {"factor": 0.9, "source": "db_history"},
+            {"factor": 1.0, "source": "night"},  # night excluded from the average
+        ]
+    }
+    assert coordinator.site_shading("a") == pytest.approx(0.85)
+
+
+async def test_site_shading_none_without_data(hass, coordinator):
+    assert coordinator.site_shading("missing") is None
+
+
+async def test_site_visibility_attributes_assemble(hass, coordinator):
+    coordinator._sites = [
+        {"resource_id": "a", "name": "Ground", "compass_degrees": 0.0, "tilt": 20.0, "capacity": 3.0, "azimuth": 0.0},
+    ]
+    coordinator._site_dampening_tables = {
+        "a": [
+            {"factor": 0.8, "source": "db_blended", "clear_sky_basis": "kt"},
+            {"factor": 1.0, "source": "night"},
+        ]
+    }
+    coordinator._site_tuning_results = {"a": {"tilt": 18.5, "rmse_kw": 0.42, "n_records": 120}}
+    coordinator._site_confidence = {"a": {"confidence": 80, "rating": "high", "recent_bias": 0.96}}
+    attrs = coordinator.site_visibility_attributes("a")
+    assert attrs["name"] == "Ground"
+    assert attrs["azimuth_compass"] == 0.0  # due north must not be coerced to None
+    assert attrs["shading_pct"] == pytest.approx(20.0)  # avg daytime factor 0.8 → 20% shading
+    assert attrs["min_factor"] == pytest.approx(0.8)
+    assert attrs["hours_with_db"] == 1
+    assert attrs["clear_sky_basis"] == "kt"
+    assert attrs["confidence"] == 80
+    assert attrs["confidence_rating"] == "high"
+    assert attrs["tuned_tilt"] == pytest.approx(18.5)
+    assert attrs["tuning_records"] == 120
+
+
+async def test_configured_sites_for_entities(hass, coordinator):
+    coordinator._sites = [
+        {"resource_id": "a", "name": "Ground"},
+        {"resource_id": "b", "name": "Upper"},
+    ]
+    coordinator._opts = {
+        "site_groups": [
+            {"site": "a", "ac_sensor": "sensor.ac"},
+            {"site": "b", "ac_sensor": "sensor.ac2"},
+        ]
+    }
+    pairs = coordinator.configured_sites_for_entities()
+    assert ("a", "Ground") in pairs
+    assert ("b", "Upper") in pairs
+
+
+async def test_configured_sites_empty_when_no_groups(hass, coordinator):
+    coordinator._opts = {}
+    assert coordinator.configured_sites_for_entities() == []
+
+
+# ---------------------------------------------------------------------------
+# Per-site display name (config flow → group → entity name)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_sites_input_reads_display_name():
+    _, field_map = _build_sites_schema([{"resource_id": "A", "name": "East"}], {}, mode=SITE_TOPOLOGY_DIRECT)
+    keys = field_map["A"]
+    user_input = {keys["ac"]: "sensor.east", keys["mode"]: "auto", keys["name"]: "  Ground Floor  "}
+    parsed = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+    assert parsed["A"]["name"] == "Ground Floor"  # trimmed
+
+
+def test_parse_sites_input_blank_name_is_none():
+    _, field_map = _build_sites_schema([{"resource_id": "A", "name": "East"}], {}, mode=SITE_TOPOLOGY_DIRECT)
+    keys = field_map["A"]
+    user_input = {keys["ac"]: "sensor.east", keys["mode"]: "auto", keys["name"]: "   "}
+    parsed = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+    assert parsed["A"]["name"] is None
+
+
+def test_derive_groups_direct_carries_name():
+    assignments = {"A": {"ac": "sensor.east", "dc": None, "mode": "auto", "name": "Ground"}}
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DIRECT)
+    assert groups[0]["name"] == "Ground"
+
+
+def test_derive_groups_strings_carry_name():
+    assignments = {
+        "A": {"ac": "sensor.shared", "dc": "sensor.m1", "mode": "auto", "name": "Ground"},
+        "B": {"ac": "sensor.shared", "dc": "sensor.m2", "mode": "auto", "name": "Upper"},
+    }
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+    names = {s["site"]: s.get("name") for s in groups[0]["strings"]}
+    assert names == {"A": "Ground", "B": "Upper"}
+
+
+async def test_configured_sites_prefers_user_name(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Solcast Name"}]
+    coordinator._opts = {"site_groups": [{"site": "a", "ac_sensor": "sensor.ac", "name": "Ground Floor"}]}
+    assert coordinator.configured_sites_for_entities() == [("a", "Ground Floor")]
+
+
+async def test_configured_sites_falls_back_to_solcast_name(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Solcast Name"}]
+    coordinator._opts = {"site_groups": [{"site": "a", "ac_sensor": "sensor.ac"}]}  # no user name
+    assert coordinator.configured_sites_for_entities() == [("a", "Solcast Name")]
+
+
+async def test_configured_sites_short_id_fallback(hass, coordinator):
+    coordinator._sites = []  # nothing discovered, no user name
+    coordinator._opts = {"site_groups": [{"site": "8be0-533e", "ac_sensor": "sensor.ac"}]}
+    assert coordinator.configured_sites_for_entities() == [("8be0-533e", "Site 8be0")]
+
+
+# ---------------------------------------------------------------------------
 # _total_forecast_for_period (property-wide detailedForecast)
 # ---------------------------------------------------------------------------
 

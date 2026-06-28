@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **A companion integration for BJReplay/ha-solcast-solar**
-**Version 1.15 — June 2026**
+**Version 1.16 — June 2026**
 
 ---
 
@@ -44,7 +44,7 @@ solcast_solar_enhanced/
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
 ├── load_advisory.py         Short-horizon forecast-confidence (item 3 load aid)
-├── sensor.py                16 HA sensor entities
+├── sensor.py                16 property-wide sensors + one per configured array
 ├── services.yaml            Service definitions
 └── translations/            UI strings (11 languages)
 ```
@@ -362,6 +362,10 @@ pv_estimateᵢ(slot) = pv_estimate_total(slot) × (capacityᵢ / Σ capacity)
 ```
 
 applied **only when the configured arrays share orientation** — `_azimuth_spread(azimuths) ≤ APPORTION_AZIMUTH_TOL` (10°, wrap-aware). Capacity-share apportionment of a *half-hourly* forecast assumes the same forecast-per-kW shape across arrays, which holds only at a common azimuth; differently-oriented arrays peak at different times, so a per-slot split would invent phantom timing differences and corrupt the per-site ratio — those are left unapportioned (per-site forecast `0`, the prior behaviour, so no regression). A real per-site `detailedForecast` always takes precedence. This is the prerequisite that makes **per-site shading dampening** (`_run_dampening`'s per-site `set_dampening` loop, already present) actually engage.
+
+### Per-site visibility sensors (v1.10.0b1)
+
+Each configured array gets its own `SiteShadingSensor` (`configured_sites_for_entities()` drives entity setup). State is the array's **average daytime dampening factor** (1.0 = no shading, below 1.0 = the measured structural shading applied to that array); attributes carry its discovered orientation (`azimuth_compass`/`tilt`/`capacity_kw`), `shading_pct`, `min_factor`, `hours_with_db`, `clear_sky_basis`, the per-site tuning result, and a **per-site confidence** (each array keeps its own `_site_recent_bias` buffer, mirroring the property-wide advisory). The coordinator retains each array's dampening curve in `_site_dampening_tables` (previously computed-and-pushed but not kept). The entity **display name** comes from an optional per-array field on the `sites` step that defaults to the Solcast site name; precedence is user-entered → Solcast → `Site <short-id>`. The name field uses the embedded-name key convention (the readable key *is* the label), so it needs no translation entries.
 
 ### Discovery, config model and storage
 

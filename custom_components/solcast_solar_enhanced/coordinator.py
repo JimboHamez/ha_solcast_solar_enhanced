@@ -190,6 +190,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # the lookback window is ignored at compute time.
         self._recent_bias: deque[tuple[int, float, float]] = deque(maxlen=16)
         self._confidence: dict[str, Any] = compute_confidence([])
+        # Per-site visibility state (multi-site): each configured array's retained
+        # dampening curve and its own recent-bias confidence, surfaced on per-site
+        # sensors. Keyed by Solcast resource_id.
+        self._site_dampening_tables: dict[str, list[dict[str, Any]]] = {}
+        self._site_recent_bias: dict[str, deque[tuple[int, float, float]]] = {}
+        self._site_confidence: dict[str, dict[str, Any]] = {}
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._last_prune_ts: float = 0.0
@@ -539,6 +545,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     }
                 )
 
+                # Per-site confidence advisory: track this array's measured-vs-
+                # forecast bias the same way as the property total. Needs the
+                # per-site forecast that apportionment now supplies.
+                buf = self._site_recent_bias.setdefault(site_id, deque(maxlen=16))
+                if s_est > 0:
+                    buf.append((period_epoch, round(site_kw, 4), round(s_est, 4)))
+                self._site_confidence[site_id] = compute_confidence(
+                    [(a, e) for (ep, a, e) in buf if period_epoch - ep <= RECENT_BIAS_LOOKBACK_S]
+                )
+
             self._db_record_count = await self._db.async_get_record_count()
             # Diagnostics: newest slot written this cycle + sites seen in the store.
             self._db_latest_period_end = period_end
@@ -859,6 +875,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # skipped so per-site factors are not overwritten.
             for site_id in site_ids:
                 slots = await self._compute_dampening_slots(opts, now_epoch, lat, lon, site_id)
+                self._site_dampening_tables[site_id] = slots
                 hourly = average_slot_pairs([s["factor"] for s in slots])
                 if gate_on:
                     seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
@@ -1786,6 +1803,66 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "n_slots": self._confidence.get("n_slots", 0),
             "horizon_hours": CONFIDENCE_HORIZON_HOURS,
             "based_on": "recent measured output vs Solcast forecast",
+        }
+
+    def configured_sites_for_entities(self) -> list[tuple[str, str]]:
+        """``(resource_id, display_name)`` for each configured per-site array, for entity setup.
+
+        Name precedence: the user-entered per-array name (config flow) → the Solcast
+        site name (discovered) → a short ``Site <id>`` fallback.
+        """
+        groups = self._opts.get(CONF_SITE_GROUPS) or []
+        ids = self._configured_site_ids(groups)
+        user_names = self._site_names_from_groups(groups)
+        by_id = {s["resource_id"]: s for s in self._sites}
+        return [(sid, user_names.get(sid) or (by_id.get(sid) or {}).get("name") or f"Site {sid[:4]}") for sid in ids]
+
+    @staticmethod
+    def _site_names_from_groups(groups: list[dict[str, Any]]) -> dict[str, str]:
+        """Map ``resource_id → user-entered display name`` from the configured groups."""
+        names: dict[str, str] = {}
+        for g in groups:
+            if g.get("site") and g.get("name"):
+                names[g["site"]] = g["name"]
+            for s in g.get("strings") or []:
+                if s.get("name"):
+                    names[s["site"]] = s["name"]
+        return names
+
+    def site_shading(self, site_id: str) -> float | None:
+        """Average daytime dampening factor for a site (1.0 = no shading, < 1 = shaded)."""
+        table = self._site_dampening_tables.get(site_id)
+        if not table:
+            return None
+        factors = [s["factor"] for s in table if s.get("source") != "night"]
+        return round(sum(factors) / len(factors), 4) if factors else None
+
+    def site_visibility_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array diagnostics: discovered orientation, dampening, tuning and confidence."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        table = self._site_dampening_tables.get(site_id) or []
+        day = [s for s in table if s.get("source") != "night"]
+        factors = [s["factor"] for s in day]
+        avg = sum(factors) / len(factors) if factors else None
+        tuning = self._site_tuning_results.get(site_id) or {}
+        conf = self._site_confidence.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            # 0° (due north) / 0° tilt are valid, so don't coerce them to None.
+            "azimuth_compass": site.get("compass_degrees"),
+            "tilt": site.get("tilt"),
+            "capacity_kw": site.get("capacity"),
+            "shading_pct": round((1.0 - avg) * 100, 1) if avg is not None else None,
+            "min_factor": round(min(factors), 4) if factors else None,
+            "hours_with_db": sum(1 for s in table if s.get("source") not in ("no_data", "night")),
+            "clear_sky_basis": day[0].get("clear_sky_basis") if day else None,
+            "confidence": conf.get("confidence"),
+            "confidence_rating": conf.get("rating", "unknown"),
+            "recent_bias": conf.get("recent_bias"),
+            "tuned_tilt": round(tuning["tilt"], 1) if tuning.get("tilt") is not None else None,
+            "tuning_rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
+            "tuning_records": tuning.get("n_records"),
         }
 
     @property

@@ -265,9 +265,11 @@ def _derive_groups(
     """
 
     def _with_mppts(entry: dict[str, Any], a: dict[str, Any]) -> dict[str, Any]:
-        """Attach the optional per-MPPT capture list to a group/string."""
+        """Attach the optional per-MPPT capture list and per-site display name."""
         if a.get("mppts"):
             entry["mppts"] = a["mppts"]
+        if a.get("name"):
+            entry["name"] = a["name"]
         return entry
 
     groups: list[dict[str, Any]] = []
@@ -377,6 +379,7 @@ def _build_sites_schema(
         mppts = a.get("mppts") or []
         m0 = mppts[0] if len(mppts) > 0 else {}
         m1 = mppts[1] if len(mppts) > 1 else {}
+        k_name = f"{name} — display name"
         k_ac = f"{name} — AC generation sensor (shared)" if dc_split else f"{name} — generation sensor"
         k_dc = f"{name} — DC/MPPT sensor (for split)"
         k_mode = f"{name} — sensor type"
@@ -385,6 +388,7 @@ def _build_sites_schema(
         k_v2 = f"{name} — MPPT 2 voltage (optional)"
         k_i2 = f"{name} — MPPT 2 current (optional)"
         field_map[rid] = {
+            "name": k_name,
             "ac": k_ac,
             "dc": k_dc,
             "mode": k_mode,
@@ -393,6 +397,11 @@ def _build_sites_schema(
             "v2": k_v2,
             "i2": k_i2,
         }
+        # Per-array display name for the per-site sensors, defaulting to the Solcast
+        # site name; the user may override it.
+        schema_dict[vol.Optional(k_name, description={"suggested_value": a.get("name") or site.get("name")})] = (
+            TextSelector()
+        )
         schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac") or default_ac})] = _entity_selector()
         if dc_split:
             schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
@@ -429,6 +438,7 @@ def _parse_sites_input(
             continue
         assignments[rid] = {
             "ac": ac,
+            "name": (user_input.get(keys["name"]) or "").strip() or None,
             "dc": (user_input.get(keys["dc"]) or None) if dc_split else None,
             "mode": user_input.get(keys["mode"], DEFAULT_PV_INPUT_MODE),
             "mppts": _fields_to_mppts(
