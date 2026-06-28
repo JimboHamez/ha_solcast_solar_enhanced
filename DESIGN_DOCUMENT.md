@@ -59,7 +59,7 @@ solcast_solar_enhanced coordinator
         ├── read battery       battery sensor (falls back to raw sensor)
         ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
         ├── fetch OWM weather  (optional: temp °C, clouds 0–100, description)
-        ├── fetch Open-Meteo   (keyless, default-on: plane GHI/DNI/DHI + clouds at period midpoint)
+        ├── fetch Open-Meteo   (keyless, default-on: plane GHI/DNI/DHI + clouds, half-hour mean over the period)
         ├── persist records    to SQLite ('_total' + one row per site, incl. ghi/dni/dhi)
         ├── run PV tuning      numpy grid search (daily, executor thread; per-site)
         ├── compute dampening  quality-weighted DB ratio blended toward neutral 1.0
@@ -130,7 +130,7 @@ CREATE TABLE solcast_data (
 
 The four `dc_*` columns are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
 
-The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless) at the period midpoint. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (interpolated to the midpoint) instead of waiting for fresh collection.
+The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless). Open-Meteo's `minutely_15` radiation is a *preceding-15-minute mean* (timestamp = end of interval), so the stored value is the **half-hour mean** over `[period_start, period_end)` — the two samples at `period_end − 15 min` and `period_end` averaged (`async_get_interval`) — which matches `pv_actual` (also a half-hour average) instead of a single point sample biased toward one half of the period. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (the archive is *hourly* only, so backfilled rows are hourly-interpolated to the midpoint — a negligible difference from the forward half-hour mean, mainly on clear days) instead of waiting for fresh collection.
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at it (WAL mode — leave the `-wal`/`-shm` sidecars in place).
 

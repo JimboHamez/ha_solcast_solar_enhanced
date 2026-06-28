@@ -366,11 +366,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._owm:
             self._weather = await self._owm.async_fetch()
 
-        # Fetch Open-Meteo irradiance at the interval midpoint (period_end − 15 min),
-        # the representative sun position for a half-hour-averaged value — matching
-        # the solar-position midpoint below. Stored as-is; None on miss (fail-safe).
+        # Fetch Open-Meteo irradiance as the half-hour mean over [period_start,
+        # period_end) — the average of the two 15-min preceding-mean samples that
+        # tile the period — so it matches pv_actual (also a half-hour average)
+        # rather than a single point sample. Stored as-is; None on miss (fail-safe).
         if self._openmeteo:
-            fetched = await self._openmeteo.async_get_current(period_epoch - 900)
+            fetched = await self._openmeteo.async_get_interval(period_epoch)
             self._irradiance = {k: fetched.get(k) for k in ("ghi", "dni", "dhi")}
             # Open-Meteo also supplies cloud cover + temperature. Use it as the
             # weather source when OWM is not configured (the keyless default), so

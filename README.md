@@ -42,6 +42,8 @@ This integration brings that back, on your own hardware. It records your actual-
 - The dampening sensor exposes a new `clear_sky_basis` attribute (`kt` or `cloud`) so you can see which signal is active.
 - If you've disabled Open-Meteo, dampening falls back to the old cloud-cover bands, unchanged.
 
+**Also:** Open-Meteo irradiance is now recorded as a true **half-hour mean** (the two 15-minute samples covering each period, averaged) instead of a single point sample — so it lines up with your half-hour-averaged generation. No extra API calls; biggest improvement on partly-cloudy slots and around sunrise/sunset.
+
 **Upgrading?** Drop-in — no config changes, no migration. Existing setups simply start weighting their clear-sky records by Kt on the next dampening cycle.
 
 > Earlier (v1.9.x): config-wizard screenshots in the README, the "How are your arrays measured?" topology selector with validation, and pure-microinverter setups no longer needing a whole-system generation sensor.

@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dampening falls back to the legacy cloud bands unchanged.
 - The dampening sensor now exposes a `clear_sky_basis` attribute (`kt` or `cloud`) so
   you can confirm which signal is active.
+- **Open-Meteo irradiance is now collected as a true half-hour mean.** Each record
+  previously stored a single 15-minute point sample; because Open-Meteo's `minutely_15`
+  radiation is a *preceding-15-minute mean*, that point captured only one half of the
+  collection period. The value is now the average of the two 15-minute samples tiling
+  the half-hour, matching `pv_actual` (itself a half-hour average). No extra API call —
+  the samples are already in the existing response. The effect is largest on
+  partly-cloudy slots and near sunrise/sunset, which compounds with the Kt weighting
+  above (both make the partly-cloudy records dampening relies on more accurate).
 
 ### Notes
 - No configuration change: the existing **Clearness index threshold** option (already
