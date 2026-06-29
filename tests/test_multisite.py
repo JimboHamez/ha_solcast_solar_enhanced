@@ -267,6 +267,26 @@ async def test_site_forecast_underscore_fallback(hass, coordinator):
     assert est == pytest.approx(1.5)
 
 
+async def test_site_forecast_underscored_id_variant(hass, coordinator):
+    """Current base versions key the attribute with the id's hyphens also underscored."""
+    rid = "8be0-533e-baad-4841"
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            # Note: hyphens inside the resource_id are underscores in the key.
+            "detailedForecast_8be0_533e_baad_4841": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 2.25},
+            ]
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, _, _ = coordinator._site_forecast_for_period(rid, start)
+    assert est == pytest.approx(2.25)
+
+
 async def test_site_forecast_missing_returns_zeros(hass, coordinator):
     assert coordinator._site_forecast_for_period("nope", 1_000_000) == (0.0, 0.0, 0.0)
 

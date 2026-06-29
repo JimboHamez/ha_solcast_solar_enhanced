@@ -1442,12 +1442,19 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         """Return (pv_estimate, pv_estimate10, pv_estimate90) for a site's slot.
 
         Reads the per-site ``detailedForecast-<resource_id>`` attribute off the base
-        ``forecast_today`` sensor (falls back to the underscore variant used by newer
-        base versions).
+        ``forecast_today`` sensor. Base versions vary in how they key the attribute, so
+        three forms are tried in order: the hyphenated id, an underscore separator with
+        the hyphenated id, and — what current base versions actually emit — an
+        underscore separator with the id's own hyphens replaced by underscores
+        (e.g. ``detailedForecast_8be0_533e_baad_4841``).
         """
         est = self._forecast_slot(f"detailedForecast-{resource_id}", start_epoch)
         if est == (0.0, 0.0, 0.0):
             est = self._forecast_slot(f"detailedForecast_{resource_id}", start_epoch)
+        if est == (0.0, 0.0, 0.0):
+            rid_underscored = resource_id.replace("-", "_")
+            if rid_underscored != resource_id:
+                est = self._forecast_slot(f"detailedForecast_{rid_underscored}", start_epoch)
         if est != (0.0, 0.0, 0.0):
             return est
         # The base integration exposes no per-site detailedForecast on this install,
