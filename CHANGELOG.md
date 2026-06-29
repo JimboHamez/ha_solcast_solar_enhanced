@@ -5,6 +5,34 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b2] - 2026-06-29
+
+> Beta. Multi-site UX: each array now appears as its **own Home Assistant device**
+> with its own card, and gains a **PV Power** and a **Tuned Tilt** sensor.
+
+### Added
+- **Per-site sensors now grouped onto a per-array device, with two new sensors.** Each
+  configured array becomes its own Home Assistant device (its own card, nested under the
+  main integration), carrying three entities: a new **PV Power 30min Average** (that array's
+  measured generation for the period, DC-share apportioned for shared-inverter setups), the
+  existing **Shading** sensor (now on the per-array device), and a new **Tuned Tilt** sensor
+  (its optimised tilt — promoted from a Shading attribute to a first-class entity, with fit
+  RMSE, record count and configured tilt/orientation as attributes). For a multi-array
+  system this replaces a single 20-plus-entity device card with one tidy card per array.
+- **Design specs published** for the per-site work shipped in this beta line: the per-site
+  orientation/config spec, the per-site shading-dampening spec (with the 1-sec DC V/I
+  shading-mechanism findings, §8.4/§8.5), and the short-horizon load-scheduling decision-aid
+  spec — plus the `tools/analyse_vi_shading.py` analysis tool used for §8.4.
+
+### Fixed
+- **README sensor table** no longer omits the **PV Forecast Confidence** sensor or the
+  per-array sensors — the reference table had drifted from the shipped entities.
+
+### Upgrading
+- Drop-in. On reload, existing per-site `… Shading` entities keep their entity IDs but
+  **move** from the main device onto their array's new device; the new PV Power / Tuned Tilt
+  entities appear alongside them. No config change or migration.
+
 ## [1.10.0b1] - 2026-06-28
 
 > Beta. Adaptive dampening now selects clear-sky records by **measured irradiance
@@ -38,14 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It is **not** a forecast and is never pushed to Solcast — it annotates how much to trust
   the forecast using ground truth the base integration can't see. (The Good/Next Load
   Window entities that build on it are the planned next step.)
-- **Per-site sensors, each on its own HA device.** Each configured array now appears as its
-  own device (grouped on its own card, nested under the main integration via `via_device`)
-  carrying three entities: **PV Power** (that array's measured generation for the period),
-  **Shading** (average daytime dampening factor, with discovered orientation/capacity,
-  confidence and clear-sky basis as attributes) and **Tuned Tilt** (its optimised tilt, with
-  fit RMSE/record count and configured orientation as attributes) — so you can see ground vs
-  upper at a glance. Each array's display **name** is set on the per-site mapping step,
-  defaulting to the Solcast site name (override it to taste).
+- **Per-site visibility sensors.** Each configured array now gets its own sensor showing
+  its **shading** (average daytime dampening factor), with that array's discovered
+  orientation/capacity, tuning result, confidence and clear-sky basis as attributes — so
+  you can see ground vs upper at a glance. Each array's display **name** is set on the
+  per-site mapping step, defaulting to the Solcast site name (override it to taste).
 - **Per-site shading dampening now engages for multi-site systems.** Per-site dampening
   was already wired but starved of a per-site forecast (most base installs don't expose
   `detailedForecast-<resource_id>`, so per-site `pv_estimate` was 0 and no ratio could

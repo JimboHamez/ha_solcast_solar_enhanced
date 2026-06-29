@@ -34,23 +34,19 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b1 (beta)
+## 🆕 What's new in v1.10.0b2 (beta)
 
-**Adaptive dampening now finds clear-sky periods from measured irradiance, not cloud cover.** Each historical record's quality weight is graded by the **clearness index** `Kt = GHI / clear-sky GHI` (from Open-Meteo, on by default) instead of the model total-cloud field. That cloud field is biased high and often reports "overcast" on genuinely clear days — so it was rejecting exactly the clear-sky records a shading ratio depends on. This brings dampening in line with the clear-sky filter PV tuning already uses.
+**Multi-site dashboards get a lot tidier: each array is now its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries three entities:
 
-- **Nothing to configure** — the existing **Clearness index threshold** option (already used by tuning) now also governs dampening.
-- The dampening sensor exposes a new `clear_sky_basis` attribute (`kt` or `cloud`) so you can see which signal is active.
-- If you've disabled Open-Meteo, dampening falls back to the old cloud-cover bands, unchanged.
+- **PV Power 30min Average** *(new)* — that array's measured generation for the period (DC-share apportioned for shared-inverter setups).
+- **Shading** — its measured daytime dampening factor (orientation, shading %, confidence and clear-sky basis in attributes).
+- **Tuned Tilt** *(new)* — its optimised tilt, promoted from an attribute to a first-class sensor (fit quality + configured tilt in attributes).
 
-**New — PV Forecast Confidence (load scheduling):** a 0–100 sensor (with a high/medium/low rating) for *"can I trust the next few hours enough to run a heavy load right now?"* It scores how well your recent measured output is tracking the Solcast forecast — high = go (run the EV/pool pump), low = local conditions are diverging, so hold. It's a decision aid, not a forecast, and never changes your Solcast figures. (Automatable "Good/Next Load Window" entities are coming next.)
+So you can see ground vs upper output, shading and tuning side by side, per array. Name each array on the sites step — it defaults to your Solcast site name.
 
-**Multi-site:** **per-site shading dampening now actually engages,** and **each array gets its own device.** Per-site dampening needs a per-site forecast to compare against per-site output, which most Solcast setups don't expose — so when it's missing the property forecast is split across your arrays by capacity share (only when they share orientation, so timing stays correct). Each array now appears as its **own HA device** (its own card, nested under the main integration), carrying three entities: **PV Power** (that array's measured generation), **Shading** (its measured dampening, with orientation/confidence/shading % attributes) and **Tuned Tilt** (its optimised tilt). Name each array on the sites step — it defaults to your Solcast site name.
+**Upgrading?** Drop-in. On reload, your existing `… Shading` entities keep their IDs but **move** onto each array's new device, and the PV Power / Tuned Tilt sensors appear alongside them. No config change or migration.
 
-**Also:** Open-Meteo irradiance is now recorded as a true **half-hour mean** (the two 15-minute samples covering each period, averaged) instead of a single point sample — so it lines up with your half-hour-averaged generation. No extra API calls; biggest improvement on partly-cloudy slots and around sunrise/sunset.
-
-**Upgrading?** Drop-in — no config changes, no migration. Existing setups simply start weighting their clear-sky records by Kt on the next dampening cycle.
-
-> Earlier (v1.9.x): config-wizard screenshots in the README, the "How are your arrays measured?" topology selector with validation, and pure-microinverter setups no longer needing a whole-system generation sensor.
+> Also in this beta line (**v1.10.0b1**): adaptive dampening now finds clear-sky periods from **measured irradiance** (clearness index `Kt = GHI / clear-sky GHI`, Open-Meteo, on by default) instead of the biased model cloud field — governed by the existing **Clearness index threshold** option, with a new `clear_sky_basis` attribute; the **PV Forecast Confidence** load-scheduling sensor (0–100, high/medium/low — a decision aid, never a forecast); **per-site shading dampening now actually engages** (the property forecast is split across same-orientation arrays by capacity share when no per-site forecast exists); and Open-Meteo irradiance is recorded as a true **half-hour mean**. Earlier (v1.9.x): config-wizard screenshots, the topology selector, and microinverter setups not needing a whole-system sensor.
 
 Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases).
 
