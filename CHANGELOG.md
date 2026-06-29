@@ -38,11 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It is **not** a forecast and is never pushed to Solcast — it annotates how much to trust
   the forecast using ground truth the base integration can't see. (The Good/Next Load
   Window entities that build on it are the planned next step.)
-- **Per-site visibility sensors.** Each configured array now gets its own sensor showing
-  its **shading** (average daytime dampening factor), with that array's discovered
-  orientation/capacity, tuning result, confidence and clear-sky basis as attributes — so
-  you can see ground vs upper at a glance. Each array's display **name** is set on the
-  per-site mapping step, defaulting to the Solcast site name (override it to taste).
+- **Per-site sensors, each on its own HA device.** Each configured array now appears as its
+  own device (grouped on its own card, nested under the main integration via `via_device`)
+  carrying three entities: **PV Power** (that array's measured generation for the period),
+  **Shading** (average daytime dampening factor, with discovered orientation/capacity,
+  confidence and clear-sky basis as attributes) and **Tuned Tilt** (its optimised tilt, with
+  fit RMSE/record count and configured orientation as attributes) — so you can see ground vs
+  upper at a glance. Each array's display **name** is set on the per-site mapping step,
+  defaulting to the Solcast site name (override it to taste).
 - **Per-site shading dampening now engages for multi-site systems.** Per-site dampening
   was already wired but starved of a per-site forecast (most base installs don't expose
   `detailedForecast-<resource_id>`, so per-site `pv_estimate` was 0 and no ratio could

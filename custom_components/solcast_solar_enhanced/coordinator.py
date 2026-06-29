@@ -197,6 +197,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._site_dampening_tables: dict[str, list[dict[str, Any]]] = {}
         self._site_recent_bias: dict[str, deque[tuple[int, float, float]]] = {}
         self._site_confidence: dict[str, dict[str, Any]] = {}
+        # Latest measured generation per array (avg kW over the just-completed
+        # half-hour) plus its forecast, surfaced on a per-site PV Power sensor.
+        # Keyed by Solcast resource_id; empty until a multi-site cycle runs.
+        self._site_output: dict[str, dict[str, float]] = {}
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._last_prune_ts: float = 0.0
@@ -554,6 +558,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         **self._irradiance_for_storage(),
                     }
                 )
+
+                # Surface this array's measured generation (and its forecast) for
+                # the per-site PV Power sensor.
+                self._site_output[site_id] = {
+                    "pv_actual": round(site_kw, 4),
+                    "pv_estimate": round(s_est, 4),
+                }
 
                 # Per-site confidence advisory: track this array's measured-vs-
                 # forecast bias the same way as the property total. Needs the
@@ -1892,6 +1903,45 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return None
         factors = [s["factor"] for s in table if s.get("source") != "night"]
         return round(sum(factors) / len(factors), 4) if factors else None
+
+    def site_output(self, site_id: str) -> float | None:
+        """Latest measured generation for a site (average kW over the half-hour).
+
+        ``None`` until a multi-site cycle has produced a per-site reading, so the
+        entity stays unavailable rather than reporting a misleading 0.
+        """
+        out = self._site_output.get(site_id)
+        return out["pv_actual"] if out else None
+
+    def site_output_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array generation diagnostics: forecast for the same slot and name."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        out = self._site_output.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            "pv_estimate": out.get("pv_estimate"),
+            "capacity_kw": site.get("capacity"),
+        }
+
+    def site_tuned_tilt(self, site_id: str) -> float | None:
+        """Latest tuned tilt for a site, or ``None`` until that array has been tuned."""
+        tuning = self._site_tuning_results.get(site_id) or {}
+        tilt = tuning.get("tilt")
+        return round(tilt, 1) if tilt is not None else None
+
+    def site_tuned_tilt_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array tuning diagnostics: fit quality, record count and configured orientation."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        tuning = self._site_tuning_results.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            "rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
+            "tuning_records": tuning.get("n_records"),
+            "configured_tilt": site.get("tilt"),
+            "azimuth_compass": site.get("compass_degrees"),
+        }
 
     def site_visibility_attributes(self, site_id: str) -> dict[str, Any]:
         """Per-array diagnostics: discovered orientation, dampening, tuning and confidence."""

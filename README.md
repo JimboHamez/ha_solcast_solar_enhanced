@@ -44,7 +44,7 @@ This integration brings that back, on your own hardware. It records your actual-
 
 **New — PV Forecast Confidence (load scheduling):** a 0–100 sensor (with a high/medium/low rating) for *"can I trust the next few hours enough to run a heavy load right now?"* It scores how well your recent measured output is tracking the Solcast forecast — high = go (run the EV/pool pump), low = local conditions are diverging, so hold. It's a decision aid, not a forecast, and never changes your Solcast figures. (Automatable "Good/Next Load Window" entities are coming next.)
 
-**Multi-site:** **per-site shading dampening now actually engages,** and **each array gets its own sensor.** Per-site dampening needs a per-site forecast to compare against per-site output, which most Solcast setups don't expose — so when it's missing the property forecast is split across your arrays by capacity share (only when they share orientation, so timing stays correct). Each array can now get its own dampening for its own shading, surfaced on a per-array **"… Shading"** sensor (with that array's orientation, tuning, confidence and shading % as attributes). Name each array on the sites step — it defaults to your Solcast site name.
+**Multi-site:** **per-site shading dampening now actually engages,** and **each array gets its own device.** Per-site dampening needs a per-site forecast to compare against per-site output, which most Solcast setups don't expose — so when it's missing the property forecast is split across your arrays by capacity share (only when they share orientation, so timing stays correct). Each array now appears as its **own HA device** (its own card, nested under the main integration), carrying three entities: **PV Power** (that array's measured generation), **Shading** (its measured dampening, with orientation/confidence/shading % attributes) and **Tuned Tilt** (its optimised tilt). Name each array on the sites step — it defaults to your Solcast site name.
 
 **Also:** Open-Meteo irradiance is now recorded as a true **half-hour mean** (the two 15-minute samples covering each period, averaged) instead of a single point sample — so it lines up with your half-hour-averaged generation. No extra API calls; biggest improvement on partly-cloudy slots and around sunrise/sunset.
 
@@ -267,7 +267,20 @@ The per-site step asks which of these two topologies you have, then shows only t
 | Battery Charge 30min Average | kW | From the configured battery sensor (restored across restarts) |
 | PV Power 30min Average | kW | Average generation for the period (restored across restarts) |
 | PV Export 30min Average | kW | Average export for the period (restored across restarts) |
+| PV Forecast Confidence | 0–100 | Short-horizon load-scheduling decision aid — how well recent output is tracking the forecast (`rating` high/medium/low + `recent_bias` in attributes). A decision aid, not a forecast; never pushed to the base |
 | Base Integration Status | — | `connected` or `not_detected` |
+
+### Per-site sensors (multi-site only)
+
+When you configure more than one array, each array gets **its own HA device** (grouped on its own card, nested under the main integration device), carrying these entities:
+
+| Sensor | Unit | Description |
+|---|---|---|
+| `<array>` PV Power 30min Average | kW | That array's measured generation for the period (DC-share apportioned for shared-inverter setups; `pv_estimate` + `capacity_kw` in attributes) |
+| `<array>` Shading | — | Average daytime dampening factor (1.0 = no shading, < 1 = measured structural shading), with orientation, `shading_pct`, confidence and clear-sky basis in attributes |
+| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes) |
+
+Each array's display name comes from the **sites** config step (defaults to its Solcast site name).
 
 ---
 

@@ -3,6 +3,8 @@ per-site forecast matching, azimuth seeding and config-flow group derivation."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from custom_components.solcast_solar_enhanced.coordinator import (
@@ -20,6 +22,7 @@ from custom_components.solcast_solar_enhanced.config_flow import (
 )
 from custom_components.solcast_solar_enhanced.const import (
     CONF_SITE_GROUPS,
+    DOMAIN,
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
@@ -390,6 +393,51 @@ async def test_site_visibility_attributes_assemble(hass, coordinator):
     assert attrs["confidence_rating"] == "high"
     assert attrs["tuned_tilt"] == pytest.approx(18.5)
     assert attrs["tuning_records"] == 120
+
+
+async def test_site_output_reflects_latest_reading(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "capacity": 3.0}]
+    coordinator._site_output = {"a": {"pv_actual": 2.34, "pv_estimate": 2.5}}
+    assert coordinator.site_output("a") == pytest.approx(2.34)
+    attrs = coordinator.site_output_attributes("a")
+    assert attrs["name"] == "Ground"
+    assert attrs["pv_estimate"] == pytest.approx(2.5)
+    assert attrs["capacity_kw"] == pytest.approx(3.0)
+
+
+async def test_site_output_none_without_reading(hass, coordinator):
+    assert coordinator.site_output("missing") is None
+
+
+async def test_site_tuned_tilt_from_results(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "tilt": 20.0, "compass_degrees": 0.0}]
+    coordinator._site_tuning_results = {"a": {"tilt": 18.47, "rmse_kw": 0.42, "n_records": 120}}
+    assert coordinator.site_tuned_tilt("a") == pytest.approx(18.5)  # rounded to 1 dp
+    attrs = coordinator.site_tuned_tilt_attributes("a")
+    assert attrs["rmse_kw"] == pytest.approx(0.42)
+    assert attrs["tuning_records"] == 120
+    assert attrs["configured_tilt"] == pytest.approx(20.0)
+
+
+async def test_site_tuned_tilt_none_before_tuning(hass, coordinator):
+    assert coordinator.site_tuned_tilt("missing") is None
+
+
+async def test_per_site_sensors_use_per_array_device(hass, coordinator):
+    from custom_components.solcast_solar_enhanced.sensor import (
+        SiteOutputSensor,
+        SiteShadingSensor,
+        SiteTunedTiltSensor,
+    )
+
+    entry = SimpleNamespace(entry_id="abc123")
+    for cls in (SiteOutputSensor, SiteShadingSensor, SiteTunedTiltSensor):
+        sensor = cls(coordinator, entry, "site-a", "Ground")
+        # Each per-array sensor lands on its own device (entry_id + resource_id),
+        # linked back to the main integration device via via_device.
+        assert (DOMAIN, "abc123_site-a") in sensor._attr_device_info["identifiers"]
+        assert sensor._attr_device_info["via_device"] == (DOMAIN, "abc123")
+        assert sensor._attr_device_info["name"] == "Ground"
 
 
 async def test_configured_sites_for_entities(hass, coordinator):
