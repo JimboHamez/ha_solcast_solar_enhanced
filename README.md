@@ -34,9 +34,11 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b2 (beta)
+## 🆕 What's new in v1.10.0b3 (beta)
 
-**Multi-site dashboards get a lot tidier: each array is now its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries three entities:
+**Per-site dampening now uses your base integration's real per-site forecast — even across differently-oriented arrays.** The base `solcast_solar` integration publishes each site's forecast under a `detailedForecast_<resource_id>` attribute (with the resource_id's hyphens written as underscores); the companion wasn't matching that exact key, so it silently fell back to splitting the *property* forecast by capacity share — which is only valid when arrays share an orientation. It now reads the true per-site forecast where the base exposes it, so per-site shading dampening engages correctly **regardless of array azimuth**. (Installs where the base genuinely exposes no per-site detail are unaffected and keep the capacity-share fallback.)
+
+> **v1.10.0b2 — multi-site dashboards get tidier: each array is its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries three entities:
 
 - **PV Power 30min Average** *(new)* — that array's measured generation for the period (DC-share apportioned for shared-inverter setups).
 - **Shading** — its measured daytime dampening factor (orientation, shading %, confidence and clear-sky basis in attributes).

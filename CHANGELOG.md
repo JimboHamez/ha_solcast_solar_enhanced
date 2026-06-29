@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b3] - 2026-06-29
+
+> Beta. Fixes per-site forecast detection so multi-site dampening uses your base
+> integration's **real per-site forecast** — including across differently-oriented arrays.
+
+### Fixed
+- **Per-site forecast attribute now matched against the base's actual key format.** The
+  base `solcast_solar` integration exposes each site's half-hourly forecast as a
+  `detailedForecast_<resource_id>` attribute with the resource_id's **own hyphens replaced
+  by underscores** (e.g. `detailedForecast_8be0_533e_baad_4841`). The companion previously
+  only tried the hyphenated forms, never matched, and silently fell back to capacity-share
+  apportionment — which is valid only for arrays sharing an orientation (within 10°). On
+  installs that expose this attribute, **per-site dampening now uses the true per-site
+  forecast**, so it engages correctly **even when arrays face different directions** (the
+  apportionment fallback and its same-orientation gate are no longer needed there). No
+  effect on installs where the base genuinely exposes no per-site detail.
+
 ## [1.10.0b2] - 2026-06-29
 
 > Beta. Multi-site UX: each array now appears as its **own Home Assistant device**
