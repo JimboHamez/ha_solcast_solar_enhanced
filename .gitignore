@@ -26,6 +26,9 @@ analysis/
 # Local history exports / imports (e.g. node-red CSVs) — user data, never pushed
 data/
 
+# Generated analysis/CSV outputs from the tools/ scripts — regenerable, not pushed
+analysis/
+
 # Local-only tests that depend on the git-ignored data/ fixtures
 tests/test_sites_fixtures.py
 
