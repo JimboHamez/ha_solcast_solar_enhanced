@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Abstimmung – einspeisebegrenzt ausgeschlossen"
+      },
+      "pv_forecast_confidence": {
+        "name": "PV-Prognosezuverlässigkeit"
+      },
+      "site_shading": {
+        "name": "Verschattung"
+      },
+      "site_output": {
+        "name": "PV-Leistung 30-Min-Mittel"
+      },
+      "site_tuned_tilt": {
+        "name": "Abgestimmte Neigung"
+      },
+      "site_azimuth": {
+        "name": "Azimut"
+      },
+      "site_tuning_rmse": {
+        "name": "Abstimmungs-RMSE"
       }
     }
   },

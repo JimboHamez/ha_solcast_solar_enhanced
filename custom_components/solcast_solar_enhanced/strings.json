@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Tuning Export Limited Excluded"
+      },
+      "pv_forecast_confidence": {
+        "name": "PV Forecast Confidence"
+      },
+      "site_shading": {
+        "name": "Shading"
+      },
+      "site_output": {
+        "name": "PV Power 30min Average"
+      },
+      "site_tuned_tilt": {
+        "name": "Tuned Tilt"
+      },
+      "site_azimuth": {
+        "name": "Azimuth"
+      },
+      "site_tuning_rmse": {
+        "name": "Tuning RMSE"
       }
     }
   },

@@ -1937,6 +1937,29 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         tilt = tuning.get("tilt")
         return round(tilt, 1) if tilt is not None else None
 
+    def site_azimuth(self, site_id: str) -> float | None:
+        """Configured azimuth for a site (Solcast convention), from site discovery.
+
+        Azimuth is held fixed at the Solcast value and never tuned, so this reflects
+        the discovered orientation rather than a fitted one — the per-site counterpart
+        to the property-wide tuned-azimuth sensor.
+        """
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        az = site.get("azimuth")
+        return round(float(az), 1) if az is not None else None
+
+    def site_tuned_rmse(self, site_id: str) -> float | None:
+        """Fit error (RMSE, kW) of a site's last tuning run, or ``None`` if untuned.
+
+        The trust signal for that array's tuned tilt: lower is a tighter fit. Tracked
+        per-site because differently-oriented arrays are each tuned independently
+        against their own records and azimuth, so the property-wide aggregate RMSE
+        blurs them together.
+        """
+        tuning = self._site_tuning_results.get(site_id) or {}
+        rmse = tuning.get("rmse_kw")
+        return round(rmse, 4) if rmse is not None else None
+
     def site_tuned_tilt_attributes(self, site_id: str) -> dict[str, Any]:
         """Per-array tuning diagnostics: fit quality, record count and configured orientation."""
         site = next((s for s in self._sites if s.get("resource_id") == site_id), {})

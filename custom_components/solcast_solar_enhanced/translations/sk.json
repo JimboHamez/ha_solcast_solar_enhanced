@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Ladenie — vylúčené pre limit dodávky"
+      },
+      "pv_forecast_confidence": {
+        "name": "Spoľahlivosť predpovede FV"
+      },
+      "site_shading": {
+        "name": "Tienenie"
+      },
+      "site_output": {
+        "name": "Výkon FV priemer za 30 min"
+      },
+      "site_tuned_tilt": {
+        "name": "Doladený sklon"
+      },
+      "site_azimuth": {
+        "name": "Azimut"
+      },
+      "site_tuning_rmse": {
+        "name": "RMSE ladenia"
       }
     }
   },

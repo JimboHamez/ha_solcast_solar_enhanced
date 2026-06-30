@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Ajuste — excluídos por limite de exportação"
+      },
+      "pv_forecast_confidence": {
+        "name": "Confiança da previsão FV"
+      },
+      "site_shading": {
+        "name": "Sombreamento"
+      },
+      "site_output": {
+        "name": "Potência FV média de 30 min"
+      },
+      "site_tuned_tilt": {
+        "name": "Inclinação ajustada"
+      },
+      "site_azimuth": {
+        "name": "Azimute"
+      },
+      "site_tuning_rmse": {
+        "name": "RMSE do ajuste"
       }
     }
   },

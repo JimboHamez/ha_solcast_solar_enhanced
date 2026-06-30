@@ -443,21 +443,78 @@ async def test_site_tuned_tilt_none_before_tuning(hass, coordinator):
     assert coordinator.site_tuned_tilt("missing") is None
 
 
+async def test_site_azimuth_from_discovery(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "azimuth": -90.0}]
+    assert coordinator.site_azimuth("a") == pytest.approx(-90.0)
+
+
+async def test_site_azimuth_none_when_unknown(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground"}]
+    assert coordinator.site_azimuth("a") is None
+    assert coordinator.site_azimuth("missing") is None
+
+
+async def test_site_tuned_rmse_from_results(hass, coordinator):
+    coordinator._site_tuning_results = {"a": {"tilt": 18.5, "rmse_kw": 0.4231, "n_records": 120}}
+    assert coordinator.site_tuned_rmse("a") == pytest.approx(0.4231)
+
+
+async def test_site_tuned_rmse_none_before_tuning(hass, coordinator):
+    assert coordinator.site_tuned_rmse("missing") is None
+
+
 async def test_per_site_sensors_use_per_array_device(hass, coordinator):
     from custom_components.solcast_solar_enhanced.sensor import (
+        SiteAzimuthSensor,
         SiteOutputSensor,
         SiteShadingSensor,
         SiteTunedTiltSensor,
+        SiteTuningRmseSensor,
     )
 
     entry = SimpleNamespace(entry_id="abc123")
-    for cls in (SiteOutputSensor, SiteShadingSensor, SiteTunedTiltSensor):
+    for cls in (SiteOutputSensor, SiteShadingSensor, SiteTunedTiltSensor, SiteAzimuthSensor, SiteTuningRmseSensor):
         sensor = cls(coordinator, entry, "site-a", "Ground")
         # Each per-array sensor lands on its own device (entry_id + resource_id),
         # linked back to the main integration device via via_device.
         assert (DOMAIN, "abc123_site-a") in sensor._attr_device_info["identifiers"]
         assert sensor._attr_device_info["via_device"] == (DOMAIN, "abc123")
         assert sensor._attr_device_info["name"] == "Ground"
+
+
+async def test_property_tuning_sensors_hidden_only_in_multisite(hass, coordinator, mock_config_entry):
+    """Property-wide tuned tilt/azimuth/RMSE hide on the main card when arrays exist."""
+    from custom_components.solcast_solar_enhanced import sensor as sensor_mod
+    from custom_components.solcast_solar_enhanced.sensor import (
+        TuningAzimuthSensor,
+        TuningRmseSensor,
+        TuningTiltSensor,
+    )
+
+    hass.data.setdefault(DOMAIN, {})[mock_config_entry.entry_id] = coordinator
+    captured: list = []
+
+    def _add(entities):
+        captured.extend(entities)
+
+    tuning_cls = (TuningTiltSensor, TuningAzimuthSensor, TuningRmseSensor)
+
+    # Single-site (no configured groups): the aggregate IS the site → stay visible.
+    coordinator._opts = {}
+    coordinator._sites = []
+    await sensor_mod.async_setup_entry(hass, mock_config_entry, _add)
+    single = [e for e in captured if isinstance(e, tuning_cls)]
+    assert len(single) == 3
+    assert all(e.entity_registry_visible_default for e in single)
+
+    # Multi-site: per-array cards carry the meaningful values → hide on the main card.
+    captured.clear()
+    coordinator._sites = [{"resource_id": "a", "name": "Ground"}, {"resource_id": "b", "name": "Upper"}]
+    coordinator._opts = {CONF_SITE_GROUPS: [{"site": "a"}, {"site": "b"}]}
+    await sensor_mod.async_setup_entry(hass, mock_config_entry, _add)
+    multi = [e for e in captured if isinstance(e, tuning_cls)]
+    assert len(multi) == 3
+    assert all(not e.entity_registry_visible_default for e in multi)
 
 
 async def test_configured_sites_for_entities(hass, coordinator):

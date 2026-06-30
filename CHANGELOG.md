@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > Beta. Fixes per-site forecast detection so multi-site dampening uses your base
 > integration's **real per-site forecast** — including across differently-oriented arrays.
 
+### Added
+- **Per-array Azimuth sensor.** Each array's card now also shows its **Azimuth** (the
+  orientation configured in Solcast, in the Solcast convention). Azimuth is held fixed and
+  never tuned, so it complements the Tuned Tilt sensor with the discovered orientation.
+- **Per-array Tuning RMSE sensor (diagnostic).** Each array now exposes its own tuning
+  fit error (kW) — the trust signal for that array's tuned tilt (lower = tighter fit). It
+  sits in the device's Diagnostic section. Differently-oriented arrays are tuned
+  independently, so this per-site RMSE is more meaningful than the blended aggregate.
+
+### Changed
+- **Multi-site main card de-cluttered.** In a multi-site setup the property-wide
+  Tuned Panel Tilt / Tuned Panel Azimuth / Tuning RMSE sensors are **hidden by default**
+  (the aggregate blends arrays of different orientation; the meaningful values live on each
+  array's own card). Single-site installs are unchanged — there the aggregate *is* the one
+  site, so those sensors stay visible. (Existing entities keep their current visibility;
+  this applies to newly-created ones.)
+- **New sensors now use translated entity names.** The PV Forecast Confidence sensor and
+  the per-array PV Power / Shading / Tuned Tilt sensors moved from hard-coded English names
+  to localized translation keys, so they render in your Home Assistant language (all 11
+  shipped locales updated). English names are unchanged.
+
 ### Fixed
 - **Per-site forecast attribute now matched against the base's actual key format.** The
   base `solcast_solar` integration exposes each site's half-hourly forecast as a

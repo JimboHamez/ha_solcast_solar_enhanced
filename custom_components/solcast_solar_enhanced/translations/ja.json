@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "チューニング：売電制限により除外"
+      },
+      "pv_forecast_confidence": {
+        "name": "PV予測信頼度"
+      },
+      "site_shading": {
+        "name": "シェーディング"
+      },
+      "site_output": {
+        "name": "PV電力 30分平均"
+      },
+      "site_tuned_tilt": {
+        "name": "調整済み傾斜角"
+      },
+      "site_azimuth": {
+        "name": "方位角"
+      },
+      "site_tuning_rmse": {
+        "name": "チューニングRMSE"
       }
     }
   },

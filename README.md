@@ -38,11 +38,15 @@ This integration brings that back, on your own hardware. It records your actual-
 
 **Per-site dampening now uses your base integration's real per-site forecast — even across differently-oriented arrays.** The base `solcast_solar` integration publishes each site's forecast under a `detailedForecast_<resource_id>` attribute (with the resource_id's hyphens written as underscores); the companion wasn't matching that exact key, so it silently fell back to splitting the *property* forecast by capacity share — which is only valid when arrays share an orientation. It now reads the true per-site forecast where the base exposes it, so per-site shading dampening engages correctly **regardless of array azimuth**. (Installs where the base genuinely exposes no per-site detail are unaffected and keep the capacity-share fallback.)
 
-> **v1.10.0b2 — multi-site dashboards get tidier: each array is its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries three entities:
+> **v1.10.0b2 — multi-site dashboards get tidier: each array is its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries these entities:
 
 - **PV Power 30min Average** *(new)* — that array's measured generation for the period (DC-share apportioned for shared-inverter setups).
 - **Shading** — its measured daytime dampening factor (orientation, shading %, confidence and clear-sky basis in attributes).
 - **Tuned Tilt** *(new)* — its optimised tilt, promoted from an attribute to a first-class sensor (fit quality + configured tilt in attributes).
+- **Azimuth** *(new in b3)* — its orientation as configured in Solcast (held fixed, never tuned), shown alongside the tuned tilt.
+- **Tuning RMSE** *(new in b3, diagnostic)* — that array's tuning fit error (kW); the trust signal for its tuned tilt (lower = tighter fit). In the device's Diagnostic section.
+
+In a multi-site setup the property-wide **Tuned Panel Tilt / Azimuth / Tuning RMSE** sensors are hidden on the main card by default — the aggregate blends differently-oriented arrays, so the meaningful values now live on each array's own card. (Single-site installs are unchanged: there the aggregate *is* the one site, so those stay on the main card.)
 
 So you can see ground vs upper output, shading and tuning side by side, per array. Name each array on the sites step — it defaults to your Solcast site name.
 
