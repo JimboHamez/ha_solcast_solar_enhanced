@@ -5,10 +5,10 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.0b3] - 2026-06-29
+## [1.10.0b4] - 2026-06-30
 
-> Beta. Fixes per-site forecast detection so multi-site dampening uses your base
-> integration's **real per-site forecast** — including across differently-oriented arrays.
+> Beta. Per-array **Azimuth** and **Tuning RMSE** sensors on each site's card, a
+> de-cluttered main card for multi-site setups, and localized entity names.
 
 ### Added
 - **Per-array Azimuth sensor.** Each array's card now also shows its **Azimuth** (the
@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the per-array PV Power / Shading / Tuned Tilt sensors moved from hard-coded English names
   to localized translation keys, so they render in your Home Assistant language (all 11
   shipped locales updated). English names are unchanged.
+
+## [1.10.0b3] - 2026-06-29
+
+> Beta. Fixes per-site forecast detection so multi-site dampening uses your base
+> integration's **real per-site forecast** — including across differently-oriented arrays.
 
 ### Fixed
 - **Per-site forecast attribute now matched against the base's actual key format.** The
