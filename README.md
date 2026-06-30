@@ -34,20 +34,27 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.9.2
+## 🆕 What's new in v1.10.0b3 (beta)
 
-**v1.9.2 (docs):** added screenshots of every config-wizard step and the dashboard to this README. **v1.9.1 (patch):** the topology selector now shows a proper "How are your arrays measured?" label instead of its raw internal key.
+**Per-site dampening now uses your base integration's real per-site forecast — even across differently-oriented arrays.** The base `solcast_solar` integration publishes each site's forecast under a `detailedForecast_<resource_id>` attribute (with the resource_id's hyphens written as underscores); the companion wasn't matching that exact key, so it silently fell back to splitting the *property* forecast by capacity share — which is only valid when arrays share an orientation. It now reads the true per-site forecast where the base exposes it, so per-site shading dampening engages correctly **regardless of array azimuth**. (Installs where the base genuinely exposes no per-site detail are unaffected and keep the capacity-share fallback.)
 
-The per-site mapping step now **asks how your arrays are measured** before showing fields, so the two multi-site topologies are explicit instead of guessed:
+> **v1.10.0b2 — multi-site dashboards get tidier: each array is its own Home Assistant device.** Instead of one device piling 20-plus entities onto a single card, every configured array gets **its own device and card** (nested under the main integration). Each array's card now carries these entities:
 
-- **Each array has its own generation sensor** — microinverters (e.g. Enphase) or one inverter per array. Map each array's own AC sensor; there's no DC field.
-- **One shared inverter, split by DC** — a single inverter with multiple MPPTs. Put the same whole-system AC sensor on every array and give each its DC/MPPT sensor, and the shared AC is apportioned by DC share.
+- **PV Power 30min Average** *(new)* — that array's measured generation for the period (DC-share apportioned for shared-inverter setups).
+- **Shading** — its measured daytime dampening factor (orientation, shading %, confidence and clear-sky basis in attributes).
+- **Tuned Tilt** *(new)* — its optimised tilt, promoted from an attribute to a first-class sensor (fit quality + configured tilt in attributes).
+- **Azimuth** *(new in b3)* — its orientation as configured in Solcast (held fixed, never tuned), shown alongside the tuned tilt.
+- **Tuning RMSE** *(new in b3, diagnostic)* — that array's tuning fit error (kW); the trust signal for its tuned tilt (lower = tighter fit). In the device's Diagnostic section.
 
-Choosing the shared-inverter mode is now **validated**: a missing per-array DC sensor or non-identical AC sensors raises a clear error instead of the array being silently dropped on save. And a **pure-microinverter setup no longer needs a whole-system generation sensor** — if none is configured, the property total is derived by summing the per-array generation, so tuning and dampening still work.
+In a multi-site setup the property-wide **Tuned Panel Tilt / Azimuth / Tuning RMSE** sensors are hidden on the main card by default — the aggregate blends differently-oriented arrays, so the meaningful values now live on each array's own card. (Single-site installs are unchanged: there the aggregate *is* the one site, so those stay on the main card.)
 
-**Upgrading?** Existing setups carry over: an apportioned (shared-inverter) config opens in the DC-split mode automatically, and single-array installs are unaffected.
+So you can see ground vs upper output, shading and tuning side by side, per array. Name each array on the sites step — it defaults to your Solcast site name.
 
-Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.9.2).
+**Upgrading?** Drop-in. On reload, your existing `… Shading` entities keep their IDs but **move** onto each array's new device, and the PV Power / Tuned Tilt sensors appear alongside them. No config change or migration.
+
+> Also in this beta line (**v1.10.0b1**): adaptive dampening now finds clear-sky periods from **measured irradiance** (clearness index `Kt = GHI / clear-sky GHI`, Open-Meteo, on by default) instead of the biased model cloud field — governed by the existing **Clearness index threshold** option, with a new `clear_sky_basis` attribute; the **PV Forecast Confidence** load-scheduling sensor (0–100, high/medium/low — a decision aid, never a forecast); **per-site shading dampening now actually engages** (the property forecast is split across same-orientation arrays by capacity share when no per-site forecast exists); and Open-Meteo irradiance is recorded as a true **half-hour mean**. Earlier (v1.9.x): config-wizard screenshots, the topology selector, and microinverter setups not needing a whole-system sensor.
+
+Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases).
 
 ---
 
@@ -262,7 +269,20 @@ The per-site step asks which of these two topologies you have, then shows only t
 | Battery Charge 30min Average | kW | From the configured battery sensor (restored across restarts) |
 | PV Power 30min Average | kW | Average generation for the period (restored across restarts) |
 | PV Export 30min Average | kW | Average export for the period (restored across restarts) |
+| PV Forecast Confidence | 0–100 | Short-horizon load-scheduling decision aid — how well recent output is tracking the forecast (`rating` high/medium/low + `recent_bias` in attributes). A decision aid, not a forecast; never pushed to the base |
 | Base Integration Status | — | `connected` or `not_detected` |
+
+### Per-site sensors (multi-site only)
+
+When you configure more than one array, each array gets **its own HA device** (grouped on its own card, nested under the main integration device), carrying these entities:
+
+| Sensor | Unit | Description |
+|---|---|---|
+| `<array>` PV Power 30min Average | kW | That array's measured generation for the period (DC-share apportioned for shared-inverter setups; `pv_estimate` + `capacity_kw` in attributes) |
+| `<array>` Shading | — | Average daytime dampening factor (1.0 = no shading, < 1 = measured structural shading), with orientation, `shading_pct`, confidence and clear-sky basis in attributes |
+| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes) |
+
+Each array's display name comes from the **sites** config step (defaults to its Solcast site name).
 
 ---
 

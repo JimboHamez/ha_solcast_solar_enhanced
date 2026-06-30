@@ -6,7 +6,14 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfEnergy, UnitOfPower, UnitOfTemperature
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
@@ -22,6 +29,7 @@ from .const import (
     SENSOR_FORECAST_TODAY,
     SENSOR_MPPT_DC,
     SENSOR_PV_ACTUAL,
+    SENSOR_PV_CONFIDENCE,
     SENSOR_PV_EXPORT,
     SENSOR_TUNING_AZIMUTH,
     SENSOR_TUNING_EXPORT_EXCLUDED,
@@ -46,12 +54,26 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Solcast Solar Enhanced sensors from a config entry."""
     coordinator: SolcastEnhancedCoordinator = hass.data[DOMAIN][entry.entry_id]
+    site_pairs = coordinator.configured_sites_for_entities()
+    is_multisite = bool(site_pairs)
+
+    # Property-wide tuning sensors. In a multi-site setup the aggregate (`_total`)
+    # blends arrays of different orientation, so the meaningful tilt/azimuth/RMSE live
+    # on each array's own card — hide these from the main card by default there. A
+    # single-site install keeps them visible, as that aggregate *is* the one site.
+    tuning_tilt = TuningTiltSensor(coordinator, entry)
+    tuning_azimuth = TuningAzimuthSensor(coordinator, entry)
+    tuning_rmse = TuningRmseSensor(coordinator, entry)
+    if is_multisite:
+        for s in (tuning_tilt, tuning_azimuth, tuning_rmse):
+            s._attr_entity_registry_visible_default = False
+
     entities = [
         ForecastNowSensor(coordinator, entry),
         ForecastTodaySensor(coordinator, entry),
-        TuningTiltSensor(coordinator, entry),
-        TuningAzimuthSensor(coordinator, entry),
-        TuningRmseSensor(coordinator, entry),
+        tuning_tilt,
+        tuning_azimuth,
+        tuning_rmse,
         TuningExportExcludedSensor(coordinator, entry),
         DbRecordsSensor(coordinator, entry),
         MpptDcSensor(coordinator, entry),
@@ -62,7 +84,17 @@ async def async_setup_entry(
         PvActualSensor(coordinator, entry),
         PvExportSensor(coordinator, entry),
         BaseIntegrationSensor(coordinator, entry),
+        PvForecastConfidenceSensor(coordinator, entry),
     ]
+    # Per-site sensors per configured array (multi-site only), each grouped onto its own
+    # per-array device: measured PV Power, shading/visibility, tuned tilt, azimuth, and
+    # the (diagnostic) tuning RMSE.
+    for site_id, name in site_pairs:
+        entities.append(SiteOutputSensor(coordinator, entry, site_id, name))
+        entities.append(SiteShadingSensor(coordinator, entry, site_id, name))
+        entities.append(SiteTunedTiltSensor(coordinator, entry, site_id, name))
+        entities.append(SiteAzimuthSensor(coordinator, entry, site_id, name))
+        entities.append(SiteTuningRmseSensor(coordinator, entry, site_id, name))
     async_add_entities(entities)
 
 
@@ -293,6 +325,168 @@ class DampeningSensor(_EnhancedSensorBase):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.coordinator.dampening_attributes
+
+
+class PvForecastConfidenceSensor(_EnhancedSensorBase):
+    """How well recent measured output agrees with the Solcast forecast (0–100).
+
+    A decision aid for scheduling heavy loads, not a forecast: high means the next
+    few hours can be trusted at this site; low means local conditions are diverging.
+    """
+
+    _attr_translation_key = "pv_forecast_confidence"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:check-decagram"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_PV_CONFIDENCE)
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.confidence
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.confidence_attributes
+
+
+class _SiteSensorBase(_EnhancedSensorBase):
+    """Base for per-array sensors, each attached to its own per-site HA device.
+
+    A distinct ``DeviceInfo`` (keyed on ``entry_id + resource_id``, linked back to
+    the main integration device via ``via_device``) groups every entity for one
+    array onto its own card. Because ``_attr_has_entity_name`` is set, the device
+    carries the array name and each entity name is just the bare metric (e.g.
+    "Shading"), so HA renders "<Array> Shading" without duplicating the name.
+    """
+
+    def __init__(
+        self,
+        coordinator: SolcastEnhancedCoordinator,
+        entry: ConfigEntry,
+        site_id: str,
+        name: str,
+        key: str,
+    ) -> None:
+        super().__init__(coordinator, entry, f"{key}_{site_id}")
+        self._site_id = site_id
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_{site_id}")},
+            name=name,
+            manufacturer="JimboHamez",
+            model="Solcast Solar Enhanced Array",
+            via_device=(DOMAIN, entry.entry_id),
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+
+class SiteShadingSensor(_SiteSensorBase):
+    """Per-array visibility: average daytime dampening (shading) plus tuning/confidence attrs.
+
+    State is the array's average daytime dampening factor (1.0 = no shading correction,
+    below 1.0 = the measured structural shading being applied to that array).
+    """
+
+    _attr_translation_key = "site_shading"
+    _attr_icon = "mdi:home-roof"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_shading")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_shading(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_visibility_attributes(self._site_id)
+
+
+class SiteOutputSensor(_SiteSensorBase):
+    """Per-array measured generation: average kW over the just-completed half-hour.
+
+    Unavailable until a multi-site cycle has produced a per-site reading.
+    """
+
+    _attr_translation_key = "site_output"
+    _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:solar-power"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_output")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_output(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_output_attributes(self._site_id)
+
+
+class SiteTunedTiltSensor(_SiteSensorBase):
+    """Per-array tuned tilt: the optimised tilt from that array's last PV tuning run.
+
+    Unavailable until the array has accumulated enough clear-sky history to tune.
+    """
+
+    _attr_translation_key = "site_tuned_tilt"
+    _attr_native_unit_of_measurement = "°"
+    _attr_icon = "mdi:angle-acute"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_tuned_tilt")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_tuned_tilt(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_tuned_tilt_attributes(self._site_id)
+
+
+class SiteAzimuthSensor(_SiteSensorBase):
+    """Per-array azimuth as configured in Solcast (held fixed, never tuned).
+
+    Surfaces the discovered orientation on the array's own card alongside the tuned
+    tilt; azimuth is deliberately not optimised, so this mirrors the Solcast value.
+    """
+
+    _attr_translation_key = "site_azimuth"
+    _attr_native_unit_of_measurement = "°"
+    _attr_icon = "mdi:compass"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_azimuth")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_azimuth(self._site_id)
+
+
+class SiteTuningRmseSensor(_SiteSensorBase):
+    """Per-array tuning fit error (RMSE, kW) — the trust signal for the tuned tilt.
+
+    Lower means a tighter fit. Diagnostic-category, so it sits in the array device's
+    Diagnostic section rather than on the main card face.
+    """
+
+    _attr_translation_key = "site_tuning_rmse"
+    _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:chart-bell-curve"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_tuning_rmse")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_tuned_rmse(self._site_id)
 
 
 class WeatherTempSensor(_EnhancedSensorBase):

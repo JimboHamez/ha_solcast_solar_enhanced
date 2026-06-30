@@ -4,12 +4,28 @@ from __future__ import annotations
 import math
 import pytest
 
+from custom_components.solcast_solar_enhanced.pv_tuning import clearsky_ghi
 from custom_components.solcast_solar_enhanced.shading_dampening import (
     _cloud_weight,
     _geometry_weight,
+    _kt_weight,
     average_slot_pairs,
     compute_dampening,
 )
+
+
+def _kt_record(kt: float, zenith: float, azimuth: float, ratio: float) -> dict:
+    """Build a record whose stored GHI yields the target clearness index Kt."""
+    return {
+        "pv_actual": ratio,
+        "pv_estimate": 1.0,
+        "pv_export": 0.0,
+        "zenith": zenith,
+        "azimuth": azimuth,
+        "ghi": kt * clearsky_ghi(zenith),
+        # Deliberately overcast cloud value: the Kt path must ignore it.
+        "clouds": 100,
+    }
 
 # ---------------------------------------------------------------------------
 # _cloud_weight
@@ -253,3 +269,75 @@ def test_average_slot_pairs_short_list():
     assert len(hourly) == 24
     assert abs(hourly[0] - 0.75) < 1e-9
     assert abs(hourly[1] - 1.0) < 1e-9  # missing slot defaults to 1.0
+
+
+# ---------------------------------------------------------------------------
+# _kt_weight (Kt clear-sky-index quality bands)
+# ---------------------------------------------------------------------------
+
+def test_kt_weight_clear_sky():
+    assert _kt_weight(0.90, 0.75) == 1.0
+
+
+def test_kt_weight_at_threshold():
+    assert _kt_weight(0.75, 0.75) == 1.0
+
+
+def test_kt_weight_mid_band():
+    assert _kt_weight(0.65, 0.75) == 0.6
+
+
+def test_kt_weight_low_band():
+    assert _kt_weight(0.50, 0.75) == 0.3
+
+
+def test_kt_weight_overcast_excluded():
+    assert _kt_weight(0.30, 0.75) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# compute_dampening — Kt clear-sky basis
+# ---------------------------------------------------------------------------
+
+def test_compute_dampening_cloud_basis_by_default():
+    """No kt_threshold ⇒ legacy cloud basis is reported and used."""
+    record = {"pv_actual": 0.8, "pv_estimate": 1.0, "clouds": 5, "zenith": 30.0, "azimuth": 180.0}
+    result = compute_dampening([record] * 50, 10.0, 20, 60, 0.95, 30.0, 180.0)
+    assert result["clear_sky_basis"] == "cloud"
+
+
+def test_compute_dampening_kt_basis_reported():
+    record = _kt_record(kt=0.9, zenith=30.0, azimuth=180.0, ratio=0.8)
+    result = compute_dampening([record] * 50, 10.0, 20, 60, 0.95, 30.0, 180.0, kt_threshold=0.75)
+    assert result["clear_sky_basis"] == "kt"
+
+
+def test_compute_dampening_kt_keeps_clear_record_despite_overcast_cloud():
+    """The decisive behaviour: clouds=100 but Kt clear ⇒ record is KEPT and weighted.
+
+    Under the legacy cloud bands clouds=100 is excluded (>max_include), leaving
+    neutral no_data. With the Kt basis the measured-clear record drives the factor.
+    """
+    record = _kt_record(kt=0.9, zenith=30.0, azimuth=180.0, ratio=0.8)
+    cloud_mode = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 30.0, 180.0)
+    kt_mode = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 30.0, 180.0, kt_threshold=0.75)
+    assert cloud_mode["source"] == "no_data"  # overcast cloud ⇒ excluded
+    assert kt_mode["source"] != "no_data"  # Kt says clear ⇒ used
+    assert abs(kt_mode["factor"] - 0.8) < 0.05
+
+
+def test_compute_dampening_kt_excludes_overcast():
+    """Low Kt (genuinely overcast) ⇒ excluded ⇒ stays neutral."""
+    record = _kt_record(kt=0.30, zenith=30.0, azimuth=180.0, ratio=0.8)
+    result = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 30.0, 180.0, kt_threshold=0.75)
+    assert result["source"] == "no_data"
+    assert result["factor"] == 1.0
+
+
+def test_compute_dampening_kt_drops_near_horizon_record():
+    """Near-horizon sun ⇒ clear-sky reference below floor ⇒ no Kt ⇒ dropped."""
+    # zenith 88° ⇒ clearsky_ghi ≈ 7 W/m² < KT_GHI_CS_FLOOR (40), so Kt is undefined.
+    record = _kt_record(kt=0.9, zenith=88.0, azimuth=180.0, ratio=0.8)
+    assert clearsky_ghi(88.0) < 40.0
+    result = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 88.0, 180.0, kt_threshold=0.75)
+    assert result["source"] == "no_data"

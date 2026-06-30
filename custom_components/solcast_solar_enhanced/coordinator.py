@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import statistics
 import time
-from collections import Counter
+from collections import Counter, deque
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    APPORTION_AZIMUTH_TOL,
     BASE_DOMAIN,
     CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
@@ -84,6 +86,7 @@ from .const import (
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
 )
+from .load_advisory import CONFIDENCE_HORIZON_HOURS, RECENT_BIAS_LOOKBACK_S, compute_confidence
 from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
 from .solcast_api import OpenMeteoClient, OWMClient
@@ -95,6 +98,19 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _azimuth_spread(azimuths: list[float]) -> float:
+    """Largest shortest-arc difference (degrees) between any pair of azimuths.
+
+    Wrap-aware, so 350° and 10° read as 20° apart, not 340°.
+    """
+    spread = 0.0
+    for i in range(len(azimuths)):
+        for j in range(i + 1, len(azimuths)):
+            d = abs(azimuths[i] - azimuths[j]) % 360.0
+            spread = max(spread, min(d, 360.0 - d))
+    return spread
 
 
 def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -170,6 +186,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._tuning_result: dict[str, Any] | None = None
         self._site_tuning_results: dict[str, dict[str, Any]] = {}
         self._dampening_table: list[dict[str, Any]] = []
+        # Recent (epoch, pv_actual, pv_estimate) daylight slots driving the
+        # short-horizon forecast-confidence advisory (item 3). Bounded; older than
+        # the lookback window is ignored at compute time.
+        self._recent_bias: deque[tuple[int, float, float]] = deque(maxlen=16)
+        self._confidence: dict[str, Any] = compute_confidence([])
+        # Per-site visibility state (multi-site): each configured array's retained
+        # dampening curve and its own recent-bias confidence, surfaced on per-site
+        # sensors. Keyed by Solcast resource_id.
+        self._site_dampening_tables: dict[str, list[dict[str, Any]]] = {}
+        self._site_recent_bias: dict[str, deque[tuple[int, float, float]]] = {}
+        self._site_confidence: dict[str, dict[str, Any]] = {}
+        # Latest measured generation per array (avg kW over the just-completed
+        # half-hour) plus its forecast, surfaced on a per-site PV Power sensor.
+        # Keyed by Solcast resource_id; empty until a multi-site cycle runs.
+        self._site_output: dict[str, dict[str, float]] = {}
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
         self._last_prune_ts: float = 0.0
@@ -366,11 +397,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._owm:
             self._weather = await self._owm.async_fetch()
 
-        # Fetch Open-Meteo irradiance at the interval midpoint (period_end − 15 min),
-        # the representative sun position for a half-hour-averaged value — matching
-        # the solar-position midpoint below. Stored as-is; None on miss (fail-safe).
+        # Fetch Open-Meteo irradiance as the half-hour mean over [period_start,
+        # period_end) — the average of the two 15-min preceding-mean samples that
+        # tile the period — so it matches pv_actual (also a half-hour average)
+        # rather than a single point sample. Stored as-is; None on miss (fail-safe).
         if self._openmeteo:
-            fetched = await self._openmeteo.async_get_current(period_epoch - 900)
+            fetched = await self._openmeteo.async_get_interval(period_epoch)
             self._irradiance = {k: fetched.get(k) for k in ("ghi", "dni", "dhi")}
             # Open-Meteo also supplies cloud cover + temperature. Use it as the
             # weather source when OWM is not configured (the keyless default), so
@@ -421,6 +453,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             dc_hist = await self._interval_values(dc_entities, slot_start_epoch, period_epoch)
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
             total_dc = self._read_mppt_telemetry(self._mppt_list_from_opts(opts), dc_hist) or (0.0, 0.0, 0.0, 0.0)
+            # Median operating voltage per tracker (reduction of the same per-sec
+            # series) — the shading-mechanism ingredient; forward-only, unconsumed.
+            total_vmed = self._read_mppt_vmed(self._mppt_list_from_opts(opts), dc_hist)
+            site_vmed = self._read_site_vmed(opts, dc_hist)
             # Surface the latest reading on the diagnostic sensor (None when no DC
             # sensors are configured, so the entity stays unavailable rather than
             # reporting a misleading 0).
@@ -467,9 +503,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "dc_current1": total_dc[1],
                 "dc_voltage2": total_dc[2],
                 "dc_current2": total_dc[3],
+                "dc_vmed1": total_vmed[0],
+                "dc_vmed2": total_vmed[1],
                 **self._irradiance_for_storage(),
             }
             await self._db.async_insert_record(record)
+
+            # Feed the short-horizon confidence advisory (item 3): record this
+            # completed daylight slot's measured-vs-forecast pair and recompute how
+            # well recent output is tracking the forecast. Daylight only (a non-zero
+            # estimate); night/no-forecast slots carry no signal.
+            if pv_estimate > 0:
+                self._recent_bias.append((period_epoch, round(pv_actual, 4), round(pv_estimate, 4)))
+            self._confidence = compute_confidence(
+                [(a, e) for (ep, a, e) in self._recent_bias if period_epoch - ep <= RECENT_BIAS_LOOKBACK_S]
+            )
 
             # Per-site rows (multi-site). The property-wide '_total' row above
             # remains the source for aggregate tuning/dampening; per-site rows are
@@ -479,6 +527,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             for site_id, (site_kw, site_start) in site_actuals.items():
                 s_start = site_start if site_start else period_epoch - 1800
                 s_dc = site_dc.get(site_id, (0.0, 0.0, 0.0, 0.0))
+                s_vmed = site_vmed.get(site_id, (0.0, 0.0))
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
@@ -503,9 +552,28 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "dc_current1": s_dc[1],
                         "dc_voltage2": s_dc[2],
                         "dc_current2": s_dc[3],
+                        "dc_vmed1": s_vmed[0],
+                        "dc_vmed2": s_vmed[1],
                         # Irradiance is property-wide weather: same values on every site.
                         **self._irradiance_for_storage(),
                     }
+                )
+
+                # Surface this array's measured generation (and its forecast) for
+                # the per-site PV Power sensor.
+                self._site_output[site_id] = {
+                    "pv_actual": round(site_kw, 4),
+                    "pv_estimate": round(s_est, 4),
+                }
+
+                # Per-site confidence advisory: track this array's measured-vs-
+                # forecast bias the same way as the property total. Needs the
+                # per-site forecast that apportionment now supplies.
+                buf = self._site_recent_bias.setdefault(site_id, deque(maxlen=16))
+                if s_est > 0:
+                    buf.append((period_epoch, round(site_kw, 4), round(s_est, 4)))
+                self._site_confidence[site_id] = compute_confidence(
+                    [(a, e) for (ep, a, e) in buf if period_epoch - ep <= RECENT_BIAS_LOOKBACK_S]
                 )
 
             self._db_record_count = await self._db.async_get_record_count()
@@ -828,6 +896,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # skipped so per-site factors are not overwritten.
             for site_id in site_ids:
                 slots = await self._compute_dampening_slots(opts, now_epoch, lat, lon, site_id)
+                self._site_dampening_tables[site_id] = slots
                 hourly = average_slot_pairs([s["factor"] for s in slots])
                 if gate_on:
                     seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
@@ -897,6 +966,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
+        # Clear-sky basis for the per-record quality weight. Prefer measured Kt when
+        # Open-Meteo irradiance is on (the cloud field is unreliable); fall back to
+        # the OWM cloud bands otherwise. Mirrors the tuning gate's preference.
+        use_kt = bool(opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED))
+        kt_threshold = float(opts.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)) if use_kt else None
+        clear_sky_basis = "kt" if use_kt else "cloud"
         # Export limit for curtailment-aware forecast clipping — prefer the base's
         # site_export_limit, fall back to the manual option (0 = disabled). Same
         # source the tuner uses, so dampening and tuning agree on the ceiling.
@@ -932,6 +1007,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "factor": 1.0,
                         "alpha": 0.0,
                         "source": "night",
+                        "clear_sky_basis": clear_sky_basis,
                         "quality_records": 0.0,
                         "avg_quality": 0.0,
                         "clipped_excluded": 0,
@@ -949,6 +1025,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 target_zenith=zen_slot,
                 target_azimuth=az_slot,
                 export_limit_kw=export_limit,
+                kt_threshold=kt_threshold,
             )
             slot_results.append(slot_result)
 
@@ -1226,6 +1303,52 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return None
         return max(vals) if mode == "max" else min(vals)
 
+    def _interval_median(self, entity_id: str | None, hist: dict[str, list[float]]) -> float | None:
+        """Median recorded value over the interval — the representative operating point.
+
+        Unlike ``_interval_extreme``'s max-V/min-I (off-MPP curtailment capture), the
+        median is the value the tracker held for most of the slot — the operating
+        voltage that separates uniform dimming (holds near Vmp) from a bypass/partial
+        shadow (collapses). Falls back to the instantaneous read when no history exists.
+        """
+        if not entity_id:
+            return None
+        vals = hist.get(entity_id)
+        if vals:
+            return statistics.median(vals)
+        return self._read_numeric_state(entity_id)
+
+    def _read_mppt_vmed(self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]) -> tuple[float, float]:
+        """Per-tracker median operating voltage ``(vmed1, vmed2)`` over the slot, zero-filled.
+
+        Forward-only groundwork for the shading-mechanism classifier; a tracker with
+        no voltage sensor (or none configured) reads 0.0.
+        """
+        pairs = list(mppts or [])[:MAX_MPPT_TRACKERS]
+        out: list[float] = []
+        for i in range(MAX_MPPT_TRACKERS):
+            m = pairs[i] if i < len(pairs) else {}
+            v = self._interval_median(m.get("voltage_sensor"), hist)
+            out.append(round(v or 0.0, 3))
+        return out[0], out[1]
+
+    def _read_site_vmed(self, opts: dict[str, Any], hist: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+        """Per-site median operating voltage ``site → (vmed1, vmed2)``; sites with no DC V absent."""
+        out: dict[str, tuple[float, float]] = {}
+
+        def _capture(site: str | None, cfg: dict[str, Any]) -> None:
+            if not site:
+                return
+            vm = self._read_mppt_vmed(cfg.get("mppts"), hist)
+            if any(vm):
+                out[site] = vm
+
+        for group in opts.get(CONF_SITE_GROUPS) or []:
+            _capture(group.get("site"), group)
+            for s in group.get("strings") or []:
+                _capture(s.get("site"), s)
+        return out
+
     def _read_mppt_telemetry(
         self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]
     ) -> tuple[float, float, float, float] | None:
@@ -1319,13 +1442,63 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         """Return (pv_estimate, pv_estimate10, pv_estimate90) for a site's slot.
 
         Reads the per-site ``detailedForecast-<resource_id>`` attribute off the base
-        ``forecast_today`` sensor (falls back to the underscore variant used by newer
-        base versions).
+        ``forecast_today`` sensor. Base versions vary in how they key the attribute, so
+        three forms are tried in order: the hyphenated id, an underscore separator with
+        the hyphenated id, and — what current base versions actually emit — an
+        underscore separator with the id's own hyphens replaced by underscores
+        (e.g. ``detailedForecast_8be0_533e_baad_4841``).
         """
         est = self._forecast_slot(f"detailedForecast-{resource_id}", start_epoch)
         if est == (0.0, 0.0, 0.0):
             est = self._forecast_slot(f"detailedForecast_{resource_id}", start_epoch)
-        return est
+        if est == (0.0, 0.0, 0.0):
+            rid_underscored = resource_id.replace("-", "_")
+            if rid_underscored != resource_id:
+                est = self._forecast_slot(f"detailedForecast_{rid_underscored}", start_epoch)
+        if est != (0.0, 0.0, 0.0):
+            return est
+        # The base integration exposes no per-site detailedForecast on this install,
+        # so per-site pv_estimate would be zero and per-site dampening could never
+        # form a ratio. Fall back to apportioning the property-wide forecast by this
+        # site's capacity share (item 1 P0) — valid only at a shared orientation.
+        return self._apportion_total_forecast(resource_id, start_epoch)
+
+    def _apportion_total_forecast(self, resource_id: str, start_epoch: int) -> tuple[float, float, float]:
+        """Per-site forecast from the property total, split by capacity share.
+
+        Capacity-share apportionment of a half-hourly forecast assumes the same
+        forecast-per-kW shape across arrays, which holds only when they share an
+        azimuth. When azimuths diverge beyond ``APPORTION_AZIMUTH_TOL`` the arrays
+        peak at different times, so a per-slot split would invent phantom timing
+        differences and corrupt per-site dampening — apportionment is skipped and
+        the per-site forecast stays unset (zeros), the pre-existing behaviour.
+
+        Returns the apportioned ``(pv_estimate, pv_estimate10, pv_estimate90)`` (avg
+        kW over the half-hour), or zeros when apportionment is unavailable or unsafe.
+        """
+        sites = self._sites
+        if len(sites) < 2:
+            return 0.0, 0.0, 0.0
+        site = next((s for s in sites if s.get("resource_id") == resource_id), None)
+        if site is None:
+            return 0.0, 0.0, 0.0
+        azimuths = [float(s.get("azimuth") or 0.0) for s in sites]
+        if _azimuth_spread(azimuths) > APPORTION_AZIMUTH_TOL:
+            _LOGGER.debug(
+                "Per-site forecast apportionment skipped: array azimuths diverge by %.0f° (> %.0f°)",
+                _azimuth_spread(azimuths),
+                APPORTION_AZIMUTH_TOL,
+            )
+            return 0.0, 0.0, 0.0
+        total_cap = sum(float(s.get("capacity") or 0.0) for s in sites)
+        site_cap = float(site.get("capacity") or 0.0)
+        if total_cap <= 0.0 or site_cap <= 0.0:
+            return 0.0, 0.0, 0.0
+        total = self._total_forecast_for_period(start_epoch)
+        if total == (0.0, 0.0, 0.0):
+            return 0.0, 0.0, 0.0
+        share = site_cap / total_cap
+        return total[0] * share, total[1] * share, total[2] * share
 
     def _forecast_slot(self, attr_name: str, start_epoch: int) -> tuple[float, float, float]:
         """Pick the ``detailedForecast`` slot closest to ``start_epoch``.
@@ -1691,6 +1864,144 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         return sum(1 for s in self._dampening_table if s.get("source") not in ("no_data", "night"))
 
     @property
+    def confidence(self) -> int | None:
+        """Short-horizon forecast-confidence score (0–100), or None until there's data."""
+        return self._confidence.get("confidence")
+
+    @property
+    def confidence_attributes(self) -> dict[str, Any]:
+        """Diagnostics for the confidence sensor: rating, recent bias, what it's based on."""
+        return {
+            "rating": self._confidence.get("rating", "unknown"),
+            "recent_bias": self._confidence.get("recent_bias"),
+            "n_slots": self._confidence.get("n_slots", 0),
+            "horizon_hours": CONFIDENCE_HORIZON_HOURS,
+            "based_on": "recent measured output vs Solcast forecast",
+        }
+
+    def configured_sites_for_entities(self) -> list[tuple[str, str]]:
+        """``(resource_id, display_name)`` for each configured per-site array, for entity setup.
+
+        Name precedence: the user-entered per-array name (config flow) → the Solcast
+        site name (discovered) → a short ``Site <id>`` fallback.
+        """
+        groups = self._opts.get(CONF_SITE_GROUPS) or []
+        ids = self._configured_site_ids(groups)
+        user_names = self._site_names_from_groups(groups)
+        by_id = {s["resource_id"]: s for s in self._sites}
+        return [(sid, user_names.get(sid) or (by_id.get(sid) or {}).get("name") or f"Site {sid[:4]}") for sid in ids]
+
+    @staticmethod
+    def _site_names_from_groups(groups: list[dict[str, Any]]) -> dict[str, str]:
+        """Map ``resource_id → user-entered display name`` from the configured groups."""
+        names: dict[str, str] = {}
+        for g in groups:
+            if g.get("site") and g.get("name"):
+                names[g["site"]] = g["name"]
+            for s in g.get("strings") or []:
+                if s.get("name"):
+                    names[s["site"]] = s["name"]
+        return names
+
+    def site_shading(self, site_id: str) -> float | None:
+        """Average daytime dampening factor for a site (1.0 = no shading, < 1 = shaded)."""
+        table = self._site_dampening_tables.get(site_id)
+        if not table:
+            return None
+        factors = [s["factor"] for s in table if s.get("source") != "night"]
+        return round(sum(factors) / len(factors), 4) if factors else None
+
+    def site_output(self, site_id: str) -> float | None:
+        """Latest measured generation for a site (average kW over the half-hour).
+
+        ``None`` until a multi-site cycle has produced a per-site reading, so the
+        entity stays unavailable rather than reporting a misleading 0.
+        """
+        out = self._site_output.get(site_id)
+        return out["pv_actual"] if out else None
+
+    def site_output_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array generation diagnostics: forecast for the same slot and name."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        out = self._site_output.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            "pv_estimate": out.get("pv_estimate"),
+            "capacity_kw": site.get("capacity"),
+        }
+
+    def site_tuned_tilt(self, site_id: str) -> float | None:
+        """Latest tuned tilt for a site, or ``None`` until that array has been tuned."""
+        tuning = self._site_tuning_results.get(site_id) or {}
+        tilt = tuning.get("tilt")
+        return round(tilt, 1) if tilt is not None else None
+
+    def site_azimuth(self, site_id: str) -> float | None:
+        """Configured azimuth for a site (Solcast convention), from site discovery.
+
+        Azimuth is held fixed at the Solcast value and never tuned, so this reflects
+        the discovered orientation rather than a fitted one — the per-site counterpart
+        to the property-wide tuned-azimuth sensor.
+        """
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        az = site.get("azimuth")
+        return round(float(az), 1) if az is not None else None
+
+    def site_tuned_rmse(self, site_id: str) -> float | None:
+        """Fit error (RMSE, kW) of a site's last tuning run, or ``None`` if untuned.
+
+        The trust signal for that array's tuned tilt: lower is a tighter fit. Tracked
+        per-site because differently-oriented arrays are each tuned independently
+        against their own records and azimuth, so the property-wide aggregate RMSE
+        blurs them together.
+        """
+        tuning = self._site_tuning_results.get(site_id) or {}
+        rmse = tuning.get("rmse_kw")
+        return round(rmse, 4) if rmse is not None else None
+
+    def site_tuned_tilt_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array tuning diagnostics: fit quality, record count and configured orientation."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        tuning = self._site_tuning_results.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            "rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
+            "tuning_records": tuning.get("n_records"),
+            "configured_tilt": site.get("tilt"),
+            "azimuth_compass": site.get("compass_degrees"),
+        }
+
+    def site_visibility_attributes(self, site_id: str) -> dict[str, Any]:
+        """Per-array diagnostics: discovered orientation, dampening, tuning and confidence."""
+        site = next((s for s in self._sites if s.get("resource_id") == site_id), {})
+        table = self._site_dampening_tables.get(site_id) or []
+        day = [s for s in table if s.get("source") != "night"]
+        factors = [s["factor"] for s in day]
+        avg = sum(factors) / len(factors) if factors else None
+        tuning = self._site_tuning_results.get(site_id) or {}
+        conf = self._site_confidence.get(site_id) or {}
+        return {
+            "name": site.get("name"),
+            "resource_id": site_id,
+            # 0° (due north) / 0° tilt are valid, so don't coerce them to None.
+            "azimuth_compass": site.get("compass_degrees"),
+            "tilt": site.get("tilt"),
+            "capacity_kw": site.get("capacity"),
+            "shading_pct": round((1.0 - avg) * 100, 1) if avg is not None else None,
+            "min_factor": round(min(factors), 4) if factors else None,
+            "hours_with_db": sum(1 for s in table if s.get("source") not in ("no_data", "night")),
+            "clear_sky_basis": day[0].get("clear_sky_basis") if day else None,
+            "confidence": conf.get("confidence"),
+            "confidence_rating": conf.get("rating", "unknown"),
+            "recent_bias": conf.get("recent_bias"),
+            "tuned_tilt": round(tuning["tilt"], 1) if tuning.get("tilt") is not None else None,
+            "tuning_rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
+            "tuning_records": tuning.get("n_records"),
+        }
+
+    @property
     def dampening_attributes(self) -> dict[str, Any]:
         """Per-hour dampening diagnostics (factor + source) for the sensor."""
         attrs: dict[str, Any] = {}
@@ -1720,6 +2031,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if sources:
             most_common = Counter(sources).most_common(1)
             attrs["overall_source"] = most_common[0][0] if most_common else "no_data"
+        # Which clear-sky signal weighted the records: measured Kt (Open-Meteo
+        # irradiance) or the legacy OWM cloud bands. Uniform across all slots.
+        if self._dampening_table:
+            attrs["clear_sky_basis"] = self._dampening_table[0].get("clear_sky_basis", "cloud")
         # Gate state: when true, the push was held at neutral 1.0 because a tuned
         # orientation diverges from the configured Solcast value (see repair issue).
         attrs["gated"] = self._dampening_gated

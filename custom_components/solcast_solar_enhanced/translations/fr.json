@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Réglage — exclus pour limite d'injection"
+      },
+      "pv_forecast_confidence": {
+        "name": "Confiance de la prévision PV"
+      },
+      "site_shading": {
+        "name": "Ombrage"
+      },
+      "site_output": {
+        "name": "Puissance PV moyenne sur 30 min"
+      },
+      "site_tuned_tilt": {
+        "name": "Inclinaison ajustée"
+      },
+      "site_azimuth": {
+        "name": "Azimut"
+      },
+      "site_tuning_rmse": {
+        "name": "RMSE du réglage"
       }
     }
   },

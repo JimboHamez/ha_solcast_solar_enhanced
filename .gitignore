@@ -13,6 +13,9 @@ COMMUNITY_REPLY.md
 # Local-only PV-tuning / notebook-comparison sandbox (never pushed)
 testing/
 
+# Local-only analysis scratch (CSVs, docx, runbooks) — never pushed
+analysis/
+
 # SQLite databases and their WAL/SHM sidecars (never commit data)
 *.db
 *.db-wal

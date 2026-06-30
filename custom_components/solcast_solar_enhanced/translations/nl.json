@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Afstemming — uitgesloten door teruglevergrens"
+      },
+      "pv_forecast_confidence": {
+        "name": "Betrouwbaarheid PV-voorspelling"
+      },
+      "site_shading": {
+        "name": "Beschaduwing"
+      },
+      "site_output": {
+        "name": "PV-vermogen 30-min-gemiddelde"
+      },
+      "site_tuned_tilt": {
+        "name": "Afgestemde hellingshoek"
+      },
+      "site_azimuth": {
+        "name": "Azimut"
+      },
+      "site_tuning_rmse": {
+        "name": "Afstemmings-RMSE"
       }
     }
   },

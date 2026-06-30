@@ -5,6 +5,132 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b3] - 2026-06-29
+
+> Beta. Fixes per-site forecast detection so multi-site dampening uses your base
+> integration's **real per-site forecast** — including across differently-oriented arrays.
+
+### Added
+- **Per-array Azimuth sensor.** Each array's card now also shows its **Azimuth** (the
+  orientation configured in Solcast, in the Solcast convention). Azimuth is held fixed and
+  never tuned, so it complements the Tuned Tilt sensor with the discovered orientation.
+- **Per-array Tuning RMSE sensor (diagnostic).** Each array now exposes its own tuning
+  fit error (kW) — the trust signal for that array's tuned tilt (lower = tighter fit). It
+  sits in the device's Diagnostic section. Differently-oriented arrays are tuned
+  independently, so this per-site RMSE is more meaningful than the blended aggregate.
+
+### Changed
+- **Multi-site main card de-cluttered.** In a multi-site setup the property-wide
+  Tuned Panel Tilt / Tuned Panel Azimuth / Tuning RMSE sensors are **hidden by default**
+  (the aggregate blends arrays of different orientation; the meaningful values live on each
+  array's own card). Single-site installs are unchanged — there the aggregate *is* the one
+  site, so those sensors stay visible. (Existing entities keep their current visibility;
+  this applies to newly-created ones.)
+- **New sensors now use translated entity names.** The PV Forecast Confidence sensor and
+  the per-array PV Power / Shading / Tuned Tilt sensors moved from hard-coded English names
+  to localized translation keys, so they render in your Home Assistant language (all 11
+  shipped locales updated). English names are unchanged.
+
+### Fixed
+- **Per-site forecast attribute now matched against the base's actual key format.** The
+  base `solcast_solar` integration exposes each site's half-hourly forecast as a
+  `detailedForecast_<resource_id>` attribute with the resource_id's **own hyphens replaced
+  by underscores** (e.g. `detailedForecast_8be0_533e_baad_4841`). The companion previously
+  only tried the hyphenated forms, never matched, and silently fell back to capacity-share
+  apportionment — which is valid only for arrays sharing an orientation (within 10°). On
+  installs that expose this attribute, **per-site dampening now uses the true per-site
+  forecast**, so it engages correctly **even when arrays face different directions** (the
+  apportionment fallback and its same-orientation gate are no longer needed there). No
+  effect on installs where the base genuinely exposes no per-site detail.
+
+## [1.10.0b2] - 2026-06-29
+
+> Beta. Multi-site UX: each array now appears as its **own Home Assistant device**
+> with its own card, and gains a **PV Power** and a **Tuned Tilt** sensor.
+
+### Added
+- **Per-site sensors now grouped onto a per-array device, with two new sensors.** Each
+  configured array becomes its own Home Assistant device (its own card, nested under the
+  main integration), carrying three entities: a new **PV Power 30min Average** (that array's
+  measured generation for the period, DC-share apportioned for shared-inverter setups), the
+  existing **Shading** sensor (now on the per-array device), and a new **Tuned Tilt** sensor
+  (its optimised tilt — promoted from a Shading attribute to a first-class entity, with fit
+  RMSE, record count and configured tilt/orientation as attributes). For a multi-array
+  system this replaces a single 20-plus-entity device card with one tidy card per array.
+- **Design specs published** for the per-site work shipped in this beta line: the per-site
+  orientation/config spec, the per-site shading-dampening spec (with the 1-sec DC V/I
+  shading-mechanism findings, §8.4/§8.5), and the short-horizon load-scheduling decision-aid
+  spec — plus the `tools/analyse_vi_shading.py` analysis tool used for §8.4.
+
+### Fixed
+- **README sensor table** no longer omits the **PV Forecast Confidence** sensor or the
+  per-array sensors — the reference table had drifted from the shipped entities.
+
+### Upgrading
+- Drop-in. On reload, existing per-site `… Shading` entities keep their entity IDs but
+  **move** from the main device onto their array's new device; the new PV Power / Tuned Tilt
+  entities appear alongside them. No config change or migration.
+
+## [1.10.0b1] - 2026-06-28
+
+> Beta. Adaptive dampening now selects clear-sky records by **measured irradiance
+> (clearness index Kt)** instead of model cloud cover, when Open-Meteo is enabled.
+
+### Changed
+- **Dampening's clear-sky quality weighting moved from cloud cover to the measured
+  clearness index `Kt = ghi / clearsky_ghi(zenith)`.** When Open-Meteo irradiance is
+  enabled (the default) each record's quality weight is now graded by Kt rather than
+  the OWM/Open-Meteo total-cloud field, which is biased high and false-overcasts clear
+  days — so it was over-rejecting exactly the clear records a shading ratio depends on.
+  This mirrors the clear-sky gate PV tuning already uses. When Open-Meteo is disabled,
+  dampening falls back to the legacy cloud bands unchanged.
+- The dampening sensor now exposes a `clear_sky_basis` attribute (`kt` or `cloud`) so
+  you can confirm which signal is active.
+- **Open-Meteo irradiance is now collected as a true half-hour mean.** Each record
+  previously stored a single 15-minute point sample; because Open-Meteo's `minutely_15`
+  radiation is a *preceding-15-minute mean*, that point captured only one half of the
+  collection period. The value is now the average of the two 15-minute samples tiling
+  the half-hour, matching `pv_actual` (itself a half-hour average). No extra API call —
+  the samples are already in the existing response. The effect is largest on
+  partly-cloudy slots and near sunrise/sunset, which compounds with the Kt weighting
+  above (both make the partly-cloudy records dampening relies on more accurate).
+
+### Added
+- **New "PV Forecast Confidence" sensor — a load-scheduling decision aid.** Scores 0–100
+  how well your array's *recently measured* output is tracking the Solcast forecast
+  (energy-weighted bias over the last ~4 h), with a `rating` of high/medium/low. High
+  means the next few hours can be trusted — a good time to commit a heavy load (EV, pool
+  pump, hot water); low means local conditions are diverging from the forecast, so hold.
+  It is **not** a forecast and is never pushed to Solcast — it annotates how much to trust
+  the forecast using ground truth the base integration can't see. (The Good/Next Load
+  Window entities that build on it are the planned next step.)
+- **Per-site visibility sensors.** Each configured array now gets its own sensor showing
+  its **shading** (average daytime dampening factor), with that array's discovered
+  orientation/capacity, tuning result, confidence and clear-sky basis as attributes — so
+  you can see ground vs upper at a glance. Each array's display **name** is set on the
+  per-site mapping step, defaulting to the Solcast site name (override it to taste).
+- **Per-site shading dampening now engages for multi-site systems.** Per-site dampening
+  was already wired but starved of a per-site forecast (most base installs don't expose
+  `detailedForecast-<resource_id>`, so per-site `pv_estimate` was 0 and no ratio could
+  form). The companion now apportions the property-wide forecast to each array by
+  **capacity share** when no per-site detail is available — but only when the arrays
+  **share orientation** (azimuths within 10°), since differently-oriented arrays peak at
+  different times and a per-slot capacity split would invent phantom timing. A real
+  per-site forecast always takes precedence; divergent-azimuth systems are unchanged.
+- **Per-tracker median operating voltage captured to the DB (`dc_vmed1/2`).** For string
+  inverters with per-MPPT DC voltage sensors, each slot now stores the *median* DC voltage
+  over the just-completed 30 minutes — "where the MPP actually sat" — reduced from the same
+  per-second recorder history already read for the curtailment capture (no extra reads). It's
+  the signal that distinguishes uniform shading (voltage holds) from a hard partial shadow
+  (voltage collapses), confirmed for one site by a 30-day 1-sec analysis. **Groundwork only —
+  nothing consumes it yet**; optimiser/microinverter sites (no physical string voltage) store 0.
+
+### Notes
+- No configuration change: the existing **Clearness index threshold** option (already
+  used by tuning) now also governs dampening.
+- The push remains gated by the base integration's automatic dampening and by the
+  orientation-divergence gate, as before.
+
 ## [1.9.2] - 2026-06-26
 
 ### Documentation

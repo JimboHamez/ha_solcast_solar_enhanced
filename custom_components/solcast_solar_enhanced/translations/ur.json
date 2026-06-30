@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "ٹیوننگ — ایکسپورٹ حد کے باعث خارج"
+      },
+      "pv_forecast_confidence": {
+        "name": "پی وی پیش گوئی کا اعتماد"
+      },
+      "site_shading": {
+        "name": "سایہ"
+      },
+      "site_output": {
+        "name": "پی وی پاور 30 منٹ اوسط"
+      },
+      "site_tuned_tilt": {
+        "name": "ٹیون شدہ جھکاؤ"
+      },
+      "site_azimuth": {
+        "name": "سمت"
+      },
+      "site_tuning_rmse": {
+        "name": "ٹیوننگ RMSE"
       }
     }
   },

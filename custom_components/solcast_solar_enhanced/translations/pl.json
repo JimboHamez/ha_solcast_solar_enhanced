@@ -175,6 +175,24 @@
     "sensor": {
       "tuning_export_excluded": {
         "name": "Strojenie — wykluczone z powodu limitu oddawania"
+      },
+      "pv_forecast_confidence": {
+        "name": "Wiarygodność prognozy PV"
+      },
+      "site_shading": {
+        "name": "Zacienienie"
+      },
+      "site_output": {
+        "name": "Moc PV średnia 30 min"
+      },
+      "site_tuned_tilt": {
+        "name": "Dostrojony kąt nachylenia"
+      },
+      "site_azimuth": {
+        "name": "Azymut"
+      },
+      "site_tuning_rmse": {
+        "name": "RMSE strojenia"
       }
     }
   },

@@ -89,16 +89,17 @@ class OWMClient:
 class OpenMeteoClient:
     """Thin async Open-Meteo client for plane-of-array irradiance components.
 
-    Keyless. ``async_get_current`` reads the 15-minute forecast series (which spans
-    the recent past) and returns the sample nearest a target instant — used by the
-    half-hour collection loop, sampled at the period midpoint. ``async_get_archive``
-    pulls a bulk hourly history for the one-pass backfill tool. Missing values come
-    back as ``None`` (fail-safe), matching :class:`OWMClient`.
+    Keyless. ``async_get_interval`` reads the 15-minute forecast series (which spans
+    the recent past) and returns the **half-hour mean** over a collection period —
+    averaging the two preceding-mean samples that tile it — to match ``pv_actual``
+    (itself a half-hour average). ``async_get_archive`` pulls a bulk hourly history
+    for the one-pass backfill tool. Missing values come back as ``None`` (fail-safe),
+    matching :class:`OWMClient`.
     """
 
-    # Forecast 15-min samples are matched to the requested instant within this
-    # tolerance; a wider gap means the API didn't cover the period (return None).
-    _MATCH_TOLERANCE_S = 1800
+    # A half-hour boundary must land within half a 15-min step of a real sample for
+    # that sub-interval to count; a wider gap means the API didn't cover it (skip).
+    _SAMPLE_TOLERANCE_S = 450
 
     def __init__(
         self,
@@ -111,8 +112,20 @@ class OpenMeteoClient:
         self._lon = longitude
         self._session = session
 
-    async def async_get_current(self, target_epoch: int) -> dict[str, Any]:
-        """Irradiance/weather at the 15-min sample nearest ``target_epoch`` (UTC)."""
+    async def async_get_interval(self, period_end_epoch: int) -> dict[str, Any]:
+        """Half-hour-mean irradiance/weather for the period ending at ``period_end_epoch`` (UTC).
+
+        Open-Meteo ``minutely_15`` radiation is a **preceding-15-minute mean** (the
+        timestamp marks the *end* of its interval — confirmed against the docs and
+        live data), so the half-hour ``[period_end − 30 min, period_end)`` is tiled
+        exactly by the two samples timestamped at ``period_end − 15 min`` and
+        ``period_end``. Averaging them yields a true half-hour mean that matches
+        ``pv_actual`` (also a half-hour average), rather than a single point sample
+        that represents only one 15-minute half of the period.
+
+        Whichever of the two samples are present within tolerance are averaged; a
+        value is ``None`` when neither is (fail-safe).
+        """
         params = {
             "latitude": self._lat,
             "longitude": self._lon,
@@ -127,17 +140,21 @@ class OpenMeteoClient:
             times = series.get("time") or []
             if not times:
                 return self._empty()
-            # Find the sample closest to the target instant.
-            best_i, best_gap = None, None
-            for i, t in enumerate(times):
-                gap = abs(self._iso_to_epoch(t) - target_epoch)
-                if best_gap is None or gap < best_gap:
-                    best_i, best_gap = i, gap
-            if best_i is None or best_gap > self._MATCH_TOLERANCE_S:
+            epochs = [self._iso_to_epoch(t) for t in times]
+            # The two preceding-mean samples that tile the half-hour period.
+            idxs: list[int] = []
+            for target in (period_end_epoch - 900, period_end_epoch):
+                i = self._nearest_index(epochs, target)
+                if i is not None and i not in idxs:
+                    idxs.append(i)
+            if not idxs:
                 return self._empty()
-            return {
-                key: self._num(series.get(var, [None] * len(times))[best_i]) for var, key in _OPENMETEO_VARS.items()
-            }
+            out: dict[str, Any] = {}
+            for var, key in _OPENMETEO_VARS.items():
+                col = series.get(var, [None] * len(times))
+                vals = [v for v in (self._num(col[i]) for i in idxs) if v is not None]
+                out[key] = sum(vals) / len(vals) if vals else None
+            return out
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("Open-Meteo fetch failed: %s: %s", type(exc).__name__, exc)
             return self._empty()
@@ -177,6 +194,18 @@ class OpenMeteoClient:
         async with aiohttp.ClientSession() as session, session.get(url, params=params, timeout=timeout) as resp:
             resp.raise_for_status()
             return await resp.json()
+
+    @classmethod
+    def _nearest_index(cls, epochs: list[int], target: int) -> int | None:
+        """Index of the sample nearest ``target``, or ``None`` if none is within tolerance."""
+        best_i, best_gap = None, None
+        for i, e in enumerate(epochs):
+            gap = abs(e - target)
+            if best_gap is None or gap < best_gap:
+                best_i, best_gap = i, gap
+        if best_i is None or best_gap > cls._SAMPLE_TOLERANCE_S:
+            return None
+        return best_i
 
     @staticmethod
     def _iso_to_epoch(iso: str) -> int:

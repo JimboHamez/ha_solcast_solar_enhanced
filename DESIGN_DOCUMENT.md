@@ -1,7 +1,7 @@
 # Solcast Solar Enhanced — Design Document
 
 **A companion integration for BJReplay/ha-solcast-solar**
-**Version 1.13 — June 2026**
+**Version 1.17 — June 2026**
 
 ---
 
@@ -9,13 +9,14 @@
 
 This document describes the `solcast_solar_enhanced` integration and the design thinking behind it. It is a **standalone companion** to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcast-solar) — it installs alongside the base integration and depends on it, but is built and versioned independently rather than merged into it.
 
-It adds three capabilities:
+It adds four capabilities:
 
 1. **Built-in SQLite storage** of PV power, forecasts, solar position, weather and battery data — a single zero-config file via the stdlib `sqlite3` module (no server, no credentials, no extra dependency).
 2. **Automatic Rooftop PV Tuning** — tilt/azimuth optimisation via a numpy grid search (no scipy), based on Solcast SDK notebook 3.4.
 3. **Adaptive Shading Dampening** — quality-weighted dampening computed purely from stored actual-vs-forecast history (it never reads the base integration's own dampening factors), ramping from a neutral no-op toward the measured ratio as data accumulates, based on Solcast SDK notebook 3.4b.
+4. **Short-horizon forecast confidence** (v1.10.0b1) — a load-scheduling *decision aid* scoring how well recent measured output tracks the forecast; advisory only, never a rival forecast. See [Feature 7](#feature-7--short-horizon-forecast-confidence-load-scheduling-aid).
 
-A fourth capability, **Short-range Forecast Correction**, was designed and **dropped** — see [Feature 4](#feature-4--short-range-forecast-correction-dropped).
+The original **Short-range Forecast *Correction*** was designed and **dropped**, then re-scoped into capability 4 — see [Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7).
 
 The integration runs standalone, reading all Solcast data from the base coordinator (**zero additional Solcast API calls**) and pushing improved dampening back via the base `set_dampening` service.
 
@@ -42,7 +43,8 @@ solcast_solar_enhanced/
 ├── pv_tuning.py             Tilt/azimuth optimisation (numpy grid search)
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
-├── sensor.py                15 HA sensor entities
+├── load_advisory.py         Short-horizon forecast-confidence (item 3 load aid)
+├── sensor.py                16 property-wide sensors + one per configured array
 ├── services.yaml            Service definitions
 └── translations/            UI strings (11 languages)
 ```
@@ -59,7 +61,7 @@ solcast_solar_enhanced coordinator
         ├── read battery       battery sensor (falls back to raw sensor)
         ├── read per-site      multi-site: per-array kW (DC-ratio apportionment)
         ├── fetch OWM weather  (optional: temp °C, clouds 0–100, description)
-        ├── fetch Open-Meteo   (keyless, default-on: plane GHI/DNI/DHI + clouds at period midpoint)
+        ├── fetch Open-Meteo   (keyless, default-on: plane GHI/DNI/DHI + clouds, half-hour mean over the period)
         ├── persist records    to SQLite ('_total' + one row per site, incl. ghi/dni/dhi)
         ├── run PV tuning      numpy grid search (daily, executor thread; per-site)
         ├── compute dampening  quality-weighted DB ratio blended toward neutral 1.0
@@ -124,13 +126,17 @@ CREATE TABLE solcast_data (
   ghi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo global horizontal irradiance (W/m²)
   dni              REAL NOT NULL DEFAULT 0,        -- Open-Meteo direct normal irradiance (W/m²)
   dhi              REAL NOT NULL DEFAULT 0,        -- Open-Meteo diffuse horizontal irradiance (W/m²)
+  dc_vmed1         REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC voltage, slot median (operating point, V)
+  dc_vmed2         REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC voltage, slot median (operating point, V)
   UNIQUE(period_end_epoch, site)
 );
 ```
 
-The four `dc_*` columns are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+The `dc_*` voltage/current pairs (`dc_voltage1/2`, `dc_current1/2`) are kept **per-tracker** (not aggregated, up to `MAX_MPPT_TRACKERS = 2`) so a future per-string `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. They are forward-only (not reconstructable on older rows). See the [curtailment roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
 
-The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless) at the period midpoint. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (interpolated to the midpoint) instead of waiting for fresh collection.
+The `dc_vmed1/2` columns add the per-tracker **median operating voltage** over the slot — a second reduction of the *same* per-second recorder series the curtailment capture reads (`_interval_median` vs the max-V/min-I `_interval_extreme`). Where max-V/min-I is the off-MPP excursion (curtailment), the median is "where the MPP actually sat" — the voltage that distinguishes **uniform dimming** (holds near Vmp) from a **bypass/partial shadow** (collapses). This is forward-only groundwork for a per-site **shading-mechanism classifier** (validated manually in `analysis/session-2026-06-28-vi-shading-mechanism.md`); nothing consumes the columns yet, and only string-inverter sites with per-MPPT DC voltage sensors populate them (optimiser/microinverter strings have no physical Vmp signal — SolarEdge regulates string voltage, microinverters expose no DC string).
+
+The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs for transposition-based PV tuning, collected from **Open-Meteo** (keyless). Open-Meteo's `minutely_15` radiation is a *preceding-15-minute mean* (timestamp = end of interval), so the stored value is the **half-hour mean** over `[period_start, period_end)` — the two samples at `period_end − 15 min` and `period_end` averaged (`async_get_interval`) — which matches `pv_actual` (also a half-hour average) instead of a single point sample biased toward one half of the period. Unlike the `dc_*` columns they **are** reconstructable on older rows — from each row's `period_end_epoch` + site lat/lon against Open-Meteo's historical archive — so `tools/backfill_irradiance.py` can fill them in one pass (the archive is *hourly* only, so backfilled rows are hourly-interpolated to the midpoint — a negligible difference from the forward half-hour mean, mainly on clear days) instead of waiting for fresh collection.
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at it (WAL mode — leave the `-wal`/`-shm` sidecars in place).
 
@@ -173,7 +179,7 @@ Tuning needs sun-angle diversity across seasons; the clear-sky rows are chosen i
 
 **Why Kt replaced total cloud.** Total-cloud % over-rejects genuinely clear slots that happen to carry harmless **high/mid cloud** (cirrus, distant cumulus) — those slots have near-full ground irradiance but a non-trivial reported cloud fraction, so a `clouds < 30%` gate discards usable clear-sky data. `Kt` measures the *actual* irradiance reaching the ground relative to a clear-sky reference, so it admits those slots and excludes only real attenuation — independent of any model cloud %. On the real winter DB this widened the clear-sky set roughly 9× (≈2 records under the cloud gate → ≈18 under Kt ≥ 0.75), which is what let the transposition tuner converge where the legacy path returned "insufficient". The Kt gate shipped in **v1.7.0**, built on the Open-Meteo transposition work.
 
-> The dampening clear-sky selection (Feature 3) still uses the cloud-cover gate/weighting; moving it onto measured Kt is a planned follow-up.
+> As of **v1.10.0b1**, dampening's clear-sky **quality weighting** also uses measured Kt when Open-Meteo is enabled (see [Feature 3 → Clear-sky quality weighting](#clear-sky-quality-weighting)), falling back to the cloud bands only when Open-Meteo is off.
 
 ### Export limit filtering
 
@@ -201,13 +207,28 @@ To stop a mis-configured site baking orientation error into the curve, the push 
 
 ### Why cloud filtering is essential
 
-The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor, so a cloud signal is needed to filter them. That signal comes from either source: **Open-Meteo** supplies a keyless `cloud_cover` (default-on), and **OWM** supplies one when configured. When OWM is absent, Open-Meteo's `clouds` doubles as the cloud source, so **OWM is now optional** — a cloud source is required, but not specifically OpenWeatherMap. (Tuning's clear-sky selection has moved off cloud cover entirely onto the measured Kt gate — see [Feature 2](#clear-sky-selection--clearness-index-kt-gate); dampening still uses the cloud-cover weighting below.)
+The factor `total_pv / pv_estimate` reflects shading geometry on a clear day but cloud attenuation (already modelled by Solcast) on a cloudy one — including cloudy records corrupts the factor, so a cloud signal is needed to filter them. That signal comes from either source: **Open-Meteo** supplies a keyless `cloud_cover` (default-on), and **OWM** supplies one when configured. When OWM is absent, Open-Meteo's `clouds` doubles as the cloud source, so **OWM is now optional** — a cloud source is required, but not specifically OpenWeatherMap. (Tuning's clear-sky selection has moved off cloud cover entirely onto the measured Kt gate — see [Feature 2](#clear-sky-selection--clearness-index-kt-gate); as of v1.10.0b1 dampening's quality weighting does too — see [below](#clear-sky-quality-weighting) — falling back to the cloud bands only when Open-Meteo is disabled.)
 
 The design is **fail-safe**: when *no* cloud source is available (OWM unconfigured **and** Open-Meteo disabled, or a fetch fails), cloud cover defaults to *unknown* and is coerced at the DB-write boundary to the **`100` sentinel** — a value the clear-sky filter excludes. So such a record can never masquerade as clear sky: tuning finds nothing to fit (returns `None`), dampening reports `no_data` (stays neutral, pushes nothing), and the Cloud Cover / Weather sensors show *unavailable* rather than a misleading `0`. `async_setup` raises an `ISSUE_OWM_REQUIRED` repair issue only when a cloud-driven feature is enabled with **neither** Open-Meteo nor OWM configured; enabling either source clears it on reload.
 
 *Why `100`, not `0`:* both are valid real readings, so the unknown sentinel must sit on the excluded side. `0` collides with real clear sky (would be trusted); `100` collides with real overcast (already excluded — safe). The same reasoning fixed the falsy-`0` bug in v1.6.2/3.
 
-### Cloud quality weighting
+### Clear-sky quality weighting
+
+Each record's quality weight grades how clear its sky was — clearer being the best data for a shading ratio. The basis depends on whether Open-Meteo irradiance is available, exposed per slot as `clear_sky_basis` (`kt` or `cloud`):
+
+**Kt basis (default, Open-Meteo on — v1.10.0b1).** The measured clearness index `Kt = ghi / clearsky_ghi(zenith)` drives the weight, graded down from the configured `CONF_KT_THRESHOLD` (default `0.75`):
+
+| Clearness index Kt | Weight |
+|---|---|
+| ≥ threshold | 1.0 — clear sky, full quality |
+| threshold − 0.15 to threshold | 0.6 — marginal |
+| threshold − 0.35 to threshold − 0.15 | 0.3 — poor but usable |
+| below threshold − 0.35 | 0.0 — excluded (overcast) |
+
+Records where the clear-sky reference is below `KT_GHI_CS_FLOOR` (40 W/m², near-horizon sun) yield no meaningful Kt and are dropped, matching the tuning gate. This replaces the cloud bands because the model cloud field is biased high and false-overcasts clear days — over-rejecting exactly the clear records a shading ratio needs.
+
+**Cloud basis (fallback, Open-Meteo off).** The legacy three-band total-cloud weight:
 
 | Cloud cover | Weight |
 |---|---|
@@ -216,7 +237,7 @@ The design is **fail-safe**: when *no* cloud source is available (OWM unconfigur
 | 1.5× threshold to max\_include | 0.3 — poor but usable |
 | Above max\_include | 0.0 — excluded |
 
-Default threshold 20% (configurable 10–50%); default max\_include 60%.
+Default cloud threshold 20% (configurable 10–50%); default max\_include 60%. Either basis feeds the same clear-sky clipping detection (a clear-sky slot pinned at the clip ceiling is curtailment, not shading).
 
 ### Geometric proximity weighting
 
@@ -225,7 +246,7 @@ Each record is weighted by how close its solar geometry is to the target slot, s
 ```python
 zenith_weight  = exp(-0.5 × (Δzenith  / 10°)²)
 azimuth_weight = exp(-0.5 × (Δazimuth / 20°)²)
-combined_weight = cloud_weight × zenith_weight × azimuth_weight
+combined_weight = quality_weight × zenith_weight × azimuth_weight   # quality_weight = Kt- or cloud-based
 ```
 
 ### Seasonal window
@@ -280,18 +301,18 @@ overall_source:           db_blended
 
 ---
 
-## Feature 4 — Short-range Forecast Correction (Dropped)
+## Feature 4 — Short-range Forecast Correction (Dropped → re-scoped as Feature 7)
 
-> **Status: evaluated and dropped (v1.3.0).** Recorded for the design record.
+> **Status: dropped as a forecast *correction* (v1.3.0); re-scoped as a *decision aid* in v1.10.0b1 — see [Feature 7](#feature-7--short-horizon-forecast-confidence-load-scheduling-aid).** Recorded for the design record.
 
-The idea was to nudge the next 1–6 hours of forecast from the recent `total_pv / pv_estimate` ratio with an exponentially-decaying correction. It was dropped because:
+The idea was to nudge the next 1–6 hours of forecast from the recent `total_pv / pv_estimate` ratio with an exponentially-decaying correction. It was dropped **as a forecast correction** because:
 
 - The near-term deviation signal is cloud-driven and decays within an hour or two, so the nudge approaches a no-op by +3 — exactly where forecast error is largest.
 - It would second-guess Solcast's imagery-based near-term product with a cruder single-inverter ratio plus coarse OWM cloud.
 - A now-relative, decaying, per-horizon correction can't go through `set_dampening` (indexed by local time-of-day), so it would fork the forecast into separate "corrected" sensors, forcing users to rewire automations.
 - The durable, predictable part is already captured by the DB-driven dampening, whose ±14-day window also covers individual missing slots.
 
-No implementation is planned.
+Re-scoping it to a **decision aid that never publishes a rival forecast** (Feature 7) sidesteps these: it targets the +0–90 min window where local persistence skill is *highest*, emits a confidence score rather than a corrected kW number, and is purely advisory (no `set_dampening`, no forked forecast).
 
 ---
 
@@ -335,6 +356,26 @@ ac_arrayᵢ = ac_total × (dcᵢ / Σ dc)
 ```
 
 Since `ac_total ≈ η × Σ dc` (η ≈ constant), this yields each array's production in the AC domain (matching Solcast), sums back to the metered total, and handles clipping proportionally. Guarded against `Σ dc ≈ 0`.
+
+### Per-site forecast — apportionment fallback (v1.10.0b1)
+
+Per-site dampening needs both a per-site *actual* (above) **and** a per-site *forecast* to form a ratio. The companion reads the base's `detailedForecast-<resource_id>` attribute, but many base installs don't populate it, so per-site `pv_estimate` would be `0` and per-site dampening could never engage. `_apportion_total_forecast` fills the gap: it splits the property-wide `detailedForecast` by each site's capacity share,
+
+```
+pv_estimateᵢ(slot) = pv_estimate_total(slot) × (capacityᵢ / Σ capacity)
+```
+
+applied **only when the configured arrays share orientation** — `_azimuth_spread(azimuths) ≤ APPORTION_AZIMUTH_TOL` (10°, wrap-aware). Capacity-share apportionment of a *half-hourly* forecast assumes the same forecast-per-kW shape across arrays, which holds only at a common azimuth; differently-oriented arrays peak at different times, so a per-slot split would invent phantom timing differences and corrupt the per-site ratio — those are left unapportioned (per-site forecast `0`, the prior behaviour, so no regression). A real per-site `detailedForecast` always takes precedence. This is the prerequisite that makes **per-site shading dampening** (`_run_dampening`'s per-site `set_dampening` loop, already present) actually engage.
+
+### Per-site visibility sensors (v1.10.0b1)
+
+Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `_SiteSensorBase`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Three entities per array:
+
+- **`SiteOutputSensor`** (`<array>` PV Power 30min Average) — the array's measured generation (avg kW over the just-completed half-hour), surfaced from `_site_output` (populated in the per-site write loop); attributes carry the slot `pv_estimate` and `capacity_kw`. `None` until a multi-site cycle has produced a per-site read.
+- **`SiteShadingSensor`** (`<array>` Shading) — state is the array's **average daytime dampening factor** (1.0 = no shading, below 1.0 = the measured structural shading applied to that array); attributes carry its discovered orientation (`azimuth_compass`/`tilt`/`capacity_kw`), `shading_pct`, `min_factor`, `hours_with_db`, `clear_sky_basis`, the per-site tuning result, and a **per-site confidence** (each array keeps its own `_site_recent_bias` buffer, mirroring the property-wide advisory). The coordinator retains each array's dampening curve in `_site_dampening_tables` (previously computed-and-pushed but not kept).
+- **`SiteTunedTiltSensor`** (`<array>` Tuned Tilt) — the optimised tilt from that array's last PV tuning run (`_site_tuning_results`), with fit RMSE, record count and configured tilt/orientation as attributes. `None` until the array has tuned.
+
+The entity **display name** comes from an optional per-array field on the `sites` step that defaults to the Solcast site name; precedence is user-entered → Solcast → `Site <short-id>`. The name field uses the embedded-name key convention (the readable key *is* the label), so it needs no translation entries.
 
 ### Discovery, config model and storage
 
@@ -417,7 +458,26 @@ The three features were added in order of increasing risk, each independent and 
 2. **Adaptive dampening.** `shading_dampening.py`; 6-hourly recalculation; the DB factor blended via the confidence model. Inert when the DB is disabled. **No new dependencies.**
 3. **PV tuning (optional).** `pv_tuning.py`; daily tilt/azimuth optimisation behind the `auto_tuning` toggle; lazy numpy import. **New dependency: `numpy>=1.21.0`** (ships with HA; no scipy).
 
-A fourth feature, short-range forecast correction, was designed and dropped ([Feature 4](#feature-4--short-range-forecast-correction-dropped)).
+A fourth feature, short-range forecast correction, was designed and dropped, then re-scoped as the Feature 7 decision aid ([Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7)).
+
+---
+
+## Feature 7 — Short-horizon forecast confidence (load-scheduling aid)
+
+> **Status: v1.10.0b1 (MVP — confidence signal).** Re-scopes the dropped [Feature 4](#feature-4--short-range-forecast-correction-dropped--re-scoped-as-feature-7).
+
+A **decision aid** for scheduling deferrable heavy loads (EV, pool pump, hot water): *"can I trust the next few hours enough to turn this on now?"* It is **not** a forecast — it never publishes a rival kW number and never feeds `set_dampening`. The only defensible unique value is the **closed loop**: the base integration is open-loop (Solcast → you), while this companion measures actual production and compares it back, so the advisory annotates trust using ground truth the base never sees.
+
+**Confidence signal (`load_advisory.compute_confidence`).** Each completed daylight slot's `(pv_actual, pv_estimate)` is appended to a bounded in-memory deque (`_recent_bias`). The energy-weighted recent bias over the last `RECENT_BIAS_LOOKBACK_S` (4 h),
+
+```
+bias = Σ pv_actual / Σ pv_estimate        (daylight slots, non-zero estimate)
+confidence = round(100 · exp(−|ln(bias)| / CONFIDENCE_SCALE))   # 0–100
+```
+
+reads ~100 when output tracks the forecast and falls as they diverge (local cloud, shading, or an uncaught bias). `CONFIDENCE_SCALE = 0.45` calibrates the bands: tracking within ~±18% → **high** (≥67), within ~±40% → **medium** (≥34), beyond → **low**. Surfaced on `PvForecastConfidenceSensor` (0–100, `%`) with `rating`, `recent_bias`, `n_slots`, `horizon_hours` and `based_on` attributes. In-memory by design (rebuilds within a couple of daylight hours after a restart); needs collection (DB) enabled.
+
+**Planned next slice — Load Window entities.** A `binary_sensor` "Good Load Window" (the actionable now/not-now trigger) and a timestamp `sensor` "Next Load Window", combining the *base* forecast + battery state + export headroom + this confidence into a recommended window. The hard part is the **battery-aware usable surplus** (PV beyond what the battery and baseload will already consume, not a raw PV total) — its own design step, hence deferred from the MVP. An independent Open-Meteo forward-irradiance "second opinion" (divergence → confidence) is a later upgrade. Full design: `docs/short-horizon-nowcast-spec.md`.
 
 ---
 
@@ -511,7 +571,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.8.0** (config-flow field placement by topology + the multi-site MPPT-diagnostic fix). Earlier milestones: the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
 
 ---
 

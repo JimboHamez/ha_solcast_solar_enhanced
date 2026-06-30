@@ -1,6 +1,8 @@
 # Spec: Topology-aware per-site sensor mapping
 
-Status: **implemented and shipped in v1.9.0** (PR #34, 2026-06-26). The §13 decisions
+Status: **implemented and shipped in v1.9.0** · Version: **1.0** · Updated: **2026-06-26**
+
+(PR #34, 2026-06-26.) The §13 decisions
 were confirmed and built as PR-A (the topology gate: selector, `_infer_topology`,
 `_validate_dc_split`, mode-aware schema/parse/derive) and PR-B (derive `_total` from the
 per-site sum when no system sensor is configured). The only deferred item is the T3
@@ -193,3 +195,18 @@ Extend `tests/` config-flow tests:
 - `CHANGELOG`.
 - `CLAUDE.md` — the "Config-flow fields are placed by topology" paragraph (developer-facing).
 - Every `translations/*.json` + `strings.json` (§9).
+
+## 15. Revision history
+
+Each row is a content version of this spec; **Commit** is the commit where that version's design
+content landed. Bump the version and add a row whenever a decision lands or analysis materially
+changes. The version header and this table may post-date some rows' content (versioning was
+retrofitted onto already-committed specs), so a row's commit can predate the table;
+infrastructure-only commits — the versioning retrofit and hash back-fills — are intentionally not
+given their own rows. Full trace lives in git; this table keeps the decision evolution legible
+without archaeology.
+
+| Ver | Date       | Change                                                              | Commit    |
+|-----|------------|--------------------------------------------------------------------|-----------|
+| 1.0 | 2026-06-26 | Marked implemented/shipped in v1.9.0; §13 decisions confirmed/built | `759795c` |
+| 0.1 | 2026-06-26 | Initial design spec: topology selector, validation, derive rules    | `e8857e6` |

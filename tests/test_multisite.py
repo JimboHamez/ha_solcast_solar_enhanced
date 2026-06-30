@@ -3,6 +3,8 @@ per-site forecast matching, azimuth seeding and config-flow group derivation."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from custom_components.solcast_solar_enhanced.coordinator import (
@@ -20,6 +22,7 @@ from custom_components.solcast_solar_enhanced.config_flow import (
 )
 from custom_components.solcast_solar_enhanced.const import (
     CONF_SITE_GROUPS,
+    DOMAIN,
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
@@ -264,8 +267,330 @@ async def test_site_forecast_underscore_fallback(hass, coordinator):
     assert est == pytest.approx(1.5)
 
 
+async def test_site_forecast_underscored_id_variant(hass, coordinator):
+    """Current base versions key the attribute with the id's hyphens also underscored."""
+    rid = "8be0-533e-baad-4841"
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            # Note: hyphens inside the resource_id are underscores in the key.
+            "detailedForecast_8be0_533e_baad_4841": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 2.25},
+            ]
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, _, _ = coordinator._site_forecast_for_period(rid, start)
+    assert est == pytest.approx(2.25)
+
+
 async def test_site_forecast_missing_returns_zeros(hass, coordinator):
     assert coordinator._site_forecast_for_period("nope", 1_000_000) == (0.0, 0.0, 0.0)
+
+
+async def test_site_forecast_apportions_by_capacity_when_no_per_site_detail(hass, coordinator):
+    """No per-site detailedForecast → apportion the property total by capacity share (shared azimuth)."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 0.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            "detailedForecast": [
+                {
+                    "period_start": "2024-09-10T06:30:00+00:00",
+                    "pv_estimate": 4.5,
+                    "pv_estimate10": 3.0,
+                    "pv_estimate90": 6.0,
+                },
+            ],
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, e10, e90 = coordinator._site_forecast_for_period("a", start)
+    assert est == pytest.approx(4.5 * 3.0 / 9.0)  # 1.5
+    assert e10 == pytest.approx(3.0 * 3.0 / 9.0)  # 1.0
+    assert e90 == pytest.approx(6.0 * 3.0 / 9.0)  # 2.0
+
+
+async def test_site_forecast_per_site_detail_takes_precedence_over_apportionment(hass, coordinator):
+    """A real per-site detailedForecast is used as-is, never apportioned."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 0.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {
+            "detailedForecast-a": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 2.2},
+            ],
+            "detailedForecast": [
+                {"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 4.5},
+            ],
+        },
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    est, _, _ = coordinator._site_forecast_for_period("a", start)
+    assert est == pytest.approx(2.2)  # the real per-site value, not 4.5*3/9
+
+
+async def test_site_forecast_apportionment_skipped_on_divergent_azimuth(hass, coordinator):
+    """Arrays peaking at different times can't be capacity-apportioned per slot → zeros."""
+    coordinator._sites = [
+        {"resource_id": "a", "capacity": 3.0, "azimuth": 0.0},
+        {"resource_id": "b", "capacity": 6.0, "azimuth": 90.0},
+    ]
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "10.0",
+        {"detailedForecast": [{"period_start": "2024-09-10T06:30:00+00:00", "pv_estimate": 4.5}]},
+    )
+    import datetime as dt
+
+    start = int(dt.datetime(2024, 9, 10, 6, 30, tzinfo=dt.timezone.utc).timestamp())
+    assert coordinator._site_forecast_for_period("a", start) == (0.0, 0.0, 0.0)
+
+
+def test_azimuth_spread_wraps():
+    from custom_components.solcast_solar_enhanced.coordinator import _azimuth_spread
+
+    assert _azimuth_spread([350.0, 10.0]) == pytest.approx(20.0)
+    assert _azimuth_spread([0.0, 90.0, 5.0]) == pytest.approx(90.0)
+    assert _azimuth_spread([10.0]) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Per-site visibility sensors
+# ---------------------------------------------------------------------------
+
+
+async def test_site_shading_averages_daytime_factors(hass, coordinator):
+    coordinator._site_dampening_tables = {
+        "a": [
+            {"factor": 0.8, "source": "db_blended"},
+            {"factor": 0.9, "source": "db_history"},
+            {"factor": 1.0, "source": "night"},  # night excluded from the average
+        ]
+    }
+    assert coordinator.site_shading("a") == pytest.approx(0.85)
+
+
+async def test_site_shading_none_without_data(hass, coordinator):
+    assert coordinator.site_shading("missing") is None
+
+
+async def test_site_visibility_attributes_assemble(hass, coordinator):
+    coordinator._sites = [
+        {"resource_id": "a", "name": "Ground", "compass_degrees": 0.0, "tilt": 20.0, "capacity": 3.0, "azimuth": 0.0},
+    ]
+    coordinator._site_dampening_tables = {
+        "a": [
+            {"factor": 0.8, "source": "db_blended", "clear_sky_basis": "kt"},
+            {"factor": 1.0, "source": "night"},
+        ]
+    }
+    coordinator._site_tuning_results = {"a": {"tilt": 18.5, "rmse_kw": 0.42, "n_records": 120}}
+    coordinator._site_confidence = {"a": {"confidence": 80, "rating": "high", "recent_bias": 0.96}}
+    attrs = coordinator.site_visibility_attributes("a")
+    assert attrs["name"] == "Ground"
+    assert attrs["azimuth_compass"] == 0.0  # due north must not be coerced to None
+    assert attrs["shading_pct"] == pytest.approx(20.0)  # avg daytime factor 0.8 → 20% shading
+    assert attrs["min_factor"] == pytest.approx(0.8)
+    assert attrs["hours_with_db"] == 1
+    assert attrs["clear_sky_basis"] == "kt"
+    assert attrs["confidence"] == 80
+    assert attrs["confidence_rating"] == "high"
+    assert attrs["tuned_tilt"] == pytest.approx(18.5)
+    assert attrs["tuning_records"] == 120
+
+
+async def test_site_output_reflects_latest_reading(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "capacity": 3.0}]
+    coordinator._site_output = {"a": {"pv_actual": 2.34, "pv_estimate": 2.5}}
+    assert coordinator.site_output("a") == pytest.approx(2.34)
+    attrs = coordinator.site_output_attributes("a")
+    assert attrs["name"] == "Ground"
+    assert attrs["pv_estimate"] == pytest.approx(2.5)
+    assert attrs["capacity_kw"] == pytest.approx(3.0)
+
+
+async def test_site_output_none_without_reading(hass, coordinator):
+    assert coordinator.site_output("missing") is None
+
+
+async def test_site_tuned_tilt_from_results(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "tilt": 20.0, "compass_degrees": 0.0}]
+    coordinator._site_tuning_results = {"a": {"tilt": 18.47, "rmse_kw": 0.42, "n_records": 120}}
+    assert coordinator.site_tuned_tilt("a") == pytest.approx(18.5)  # rounded to 1 dp
+    attrs = coordinator.site_tuned_tilt_attributes("a")
+    assert attrs["rmse_kw"] == pytest.approx(0.42)
+    assert attrs["tuning_records"] == 120
+    assert attrs["configured_tilt"] == pytest.approx(20.0)
+
+
+async def test_site_tuned_tilt_none_before_tuning(hass, coordinator):
+    assert coordinator.site_tuned_tilt("missing") is None
+
+
+async def test_site_azimuth_from_discovery(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground", "azimuth": -90.0}]
+    assert coordinator.site_azimuth("a") == pytest.approx(-90.0)
+
+
+async def test_site_azimuth_none_when_unknown(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Ground"}]
+    assert coordinator.site_azimuth("a") is None
+    assert coordinator.site_azimuth("missing") is None
+
+
+async def test_site_tuned_rmse_from_results(hass, coordinator):
+    coordinator._site_tuning_results = {"a": {"tilt": 18.5, "rmse_kw": 0.4231, "n_records": 120}}
+    assert coordinator.site_tuned_rmse("a") == pytest.approx(0.4231)
+
+
+async def test_site_tuned_rmse_none_before_tuning(hass, coordinator):
+    assert coordinator.site_tuned_rmse("missing") is None
+
+
+async def test_per_site_sensors_use_per_array_device(hass, coordinator):
+    from custom_components.solcast_solar_enhanced.sensor import (
+        SiteAzimuthSensor,
+        SiteOutputSensor,
+        SiteShadingSensor,
+        SiteTunedTiltSensor,
+        SiteTuningRmseSensor,
+    )
+
+    entry = SimpleNamespace(entry_id="abc123")
+    for cls in (SiteOutputSensor, SiteShadingSensor, SiteTunedTiltSensor, SiteAzimuthSensor, SiteTuningRmseSensor):
+        sensor = cls(coordinator, entry, "site-a", "Ground")
+        # Each per-array sensor lands on its own device (entry_id + resource_id),
+        # linked back to the main integration device via via_device.
+        assert (DOMAIN, "abc123_site-a") in sensor._attr_device_info["identifiers"]
+        assert sensor._attr_device_info["via_device"] == (DOMAIN, "abc123")
+        assert sensor._attr_device_info["name"] == "Ground"
+
+
+async def test_property_tuning_sensors_hidden_only_in_multisite(hass, coordinator, mock_config_entry):
+    """Property-wide tuned tilt/azimuth/RMSE hide on the main card when arrays exist."""
+    from custom_components.solcast_solar_enhanced import sensor as sensor_mod
+    from custom_components.solcast_solar_enhanced.sensor import (
+        TuningAzimuthSensor,
+        TuningRmseSensor,
+        TuningTiltSensor,
+    )
+
+    hass.data.setdefault(DOMAIN, {})[mock_config_entry.entry_id] = coordinator
+    captured: list = []
+
+    def _add(entities):
+        captured.extend(entities)
+
+    tuning_cls = (TuningTiltSensor, TuningAzimuthSensor, TuningRmseSensor)
+
+    # Single-site (no configured groups): the aggregate IS the site → stay visible.
+    coordinator._opts = {}
+    coordinator._sites = []
+    await sensor_mod.async_setup_entry(hass, mock_config_entry, _add)
+    single = [e for e in captured if isinstance(e, tuning_cls)]
+    assert len(single) == 3
+    assert all(e.entity_registry_visible_default for e in single)
+
+    # Multi-site: per-array cards carry the meaningful values → hide on the main card.
+    captured.clear()
+    coordinator._sites = [{"resource_id": "a", "name": "Ground"}, {"resource_id": "b", "name": "Upper"}]
+    coordinator._opts = {CONF_SITE_GROUPS: [{"site": "a"}, {"site": "b"}]}
+    await sensor_mod.async_setup_entry(hass, mock_config_entry, _add)
+    multi = [e for e in captured if isinstance(e, tuning_cls)]
+    assert len(multi) == 3
+    assert all(not e.entity_registry_visible_default for e in multi)
+
+
+async def test_configured_sites_for_entities(hass, coordinator):
+    coordinator._sites = [
+        {"resource_id": "a", "name": "Ground"},
+        {"resource_id": "b", "name": "Upper"},
+    ]
+    coordinator._opts = {
+        "site_groups": [
+            {"site": "a", "ac_sensor": "sensor.ac"},
+            {"site": "b", "ac_sensor": "sensor.ac2"},
+        ]
+    }
+    pairs = coordinator.configured_sites_for_entities()
+    assert ("a", "Ground") in pairs
+    assert ("b", "Upper") in pairs
+
+
+async def test_configured_sites_empty_when_no_groups(hass, coordinator):
+    coordinator._opts = {}
+    assert coordinator.configured_sites_for_entities() == []
+
+
+# ---------------------------------------------------------------------------
+# Per-site display name (config flow → group → entity name)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_sites_input_reads_display_name():
+    _, field_map = _build_sites_schema([{"resource_id": "A", "name": "East"}], {}, mode=SITE_TOPOLOGY_DIRECT)
+    keys = field_map["A"]
+    user_input = {keys["ac"]: "sensor.east", keys["mode"]: "auto", keys["name"]: "  Ground Floor  "}
+    parsed = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+    assert parsed["A"]["name"] == "Ground Floor"  # trimmed
+
+
+def test_parse_sites_input_blank_name_is_none():
+    _, field_map = _build_sites_schema([{"resource_id": "A", "name": "East"}], {}, mode=SITE_TOPOLOGY_DIRECT)
+    keys = field_map["A"]
+    user_input = {keys["ac"]: "sensor.east", keys["mode"]: "auto", keys["name"]: "   "}
+    parsed = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+    assert parsed["A"]["name"] is None
+
+
+def test_derive_groups_direct_carries_name():
+    assignments = {"A": {"ac": "sensor.east", "dc": None, "mode": "auto", "name": "Ground"}}
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DIRECT)
+    assert groups[0]["name"] == "Ground"
+
+
+def test_derive_groups_strings_carry_name():
+    assignments = {
+        "A": {"ac": "sensor.shared", "dc": "sensor.m1", "mode": "auto", "name": "Ground"},
+        "B": {"ac": "sensor.shared", "dc": "sensor.m2", "mode": "auto", "name": "Upper"},
+    }
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+    names = {s["site"]: s.get("name") for s in groups[0]["strings"]}
+    assert names == {"A": "Ground", "B": "Upper"}
+
+
+async def test_configured_sites_prefers_user_name(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Solcast Name"}]
+    coordinator._opts = {"site_groups": [{"site": "a", "ac_sensor": "sensor.ac", "name": "Ground Floor"}]}
+    assert coordinator.configured_sites_for_entities() == [("a", "Ground Floor")]
+
+
+async def test_configured_sites_falls_back_to_solcast_name(hass, coordinator):
+    coordinator._sites = [{"resource_id": "a", "name": "Solcast Name"}]
+    coordinator._opts = {"site_groups": [{"site": "a", "ac_sensor": "sensor.ac"}]}  # no user name
+    assert coordinator.configured_sites_for_entities() == [("a", "Solcast Name")]
+
+
+async def test_configured_sites_short_id_fallback(hass, coordinator):
+    coordinator._sites = []  # nothing discovered, no user name
+    coordinator._opts = {"site_groups": [{"site": "8be0-533e", "ac_sensor": "sensor.ac"}]}
+    assert coordinator.configured_sites_for_entities() == [("8be0-533e", "Site 8be0")]
 
 
 # ---------------------------------------------------------------------------
