@@ -5,6 +5,31 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b5] - 2026-07-06
+
+> Beta. Fixes forecast retrieval on **non-English** Home Assistant installs, plus
+> internal typing hardening (no user-facing behaviour change).
+
+### Fixed
+- **Localized base entity no longer breaks forecast retrieval** (issue #41). The base
+  `solcast_solar` integration names its sensors via translation, so on a non-English
+  Home Assistant the forecast-today entity id is localized and the companion's hard-coded
+  English `sensor.solcast_pv_forecast_forecast_today` lookup returned nothing — zeroing
+  every forecast column, so `pv_estimate` was always 0 and per-site dampening/tuning was
+  starved. The base sensor is now located by its (untranslated) `detailedForecast`
+  attribute instead of its name, cached and re-resolved if it changes. Headline forecast
+  figures were already language-safe; this restores the per-slot/per-site detail. English
+  installs are unaffected.
+
+### Internal
+- **Strict `mypy` on the integration package**, enforced by a new gating CI job. Fixed the
+  52 typing errors this surfaced (annotations, `Connection | None` narrowing, and two real
+  ones: config-flow selectors now pass the `SelectSelectorMode`/`TextSelectorType` enums
+  rather than raw strings, and a nearest-sample search can no longer compare `int < None`).
+  No runtime behaviour change.
+- **`scan.sh`** (local static-analysis helper) scoped to the component; tooling caches and
+  virtualenvs added to `.gitignore` explicitly.
+
 ## [1.10.0b4] - 2026-06-30
 
 > Beta. Per-array **Azimuth** and **Tuning RMSE** sensors on each site's card, a
