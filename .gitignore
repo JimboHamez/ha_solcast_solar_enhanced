@@ -1,9 +1,18 @@
 __pycache__/
 *.pyc
 *.pyo
-.pytest_cache/
 .coverage
 htmlcov/
+
+# Tooling caches (pytest / mypy / ruff) — match at any depth, incl. the
+# custom_components/.mypy_cache/ that lands inside the tracked package.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environments (scan.sh creates .venv; venv/ is the dev env)
+.venv/
+venv/
 
 # Local working docs
 *.docx
