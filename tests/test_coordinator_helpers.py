@@ -148,6 +148,45 @@ async def test_site_forecast_underscore_fallback(hass, coordinator):
 
 
 # ---------------------------------------------------------------------------
+# _resolve_base_forecast_entity — language-independent base sensor lookup (#41)
+# ---------------------------------------------------------------------------
+
+# On non-English installs the base slugifies its sensor object_id from the
+# translated name, so the English id does not exist. E.g. German.
+LOCALIZED_FORECAST_SENSOR = "sensor.solcast_pv_prognose_prognose_heute"
+
+
+async def test_forecast_slot_resolves_localized_sensor(hass, coordinator):
+    # The English id is absent; only a localized entity carrying the untranslated
+    # detailedForecast attribute exists. The slot must still be found (issue #41).
+    start = datetime(2026, 6, 9, 2, 0, tzinfo=timezone.utc)
+    epoch = int(start.timestamp())
+    hass.states.async_set(
+        LOCALIZED_FORECAST_SENSOR,
+        "5.0",
+        {"detailedForecast": [{"period_start": start, "pv_estimate": 3.0}]},
+    )
+    assert coordinator._forecast_slot("detailedForecast", epoch)[0] == 3.0
+    assert coordinator._base_forecast_entity_id == LOCALIZED_FORECAST_SENSOR
+
+
+async def test_resolve_base_forecast_entity_none_before_first_poll(hass, coordinator):
+    # No sensor carries detailedForecast yet → resolver returns None (not a guess).
+    assert coordinator._resolve_base_forecast_entity() is None
+
+
+async def test_resolve_base_forecast_entity_reresolves_when_stale(hass, coordinator):
+    # A cached id that later loses its detailedForecast attribute is re-resolved.
+    start = datetime(2026, 6, 9, 2, 0, tzinfo=timezone.utc)
+    _set_forecast(hass, "detailedForecast", [{"period_start": start, "pv_estimate": 1.0}])
+    assert coordinator._resolve_base_forecast_entity() == FORECAST_SENSOR
+    # Canonical sensor drops its attribute; a localized one takes over.
+    hass.states.async_set(FORECAST_SENSOR, "5.0", {})
+    hass.states.async_set(LOCALIZED_FORECAST_SENSOR, "5.0", {"detailedForecast": []})
+    assert coordinator._resolve_base_forecast_entity() == LOCALIZED_FORECAST_SENSOR
+
+
+# ---------------------------------------------------------------------------
 # Base config-entry reads
 # ---------------------------------------------------------------------------
 
@@ -225,8 +264,10 @@ async def test_read_forecast_from_base_coordinator(hass, coordinator):
 
 
 async def test_read_forecast_from_base_fallback_to_sensor(hass, coordinator):
-    # No base data → fallback reads the kWh sensor + detailedForecast slot.
-    hass.states.async_set(FORECAST_SENSOR, "20.0", {})
+    # No base data → fallback reads the kWh sensor + detailedForecast slot. The
+    # sensor is located by its (untranslated) detailedForecast attribute, which
+    # the real base forecast-today sensor always carries (issue #41 resolver).
+    hass.states.async_set(FORECAST_SENSOR, "20.0", {"detailedForecast": []})
     fn, ft, *rest = coordinator._read_forecast_from_base(None)
     assert ft == pytest.approx(20.0)
     assert rest == [0.0, 0.0, 0.0]
