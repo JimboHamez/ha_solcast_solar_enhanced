@@ -225,7 +225,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         # Energy-counter baselines: {key: {"value": kwh, "epoch": int}}.
         # Persisted across restarts so energy-delta readings survive a reload.
-        self._store: Store = Store(hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}_energy_baseline")
+        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}_energy_baseline")
         self._energy_baselines: dict[str, Any] = {}
         self._baselines_dirty: bool = False
 
@@ -785,7 +785,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         compass = site.get("compass_degrees")
         if not compass:
             az = site.get("azimuth")
-            compass = (-float(az)) % 360 if az not in (None, 0, 0.0) else None
+            compass = (-float(az)) % 360 if az is not None and az not in (0, 0.0) else None
         if compass is None:
             # Manual CONF_AZIMUTH is in the Solcast convention — convert to the
             # internal frame, matching the base-derived branch above.
@@ -1253,7 +1253,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if not ids:
             return {}
         try:
-            from homeassistant.components.recorder import get_instance, history  # noqa: PLC0415
+            from homeassistant.components.recorder import (  # type: ignore[attr-defined]  # noqa: PLC0415
+                get_instance,
+                history,
+            )
         except ImportError:
             return {}
         start = datetime.fromtimestamp(start_epoch, tz=UTC)
@@ -1597,7 +1600,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         try:
             for entry in self.hass.config_entries.async_entries(BASE_DOMAIN):
                 raw = entry.options.get("site_export_limit")
-                if raw in (None, ""):
+                if raw is None or raw == "":
                     continue
                 limit = float(raw)
                 if limit > 100:

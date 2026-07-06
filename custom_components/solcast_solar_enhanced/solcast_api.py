@@ -83,7 +83,8 @@ class OWMClient:
         """Issue the GET and return parsed JSON (15s total timeout)."""
         async with session.get(OWM_URL, params=params, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             resp.raise_for_status()
-            return await resp.json()
+            data: dict[str, Any] = await resp.json()
+            return data
 
 
 class OpenMeteoClient:
@@ -190,10 +191,12 @@ class OpenMeteoClient:
         if self._session is not None:
             async with self._session.get(url, params=params, timeout=timeout) as resp:
                 resp.raise_for_status()
-                return await resp.json()
+                data: dict[str, Any] = await resp.json()
+                return data
         async with aiohttp.ClientSession() as session, session.get(url, params=params, timeout=timeout) as resp:
             resp.raise_for_status()
-            return await resp.json()
+            fresh: dict[str, Any] = await resp.json()
+            return fresh
 
     @classmethod
     def _nearest_index(cls, epochs: list[int], target: int) -> int | None:
@@ -203,7 +206,7 @@ class OpenMeteoClient:
             gap = abs(e - target)
             if best_gap is None or gap < best_gap:
                 best_i, best_gap = i, gap
-        if best_i is None or best_gap > cls._SAMPLE_TOLERANCE_S:
+        if best_gap is None or best_gap > cls._SAMPLE_TOLERANCE_S:
             return None
         return best_i
 

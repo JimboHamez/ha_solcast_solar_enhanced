@@ -13,7 +13,10 @@ from __future__ import annotations
 import logging
 import math
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,7 +147,7 @@ _TILT_BOUNDS = (0.0, 90.0)
 _SOLAR_CONSTANT = 1361.0
 
 
-def _minimize_tilt(eval_tilt, initial_tilt: float = 20.0) -> tuple[float, float]:
+def _minimize_tilt(eval_tilt: Callable[[float], float], initial_tilt: float = 20.0) -> tuple[float, float]:
     """Coarse-to-fine 1-D grid search over panel **tilt**, minimising ``eval_tilt(t)``.
 
     Azimuth is no longer searched: it is non-identifiable from time-misaligned
@@ -280,7 +283,8 @@ def run_tuning(
         else:
             diffuse = dhi_a * iso
         ground = ghi_a * albedo * (1.0 - math.cos(tr)) / 2.0
-        return beam + diffuse + ground
+        total: np.ndarray = beam + diffuse + ground
+        return total
 
     def scale_for(p: np.ndarray) -> float:
         """Closed-form least-squares capacity scale (kW per W/m²)."""
