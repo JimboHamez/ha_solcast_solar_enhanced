@@ -209,6 +209,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._db_latest_period_end: str | None = None
         self._db_sites: list[str] = []
         self._base_status: str = "not_detected"
+        # Cached entity_id of the base integration's forecast-today sensor. The
+        # base names its sensors via translation, so the English object_id is
+        # wrong on non-English installs (issue #41); this is resolved by the
+        # untranslated ``detailedForecast`` attribute instead. Re-resolved if the
+        # cached entity disappears.
+        self._base_forecast_entity_id: str | None = None
         self._auto_dampen_warned: bool = False
         # Latest captured per-MPPT DC telemetry (Phase 2), surfaced on a diagnostic
         # sensor so users can confirm their string sensors are wired and data is
@@ -1500,6 +1506,58 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         share = site_cap / total_cap
         return total[0] * share, total[1] * share, total[2] * share
 
+    def _resolve_base_forecast_entity(self) -> str | None:
+        """Locate the base integration's forecast-today sensor, language-independently.
+
+        The base integration names its sensors with ``has_entity_name`` +
+        ``translation_key``, so HA slugifies the object_id from the *translated*
+        friendly name in the active language. On non-English installs the English
+        id ``sensor.solcast_pv_forecast_forecast_today`` therefore does not exist
+        (issue #41), and a name-based lookup silently returns ``None`` — zeroing
+        every forecast column and starving per-site dampening/tuning.
+
+        The ``detailedForecast`` attribute *keys* are not translated, so the
+        sensor is instead identified by carrying one (mirroring how
+        ``discover_sites`` keys RooftopSensors off the untranslated
+        ``resource_id`` attribute). Both the bare property-wide ``detailedForecast``
+        and the per-site ``detailedForecast-<resource_id>`` / underscore variants
+        count, since some base installs expose only per-site detail. The resolved
+        id is cached and re-resolved if the entity later disappears.
+
+        Returns:
+            The base forecast-today ``entity_id``, or ``None`` if no candidate is
+            present yet (e.g. before the base's first successful poll).
+        """
+
+        def _has_detailed_forecast(state: State) -> bool:
+            return any(key.startswith("detailedForecast") for key in state.attributes)
+
+        cached = self._base_forecast_entity_id
+        if cached is not None:
+            state = self.hass.states.get(cached)
+            if state is not None and _has_detailed_forecast(state):
+                return cached
+            # Cache is stale (entity removed or renamed); fall through to re-resolve.
+            self._base_forecast_entity_id = None
+
+        # Fast path: the canonical English id on an English install.
+        canonical = "sensor.solcast_pv_forecast_forecast_today"
+        state = self.hass.states.get(canonical)
+        if state is not None and _has_detailed_forecast(state):
+            self._base_forecast_entity_id = canonical
+            return canonical
+
+        # Language-independent path: find the sensor carrying a (untranslated)
+        # ``detailedForecast`` attribute. Only the base forecast-today sensor
+        # exposes these keys.
+        for candidate in self.hass.states.async_all("sensor"):
+            if _has_detailed_forecast(candidate):
+                self._base_forecast_entity_id = candidate.entity_id
+                _LOGGER.debug("Resolved base forecast sensor to %s", candidate.entity_id)
+                return candidate.entity_id
+
+        return None
+
     def _forecast_slot(self, attr_name: str, start_epoch: int) -> tuple[float, float, float]:
         """Pick the ``detailedForecast`` slot closest to ``start_epoch``.
 
@@ -1509,7 +1567,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         ``pv_actual``. Returns zeros if the attribute is absent or no slot falls
         within half a slot (900 s) of the measured interval's start.
         """
-        state = self.hass.states.get("sensor.solcast_pv_forecast_forecast_today")
+        entity_id = self._resolve_base_forecast_entity()
+        if entity_id is None:
+            return 0.0, 0.0, 0.0
+        state = self.hass.states.get(entity_id)
         if state is None:
             return 0.0, 0.0, 0.0
         series = state.attributes.get(attr_name)
@@ -1774,7 +1835,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # pv_estimate (already average kW over the slot), keeping the sensor's
         # declared kW unit honest. Returns 0.0 if the attribute is absent.
         try:
-            forecast_today = self._read_sensor_state_float("sensor.solcast_pv_forecast_forecast_today")
+            entity_id = self._resolve_base_forecast_entity()
+            forecast_today = self._read_sensor_state_float(entity_id) if entity_id else 0.0
         except Exception:  # noqa: BLE001
             forecast_today = 0.0
         now_epoch = int(time.time())
