@@ -15,8 +15,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -146,7 +145,7 @@ class _RestoringSensorBase(_EnhancedSensorBase, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and last.native_value is not None:
             try:
-                self._restored_value = float(last.native_value)
+                self._restored_value = float(last.native_value)  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 self._restored_value = None
 
@@ -263,7 +262,7 @@ class DbRecordsSensor(_EnhancedSensorBase):
     def native_value(self) -> int | None:
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("db_records", 0)
+        return int(self.coordinator.data.get("db_records", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -502,7 +501,8 @@ class WeatherTempSensor(_EnhancedSensorBase):
     def native_value(self) -> float | None:
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("weather", {}).get("temp")
+        temp = self.coordinator.data.get("weather", {}).get("temp")
+        return float(temp) if temp is not None else None
 
 
 class WeatherCloudsSensor(_EnhancedSensorBase):
@@ -518,7 +518,8 @@ class WeatherCloudsSensor(_EnhancedSensorBase):
     def native_value(self) -> int | None:
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("weather", {}).get("clouds")
+        clouds = self.coordinator.data.get("weather", {}).get("clouds")
+        return int(clouds) if clouds is not None else None
 
 
 class BatteryChargeSensor(_RestoringSensorBase):
@@ -580,4 +581,4 @@ class BaseIntegrationSensor(_EnhancedSensorBase):
     def native_value(self) -> str | None:
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("base_status", "not_detected")
+        return str(self.coordinator.data.get("base_status", "not_detected"))

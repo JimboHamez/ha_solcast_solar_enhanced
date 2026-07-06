@@ -15,8 +15,10 @@ from homeassistant.helpers.selector import (
     NumberSelectorConfig,
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
+    TextSelectorType,
 )
 
 try:
@@ -102,7 +104,7 @@ def _input_mode_selector() -> Any:
     return SelectSelector(
         SelectSelectorConfig(
             options=PV_INPUT_MODES,
-            mode="dropdown",
+            mode=SelectSelectorMode.DROPDOWN,
             translation_key="pv_input_mode",
         )
     )
@@ -118,7 +120,7 @@ def _topology_selector() -> Any:
     return SelectSelector(
         SelectSelectorConfig(
             options=SITE_TOPOLOGIES,
-            mode="dropdown",
+            mode=SelectSelectorMode.DROPDOWN,
             translation_key="site_topology",
         )
     )
@@ -475,11 +477,11 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._discovered = discover_sites(self.hass)
         return len(self._discovered) <= 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Entry point — start the wizard at the Site & System step."""
         return await self.async_step_site(user_input)
 
-    async def async_step_site(self, user_input: dict[str, Any] | None = None):
+    async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System."""
         if user_input is not None:
             self._data.update(user_input)
@@ -488,7 +490,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = _build_site_schema({}, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
-    async def async_step_database(self, user_input: dict[str, Any] | None = None):
+    async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 2 — Storage. Built-in SQLite store, on by default; no setup needed."""
         if user_input is not None:
             self._data.update(user_input)
@@ -504,7 +506,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="database", data_schema=schema)
 
-    async def async_step_weather(self, user_input: dict[str, Any] | None = None):
+    async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 3 — Weather & irradiance.
 
         Open-Meteo (keyless, default) supplies the irradiance for PV tuning plus
@@ -519,12 +521,14 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_OPENMETEO_ENABLED, default=DEFAULT_OPENMETEO_ENABLED): BooleanSelector(),
                 vol.Required(CONF_OWM_ENABLED, default=False): BooleanSelector(),
-                vol.Optional(CONF_OWM_API_KEY, default=""): TextSelector(TextSelectorConfig(type="password")),
+                vol.Optional(CONF_OWM_API_KEY, default=""): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
             }
         )
         return self.async_show_form(step_id="weather", data_schema=schema)
 
-    async def async_step_battery(self, user_input: dict[str, Any] | None = None):
+    async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (optional)."""
         if user_input is not None:
             self._data.update(user_input)
@@ -534,7 +538,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_BATTERY_ENABLED, default=False): BooleanSelector(),
                 vol.Optional(CONF_BATTERY_MODE, default="net"): SelectSelector(
-                    SelectSelectorConfig(options=["net", "separate"], mode="dropdown")
+                    SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
                 ),
                 vol.Optional(CONF_BATTERY_NET_SENSOR): _entity_selector(),
                 vol.Optional(CONF_BATTERY_CHARGE_SENSOR): _entity_selector(),
@@ -542,7 +546,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="battery", data_schema=schema)
 
-    async def async_step_tuning(self, user_input: dict[str, Any] | None = None):
+    async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening."""
         if user_input is not None:
             self._data.update(user_input)
@@ -579,7 +583,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_ac: str | None,
         mode: str,
         errors: dict[str, str] | None = None,
-    ):
+    ) -> config_entries.ConfigFlowResult:
         """Render the per-site step for ``mode`` and remember it for the next submit."""
         self._sites_mode = mode
         schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
@@ -590,7 +594,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"count": str(len(discovered))},
         )
 
-    async def async_step_sites(self, user_input: dict[str, Any] | None = None):
+    async def async_step_sites(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 6 — Per-site sensor mapping (multi-site). Skipped if ≤1 site."""
         if self._is_single_site():
             return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
@@ -641,11 +645,11 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             self._discovered = discover_sites(self.hass)
         return len(self._discovered) <= 1
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Entry point for the options flow — start at the Site & System step."""
         return await self.async_step_site(user_input)
 
-    async def async_step_site(self, user_input: dict[str, Any] | None = None):
+    async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System (options flow)."""
         if user_input is not None:
             self._opts.update(user_input)
@@ -655,7 +659,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         schema = _build_site_schema(current, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema)
 
-    async def async_step_database(self, user_input: dict[str, Any] | None = None):
+    async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 2 — Storage (options flow)."""
         if user_input is not None:
             self._opts.update(user_input)
@@ -675,7 +679,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(step_id="database", data_schema=schema)
 
-    async def async_step_weather(self, user_input: dict[str, Any] | None = None):
+    async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 3 — Weather & Irradiance (options flow)."""
         if user_input is not None:
             self._opts.update(user_input)
@@ -690,13 +694,13 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
                 ): BooleanSelector(),
                 vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
                 vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
-                    TextSelectorConfig(type="password")
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
                 ),
             }
         )
         return self.async_show_form(step_id="weather", data_schema=schema)
 
-    async def async_step_battery(self, user_input: dict[str, Any] | None = None):
+    async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (options flow)."""
         if user_input is not None:
             self._opts.update(user_input)
@@ -707,7 +711,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(CONF_BATTERY_ENABLED, default=current.get(CONF_BATTERY_ENABLED, False)): BooleanSelector(),
                 vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, "net")): SelectSelector(
-                    SelectSelectorConfig(options=["net", "separate"], mode="dropdown")
+                    SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
                 ),
                 vol.Optional(
                     CONF_BATTERY_NET_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_NET_SENSOR)}
@@ -719,7 +723,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(step_id="battery", data_schema=schema)
 
-    async def async_step_tuning(self, user_input: dict[str, Any] | None = None):
+    async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening (options flow)."""
         if user_input is not None:
             self._opts.update(user_input)
@@ -763,7 +767,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         default_ac: str | None,
         mode: str,
         errors: dict[str, str] | None = None,
-    ):
+    ) -> config_entries.ConfigFlowResult:
         """Render the per-site step for ``mode`` and remember it for the next submit."""
         self._sites_mode = mode
         schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
@@ -774,7 +778,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={"count": str(len(discovered))},
         )
 
-    async def async_step_sites(self, user_input: dict[str, Any] | None = None):
+    async def async_step_sites(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Per-site sensor mapping (multi-site). Skipped if ≤1 site discovered."""
         if self._is_single_site():
             return self.async_create_entry(data=self._opts)

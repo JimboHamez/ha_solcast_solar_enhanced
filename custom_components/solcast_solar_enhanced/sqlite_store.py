@@ -245,6 +245,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._insert_many, [record])
 
     def _insert_many(self, records: list[dict[str, Any]]) -> bool:
+        assert self._conn is not None  # Narrowed by async_insert_record's guard.
         try:
             rows = [self._row_values(r) for r in records]
         except KeyError as exc:
@@ -277,6 +278,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._prune, retention_days)
 
     def _prune(self, retention_days: int) -> int:
+        assert self._conn is not None  # Narrowed by async_prune's guard.
         cutoff = int(time.time()) - retention_days * 86400
         try:
             with self._lock:
@@ -302,6 +304,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._migrate_azimuth, latitude, longitude)
 
     def _migrate_azimuth(self, latitude: float, longitude: float) -> int:
+        assert self._conn is not None  # Narrowed by async_migrate's guard.
         try:
             with self._lock:
                 version = self._conn.execute("PRAGMA user_version").fetchone()[0]
@@ -345,6 +348,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._record_count)
 
     def _record_count(self) -> int:
+        assert self._conn is not None  # Narrowed by async_get_record_count's guard.
         try:
             with self._lock:
                 cur = self._conn.execute("SELECT COUNT(*) FROM solcast_data")
@@ -366,6 +370,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._sites)
 
     def _sites(self) -> list[str]:
+        assert self._conn is not None  # Narrowed by async_get_sites' guard.
         try:
             with self._lock:
                 cur = self._conn.execute("SELECT DISTINCT site FROM solcast_data")
@@ -427,7 +432,8 @@ class SqliteStore:
         if self._conn is None:
             return []
         site_clause, site_params = self._site_filter(site)
-        gate_clause, gate_params = "", ()
+        gate_clause = ""
+        gate_params: tuple[Any, ...] = ()
         if kt_threshold is not None:
             # Multiply form avoids dividing by a near-zero clear-sky reference.
             gate_clause = (
@@ -453,6 +459,7 @@ class SqliteStore:
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        assert self._conn is not None  # Narrowed by each async query wrapper's guard.
         try:
             with self._lock:
                 cur = self._conn.execute(sql, params)

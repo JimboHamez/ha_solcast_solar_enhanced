@@ -22,3 +22,23 @@ jobs:
           pip install "numpy>=1.21.0" "scipy>=1.7.0"
       - name: Run tests
         run: pytest -q
+
+  mypy:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements_test.txt pulls Home Assistant so mypy can resolve the
+          # HA imports; numpy backs the PV-tuning type annotations.
+          pip install -r requirements_test.txt
+          pip install "numpy>=1.21.0" mypy
+      - name: Type check (component only)
+        # Strict config lives in pyproject.toml [tool.mypy]; scoped to the
+        # integration package (tests/tools/analysis are intentionally exempt).
+        run: mypy custom_components/solcast_solar_enhanced

@@ -1,3 +1,19 @@
+[tool.mypy]
+# Strict type checking, scoped to the integration package. CLAUDE.md mandates
+# fully-typed, mypy-compliant component code; tests/tools/analysis are exempt.
+python_version = "3.13"
+strict = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+# Some idiomatic HA Any remains (config-flow user_input, voluptuous schema
+# dicts, raw-JSON payloads); allow those without disabling strictness wholesale.
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+# The intentionally-unclean dirs are not held to the strict bar.
+module = ["tests.*", "tools.*", "analysis.*", "scripts.*"]
+ignore_errors = true
+
 [tool.ruff]
 # Target version corresponds to Home Assistant's runtime minimum environment
 target-version = "py313"
