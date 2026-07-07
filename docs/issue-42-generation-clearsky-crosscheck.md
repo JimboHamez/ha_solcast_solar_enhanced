@@ -1,9 +1,11 @@
-# Discussion: Generation-based clear-sky cross-check (issue #42)
+# Discussion: Generation-based clear-sky cross-check (discussion #47)
 
-Status: **draft / design discussion** · Version: **0.1** · Updated: **2026-07-06**
+Status: **draft / design discussion** · Version: **0.2** · Updated: **2026-07-07**
 
-Response draft + design framing for [issue #42 — *Use real-time solar generation curve
-smoothness to validate/override Open-Meteo clear-sky windows*](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/42).
+Response draft + design framing for [discussion #47 — *Use real-time solar generation curve
+smoothness to validate/override Open-Meteo clear-sky windows*](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/47)
+(originally filed as issue #42, since converted to a discussion; the §2 reply was posted there
+on 2026-07-07).
 No code. Relates to the Kt clear-sky gate (`sqlite_store.async_get_records_for_tuning` /
 `async_get_records_for_dampening`, `pv_tuning.clearsky_ghi`) and to the seasonal
 clear-sky-reference-quality work paused until spring 2026.
@@ -125,7 +127,8 @@ when clear-and-misty AU days are available.
 
 ## 6. Open decisions
 
-- Post the §2 reply as-is, or trim for length first.
+- ~~Post the §2 reply as-is, or trim for length first.~~ **Resolved** — posted as-is to
+  [discussion #47](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/47) on 2026-07-07.
 - Build the `curve_clearness.py` prototype now (scaffold + offline evaluation on the existing DB),
   or hold entirely until spring data exists.
 - Volatility-only (broken-cloud rejecter) vs the fuller shape+amplitude self-clearness — pending the
