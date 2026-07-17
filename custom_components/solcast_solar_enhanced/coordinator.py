@@ -6,7 +6,7 @@ import logging
 import statistics
 import time
 from collections import Counter, deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
@@ -511,6 +511,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "dc_current2": total_dc[3],
                 "dc_vmed1": total_vmed[0],
                 "dc_vmed2": total_vmed[1],
+                # The forecast before our own dampening — the shading ratio's real
+                # denominator (issue #50). 0 when the base can't supply it.
+                "pv_estimate_undampened": round(
+                    await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch), 4
+                ),
                 **self._irradiance_for_storage(),
             }
             await self._db.async_insert_record(record)
@@ -560,6 +565,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "dc_current2": s_dc[3],
                         "dc_vmed1": s_vmed[0],
                         "dc_vmed2": s_vmed[1],
+                        "pv_estimate_undampened": round(
+                            await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
+                        ),
                         # Irradiance is property-wide weather: same values on every site.
                         **self._irradiance_for_storage(),
                     }
@@ -1018,6 +1026,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "avg_quality": 0.0,
                         "clipped_excluded": 0,
                         "forecast_clipped": 0,
+                        "undampened_records": 0,
                     }
                 )
                 continue
@@ -1446,6 +1455,71 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         ``_total`` row gets a real forecast instead of zeros.
         """
         return self._forecast_slot("detailedForecast", start_epoch)
+
+    async def _fetch_undampened_estimate(self, site: str, slot_start_epoch: int) -> float:
+        """Return the base's pre-dampening ``pv_estimate`` (avg kW) for one half-hour slot.
+
+        Every other ``pv_estimate`` here comes from the base's ``detailedForecast``,
+        which the base builds from its *dampened* forecast set — already multiplied by
+        the factors this integration pushed. Using that as the shading ratio's
+        denominator measures output against a forecast we ourselves corrected, a
+        feedback loop that settles at the square root of the true ratio (issue #50).
+        The base's ``query_forecast_data`` action exposes the undampened series, so the
+        stored ratio can be anchored to a forecast our dampening never touched.
+
+        Args:
+            site: A Solcast ``resource_id``, or ``DEFAULT_SITE_ID`` for the property total.
+            slot_start_epoch: Start of the half-hour slot, snapped to the boundary.
+
+        Returns:
+            The undampened average kW, or ``0.0`` when the base cannot answer — an
+            older base without the action, a slot outside the ~28 days of undampened
+            data it retains, or a malformed response. Callers store the 0 and
+            ``compute_dampening`` falls back to the dampened figure.
+        """
+        if not self.hass.services.has_service(BASE_DOMAIN, "query_forecast_data"):
+            return 0.0
+        # The action maps underscores to hyphens in the site id, so '_total' would
+        # become a bogus '-total'; the property total is spelled 'all' instead.
+        target = "all" if site == DEFAULT_SITE_ID else site
+        start = datetime.fromtimestamp(slot_start_epoch, tz=UTC)
+        try:
+            response = await self.hass.services.async_call(
+                BASE_DOMAIN,
+                "query_forecast_data",
+                {
+                    "start_date_time": start,
+                    "end_date_time": start + timedelta(seconds=1800),
+                    "undampened": True,
+                    "site": target,
+                },
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — the base raises several unrelated types.
+            _LOGGER.debug("Undampened forecast unavailable for %s: %s", target, exc)
+            return 0.0
+
+        # The action's payload is raw JSON to the type checker, so every hop is
+        # narrowed rather than trusted; period_start arrives as a real datetime
+        # because the call is in-process.
+        rows = (response or {}).get("data")
+        if not isinstance(rows, (list, tuple)):
+            return 0.0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            period_start = row.get("period_start")
+            estimate = row.get("pv_estimate")
+            if not isinstance(period_start, datetime) or not isinstance(estimate, (int, float, str)):
+                continue
+            if int(period_start.timestamp()) != slot_start_epoch:
+                continue
+            try:
+                return float(estimate)
+            except (TypeError, ValueError):
+                return 0.0
+        return 0.0
 
     def _site_forecast_for_period(self, resource_id: str, start_epoch: int) -> tuple[float, float, float]:
         """Return (pv_estimate, pv_estimate10, pv_estimate90) for a site's slot.
@@ -2100,6 +2174,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # irradiance) or the legacy OWM cloud bands. Uniform across all slots.
         if self._dampening_table:
             attrs["clear_sky_basis"] = self._dampening_table[0].get("clear_sky_basis", "cloud")
+            # How many of the weighted records carry the base's pre-dampening
+            # forecast. Records without it fall back to the dampened figure, whose
+            # ratio is biased toward 1.0 (issue #50); the count only climbs as new
+            # rows accumulate, since old rows cannot be backfilled.
+            attrs["undampened_records"] = max(
+                (s.get("undampened_records", 0) for s in self._dampening_table), default=0
+            )
         # Gate state: when true, the push was held at neutral 1.0 because a tuned
         # orientation diverges from the configured Solcast value (see repair issue).
         attrs["gated"] = self._dampening_gated

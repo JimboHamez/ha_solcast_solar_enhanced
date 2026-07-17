@@ -1016,3 +1016,125 @@ async def test_run_site_tuning_skips_site_without_records(hass):
 
     assert "r1" in coord._site_tuning_results
     assert "r2" not in coord._site_tuning_results
+
+
+# ---------------------------------------------------------------------------
+# _fetch_undampened_estimate — the pre-dampening denominator (issue #50)
+# ---------------------------------------------------------------------------
+
+SLOT = 1717200000  # A clean half-hour boundary.
+
+
+def _register_query(hass, handler):
+    """Register a stand-in for the base's query_forecast_data action."""
+    hass.services.async_register(
+        BASE_DOMAIN, "query_forecast_data", handler, supports_response="only"
+    )
+
+
+async def test_fetch_undampened_returns_matching_slot(hass, coordinator):
+    captured = {}
+
+    async def handler(call):
+        captured.update(call.data)
+        return {"data": [{"period_start": datetime.fromtimestamp(SLOT, tz=timezone.utc),
+                          "pv_estimate": 6.5}]}
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 6.5
+    # The property total is addressed as 'all': the action maps underscores to
+    # hyphens, so '_total' would arrive as a bogus '-total'.
+    assert captured["site"] == "all"
+    assert captured["undampened"] is True
+
+
+async def test_fetch_undampened_passes_site_resource_id(hass, coordinator):
+    captured = {}
+
+    async def handler(call):
+        captured.update(call.data)
+        return {"data": [{"period_start": datetime.fromtimestamp(SLOT, tz=timezone.utc),
+                          "pv_estimate": 3.0}]}
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate("8be0-533e-baad-4841", SLOT) == 3.0
+    assert captured["site"] == "8be0-533e-baad-4841"
+
+
+async def test_fetch_undampened_no_service_returns_zero(hass, coordinator):
+    """An older base without the action must degrade, not raise."""
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 0.0
+
+
+async def test_fetch_undampened_service_error_returns_zero(hass, coordinator):
+    """The base raises when the slot falls outside its retained undampened window."""
+
+    async def handler(call):
+        raise ValueError("Range is invalid")
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 0.0
+
+
+async def test_fetch_undampened_ignores_other_slots(hass, coordinator):
+    """A row for a different period must never be used as this slot's denominator."""
+
+    async def handler(call):
+        return {"data": [{"period_start": datetime.fromtimestamp(SLOT + 1800, tz=timezone.utc),
+                          "pv_estimate": 9.9}]}
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 0.0
+
+
+async def test_fetch_undampened_malformed_response_returns_zero(hass, coordinator):
+    """Junk payload shapes must not raise into the update loop."""
+
+    async def handler(call):
+        return {"data": ["not-a-dict", {"period_start": None, "pv_estimate": 1.0}]}
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 0.0
+
+
+async def test_fetch_undampened_empty_response_returns_zero(hass, coordinator):
+    async def handler(call):
+        return {"data": []}
+
+    _register_query(hass, handler)
+    assert await coordinator._fetch_undampened_estimate(DEFAULT_SITE_ID, SLOT) == 0.0
+
+
+async def test_do_update_stores_undampened_estimate_on_total_row(hass, mock_base_coordinator):
+    """End-to-end: a real update cycle asks the base for the pre-dampening forecast
+    and persists it alongside the dampened one (issue #50)."""
+    asked = []
+
+    async def handler(call):
+        asked.append(call.data["site"])
+        # Answer for whatever slot the cycle actually asked about.
+        return {"data": [{"period_start": call.data["start_date_time"], "pv_estimate": 7.75}]}
+
+    _register_query(hass, handler)
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+
+    await coord._do_update()
+
+    row = coord._db.records[0]
+    assert asked == ["all"], "the property total must be queried as 'all'"
+    assert row["pv_estimate_undampened"] == pytest.approx(7.75)
+    # The dampened estimate is still stored — both are kept.
+    assert row["pv_estimate"] == pytest.approx(3.0)
+
+
+async def test_do_update_undampened_absent_stores_zero(hass, mock_base_coordinator):
+    """With no base action registered the cycle still writes, storing the 0 sentinel."""
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+
+    await coord._do_update()
+
+    assert coord._db.records[0]["pv_estimate_undampened"] == 0.0

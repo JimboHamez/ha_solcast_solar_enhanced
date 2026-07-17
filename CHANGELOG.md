@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b6] - 2026-07-17
+
+> Beta. Breaks a feedback loop in shading dampening: the actual/forecast ratio was
+> measured against a forecast this integration had already dampened.
+
+### Fixed
+- **Shading dampening no longer measures output against its own dampened forecast**
+  ([issue #50](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/50)). `pv_estimate`
+  was read from the base's `detailedForecast`, which the base builds from its *dampened*
+  forecast set — already multiplied by the factors this integration pushed. Using it as the
+  shading ratio's denominator closed a feedback loop: measured ratio `R/f` rather than `R`,
+  which converges (stably, so it looks settled) on `√R` instead of the true ratio `R`. A
+  genuinely 50%-shaded array would rest at a 0.71 factor instead of 0.50. The ratio now
+  divides by the base's pre-dampening forecast, fetched per slot via the base's
+  `query_forecast_data` action and stored in a new `pv_estimate_undampened` column.
+
+  Measured impact on a live dual-array install was ~0.5% (max 0.005 on a factor), because the
+  distortion scales with dampening confidence α — at mature α it reaches ~20 percentage points
+  of shading never applied. The bug was therefore invisible while α was record-starved and
+  would have bitten exactly as the feature started working.
+
+  Not backfillable: the base retains only ~28 days of undampened data, so pre-upgrade rows
+  keep the old (biased) denominator and are replaced as new rows accumulate. Rows without a
+  clean denominator still contribute — a slightly biased record beats no record. Installs on
+  a base too old to answer the action degrade to the previous behaviour rather than failing.
+
+### Added
+- **`undampened_records` attribute** on the Shading sensor — how many weighted records carry
+  the pre-dampening denominator. Climbs from 0 after upgrading as new rows land.
+
+### Internal
+- New `pv_estimate_undampened` column via the additive `_ADDED_COLUMNS` path (idempotent
+  `ALTER TABLE`, existing DBs read 0). PV tuning is unaffected (it fits irradiance against
+  `pv_actual` and never reads `pv_estimate`); the forecast-confidence advisory deliberately
+  continues to use the dampened estimate, since it measures output against the forecast the
+  user actually sees.
+
 ## [1.10.0b5] - 2026-07-06
 
 > Beta. Fixes forecast retrieval on **non-English** Home Assistant installs, plus

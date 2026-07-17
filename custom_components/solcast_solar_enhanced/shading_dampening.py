@@ -101,8 +101,13 @@ def compute_dampening(
     for export-curtailed records (see the loop below) so curtailment is not
     mistaken for shading.
 
+    The ratio's denominator is each record's ``pv_estimate_undampened`` — the base's
+    forecast *before* it applied the factors this integration pushed. Falling back to
+    the dampened ``pv_estimate`` (rows predating 1.10.0b6) biases the ratio toward
+    1.0, since that forecast already carries our own correction (issue #50).
+
     Returns dict with: factor, alpha, source, clear_sky_basis, quality_records,
-    avg_quality, clipped_excluded, forecast_clipped
+    avg_quality, clipped_excluded, forecast_clipped, undampened_records
     """
     clip_kw = capacity_kw * clipping_threshold
     basis = "kt" if kt_threshold is not None else "cloud"
@@ -112,11 +117,21 @@ def compute_dampening(
     clipped_excluded = 0
     forecast_clipped = 0
     n_records = 0
+    n_undampened = 0
 
     for r in records:
         pv_actual = float(r.get("pv_actual", 0) or 0)
         total_pv = pv_actual  # inverter AC output already includes export and battery
-        pv_est = float(r.get("pv_estimate", 0) or 0)
+        # Denominator must be the forecast *before* our own dampening. ``pv_estimate``
+        # is read back from the base's detailedForecast, which the base has already
+        # multiplied by the factors we pushed, so measuring against it closes a
+        # feedback loop that settles at sqrt(ratio) rather than the true ratio
+        # (issue #50). A 0 means the base could not supply an undampened value (rows
+        # written before 1.10.0b6, or a base too old to answer), so fall back to the
+        # dampened figure — a slightly biased record still beats no record.
+        pv_est_raw = float(r.get("pv_estimate_undampened", 0) or 0)
+        used_undampened = pv_est_raw > 0
+        pv_est = pv_est_raw if used_undampened else float(r.get("pv_estimate", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
         # Distinguish a genuine 0% (clearest sky — the highest-quality records for
         # a shading ratio) from a missing value. A bare `or 100` would coerce a
@@ -187,6 +202,10 @@ def compute_dampening(
         weighted_ratio_sum += combined * ratio
         total_weight += combined
         n_records += 1
+        # Counted only once the record survives every filter, so the diagnostic
+        # reflects the records actually weighted into the factor.
+        if used_undampened:
+            n_undampened += 1
 
     if total_weight < 1e-6 or n_records == 0:
         # No usable DB data — stay neutral (no dampening). We do not consult the
@@ -200,6 +219,7 @@ def compute_dampening(
             "avg_quality": 0.0,
             "clipped_excluded": clipped_excluded,
             "forecast_clipped": forecast_clipped,
+            "undampened_records": 0,
         }
 
     db_factor = weighted_ratio_sum / total_weight
@@ -232,6 +252,7 @@ def compute_dampening(
         "avg_quality": round(avg_quality, 3),
         "clipped_excluded": clipped_excluded,
         "forecast_clipped": forecast_clipped,
+        "undampened_records": n_undampened,
     }
 
 
