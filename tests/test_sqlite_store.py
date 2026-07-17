@@ -529,3 +529,68 @@ async def test_kt_gate_recovers_clearsky_on_reference_db(hass):
     # The clearness gate recovers the genuinely clear slots (18 at Kt>=0.75).
     assert len(kt_rows) == 18
     assert all(r["ghi"] > 0 for r in kt_rows)
+
+
+_UNDAMP_COL = "pv_estimate_undampened"
+
+
+async def test_insert_and_read_undampened_estimate(store):
+    """The pre-dampening forecast round-trips (issue #50 denominator)."""
+    await store.async_insert_record(_record(JUNE1, pv_estimate_undampened=8.25))
+    rows = store._query(f"SELECT {_UNDAMP_COL} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{"pv_estimate_undampened": 8.25}]
+
+
+async def test_insert_undampened_estimate_defaults_to_zero(store):
+    """0 is the 'base couldn't supply it' sentinel; dampening falls back to pv_estimate."""
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_UNDAMP_COL} FROM solcast_data", ())
+    assert rows == [{"pv_estimate_undampened": 0.0}]
+
+
+async def test_dampening_query_returns_undampened_estimate(store):
+    """compute_dampening needs the column, so the dampening query must select it."""
+    await store.async_insert_record(_record(JUNE1, pv_estimate_undampened=9.5))
+    doy = int(datetime.fromtimestamp(JUNE1, tz=timezone.utc).strftime("%j"))
+    records = await store.async_get_records_for_dampening(doy, site="_total")
+    assert records and records[0]["pv_estimate_undampened"] == 9.5
+
+
+async def test_connect_adds_undampened_column_to_legacy_db(hass, tmp_path):
+    """An existing DB gains the column additively; legacy rows read 0, not NULL."""
+    import sqlite3
+
+    path = str(tmp_path / "pre_undamp.db")
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        CREATE TABLE solcast_data (
+          "index" INTEGER PRIMARY KEY AUTOINCREMENT,
+          period_end TEXT NOT NULL, period_end_epoch INTEGER NOT NULL,
+          period_start TEXT NOT NULL, site TEXT NOT NULL DEFAULT '_total',
+          pv_actual REAL NOT NULL, pv_export REAL NOT NULL DEFAULT 0,
+          pv_estimate REAL NOT NULL, pv_estimate10 REAL NOT NULL,
+          pv_estimate90 REAL NOT NULL, azimuth REAL NOT NULL, zenith REAL NOT NULL,
+          temp REAL NOT NULL, clouds INTEGER NOT NULL, description TEXT NOT NULL,
+          battery_charge REAL NOT NULL DEFAULT 0,
+          UNIQUE(period_end_epoch, site)
+        );
+        """
+    )
+    con.execute(
+        'INSERT INTO solcast_data (period_end, period_end_epoch, period_start, site,'
+        " pv_actual, pv_estimate, pv_estimate10, pv_estimate90, azimuth, zenith,"
+        " temp, clouds, description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("x", JUNE1, "y", "_total", 3.0, 4.0, 3.0, 5.0, 180.0, 35.0, 20.0, 10, "clear"),
+    )
+    con.commit()
+    con.close()
+
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    assert s._query(f"SELECT {_UNDAMP_COL} FROM solcast_data", ()) == [{"pv_estimate_undampened": 0.0}]
+    await s.async_insert_record(_record(JUNE1 + 1800, pv_estimate_undampened=7.0))
+    assert s._query(
+        f"SELECT {_UNDAMP_COL} FROM solcast_data WHERE period_end_epoch = ?", (JUNE1 + 1800,)
+    ) == [{"pv_estimate_undampened": 7.0}]
+    await s.async_close()

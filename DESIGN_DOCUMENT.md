@@ -267,6 +267,14 @@ midpoint = 30 / average_quality
 
 So with little data the factor sits near a no-op `1.0` and ramps toward the measured ratio as confidence builds. Scaling the midpoint by average quality means a looser cloud threshold needs proportionally more records before the DB factor is trusted.
 
+**The ratio's denominator must be the base's *undampened* forecast.** The `pv_estimate` exposed by the base's `detailedForecast` has already been multiplied by the factors this integration pushed, so dividing by it measures `R/f` rather than the true ratio `R`. Substituting into the blend above gives a fixed point of
+
+```
+f* = [ (1 − α) + √((1 − α)² + 4αR) ] / 2      →   √R   as α → 1
+```
+
+which is *stable* for all α < 1 (`|g′(f*)| = αR/f*² < 1`) — so it never oscillates, it quietly settles on the wrong answer and looks converged. A genuinely 50%-shaded slot rests at 0.71 rather than 0.50. The loop's cost is negligible while α is starved (~0.013 at α = 0.23) and reaches ~0.20 at α → 1, i.e. it appears only once the feature matures. Fixed in 1.10.0b6 (issue #50) by storing `pv_estimate_undampened` from the base's `query_forecast_data` action and dividing by that; records lacking it (pre-upgrade — the base keeps only ~28 days of undampened history) fall back to the dampened figure rather than being dropped.
+
 | Quality-weighted records | α (20% thr, avg q 0.9) | α (35% thr, avg q 0.5) |
 |---|---|---|
 | 0 | 0.00 | 0.00 |

@@ -87,6 +87,13 @@ _ADDED_COLUMNS = (
     # bypass/partial-shadow) and the Vmp-band calibrator; nothing consumes it yet.
     ("dc_vmed1", "REAL NOT NULL DEFAULT 0"),
     ("dc_vmed2", "REAL NOT NULL DEFAULT 0"),
+    # The base integration's forecast for this slot *before* it applied our pushed
+    # dampening factors. ``pv_estimate`` is read from the base's detailedForecast,
+    # which is already dampened, so using it as the shading ratio's denominator
+    # measures output against a forecast we ourselves corrected (issue #50). Not
+    # backfillable — the base retains only ~28 days of undampened data — so 0 means
+    # "unknown" and the ratio falls back to ``pv_estimate``.
+    ("pv_estimate_undampened", "REAL NOT NULL DEFAULT 0"),
 )
 
 # Columns written by an insert, in order. Shared by single and bulk inserts.
@@ -115,6 +122,7 @@ _INSERT_COLUMNS = (
     "dhi",
     "dc_vmed1",
     "dc_vmed2",
+    "pv_estimate_undampened",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -236,6 +244,7 @@ class SqliteStore:
             record.get("dhi", 0.0) or 0.0,
             record.get("dc_vmed1", 0.0) or 0.0,
             record.get("dc_vmed2", 0.0) or 0.0,
+            record.get("pv_estimate_undampened", 0.0) or 0.0,
         )
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:
@@ -392,6 +401,7 @@ class SqliteStore:
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, pv_estimate10, "
             "pv_estimate90, azimuth, zenith, clouds, ghi, "
+            "COALESCE(pv_estimate_undampened, 0.0) AS pv_estimate_undampened, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
             "WHERE pv_actual > 0 AND pv_estimate > 0 "

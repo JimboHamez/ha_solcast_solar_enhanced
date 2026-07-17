@@ -341,3 +341,75 @@ def test_compute_dampening_kt_drops_near_horizon_record():
     assert clearsky_ghi(88.0) < 40.0
     result = compute_dampening([record] * 200, 10.0, 20, 60, 0.95, 88.0, 180.0, kt_threshold=0.75)
     assert result["source"] == "no_data"
+
+
+# ---------------------------------------------------------------------------
+# Undampened denominator (issue #50)
+# ---------------------------------------------------------------------------
+
+def _loop_record(pv_actual: float, dampened: float, undampened: float) -> dict:
+    """A clear-sky record whose dampened and pre-dampening forecasts differ."""
+    return {
+        "pv_actual": pv_actual,
+        "pv_estimate": dampened,
+        "pv_estimate_undampened": undampened,
+        "pv_export": 0.0,
+        "battery_charge": 0.0,
+        "clouds": 0,
+        "zenith": 45.0,
+        "azimuth": 180.0,
+    }
+
+
+def test_compute_dampening_prefers_undampened_denominator():
+    """The ratio must divide by the base's pre-dampening forecast.
+
+    Reading `pv_estimate` back out of the base's already-dampened detailedForecast
+    measures output against a forecast our own pushed factors produced, which biases
+    the ratio toward 1.0 and hides shading (issue #50).
+    """
+    # True shading is 4.0/10.0 = 0.4. A previously-pushed 0.5 factor left the
+    # dampened forecast at 5.0, which would read as a much milder 4.0/5.0 = 0.8.
+    records = [_loop_record(pv_actual=4.0, dampened=5.0, undampened=10.0)] * 400
+    result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["alpha"] > 0.95, "expected a converged alpha for this record count"
+    assert result["factor"] == pytest.approx(0.4, abs=0.02)
+    assert result["undampened_records"] == 400
+
+
+def test_compute_dampening_falls_back_to_dampened_estimate():
+    """Rows predating 1.10.0b6 store 0, so the dampened figure is still used."""
+    records = [_loop_record(pv_actual=4.0, dampened=5.0, undampened=0.0)] * 400
+    result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["factor"] == pytest.approx(0.8, abs=0.02)
+    assert result["undampened_records"] == 0
+
+
+def test_compute_dampening_mixed_undampened_availability():
+    """A window spanning the upgrade uses each record's best available denominator."""
+    records = [_loop_record(4.0, 5.0, 10.0)] * 200 + [_loop_record(4.0, 5.0, 0.0)] * 200
+    result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["undampened_records"] == 200
+    # Half the records read 0.4, half read the biased 0.8 ⇒ between the two.
+    assert 0.4 < result["factor"] < 0.8
+
+
+def test_compute_dampening_undampened_absent_key_is_safe():
+    """A record dict without the key at all must not raise."""
+    record = {"pv_actual": 4.0, "pv_estimate": 5.0, "pv_export": 0.0,
+              "battery_charge": 0.0, "clouds": 0, "zenith": 45.0, "azimuth": 180.0}
+    result = compute_dampening([record] * 50, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["undampened_records"] == 0
+    assert result["source"] != "no_data"
+
+
+def test_compute_dampening_undampened_count_excludes_filtered_records():
+    """The count reports records actually weighted in, not merely seen.
+
+    An overcast record carries an undampened forecast but is dropped by the
+    clear-sky gate, so it must not inflate the diagnostic.
+    """
+    clear = _loop_record(4.0, 5.0, 10.0)
+    overcast = dict(_loop_record(4.0, 5.0, 10.0), clouds=100)
+    result = compute_dampening([clear] * 30 + [overcast] * 70, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["undampened_records"] == 30
