@@ -91,6 +91,14 @@ def compute_dampening(
     DB-measured actual/estimate ratio; no values from the base solcast_solar
     integration are consulted.
 
+    That ratio is the **energy-weighted aggregate** ``Σ(w·actual) / Σ(w·estimate)``,
+    not the weighted mean of each record's own ``actual/estimate``. The mean of
+    ratios is unusable here: a slot the base forecast at 0.2 kW that produced 1 kW
+    contributes 5.0 and swamps the honest records, and a single bad Solcast poll can
+    lift a whole hour's mean above 1.0 — which ``_push_dampening`` then clamps to
+    "no dampening at all", silently discarding real shading. Under the aggregate form
+    each record's influence is bounded by its own energy (issue #52).
+
     Each record's quality weight comes from its clear-sky basis. When
     ``kt_threshold`` is given (Open-Meteo irradiance available) the measured
     clearness index ``Kt = ghi / clearsky_ghi(zenith)`` drives the weight, since the
@@ -113,7 +121,8 @@ def compute_dampening(
     basis = "kt" if kt_threshold is not None else "cloud"
 
     total_weight = 0.0
-    weighted_ratio_sum = 0.0
+    weighted_actual_sum = 0.0
+    weighted_est_sum = 0.0
     clipped_excluded = 0
     forecast_clipped = 0
     n_records = 0
@@ -198,8 +207,16 @@ def compute_dampening(
                 effective_est = clipped
                 forecast_clipped += 1
 
-        ratio = total_pv / effective_est
-        weighted_ratio_sum += combined * ratio
+        # Accumulate the *energy* either side of the ratio rather than each record's
+        # own ratio. db_factor is Σ(w·actual)/Σ(w·estimate), not the weighted mean of
+        # actual/estimate: E[A/F] ≠ E[A]/E[F], and A/F has an exploding right tail as
+        # F approaches zero, so a slot forecast at 0.2 kW that produced 1 kW enters a
+        # mean-of-ratios at 5.0 and drowns out every honest record. Under the
+        # aggregate form that record contributes only its 0.2 kW to the denominator,
+        # so its influence is bounded by its own size. Mirrors the estimator
+        # ``load_advisory.compute_confidence`` already uses (Σactual/Σestimate).
+        weighted_actual_sum += combined * total_pv
+        weighted_est_sum += combined * effective_est
         total_weight += combined
         n_records += 1
         # Counted only once the record survives every filter, so the diagnostic
@@ -207,7 +224,9 @@ def compute_dampening(
         if used_undampened:
             n_undampened += 1
 
-    if total_weight < 1e-6 or n_records == 0:
+    # A zero weighted forecast leaves the ratio undefined (every surviving record
+    # forecast ~0 kW), which carries no shading signal — treat it as no data.
+    if total_weight < 1e-6 or n_records == 0 or weighted_est_sum < 1e-9:
         # No usable DB data — stay neutral (no dampening). We do not consult the
         # base integration's factors.
         return {
@@ -222,7 +241,7 @@ def compute_dampening(
             "undampened_records": 0,
         }
 
-    db_factor = weighted_ratio_sum / total_weight
+    db_factor = weighted_actual_sum / weighted_est_sum
     avg_quality = total_weight / n_records
 
     # α sigmoid: x² / (x² + midpoint²), midpoint scaled by quality

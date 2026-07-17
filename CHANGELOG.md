@@ -5,6 +5,44 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b7] - 2026-07-17
+
+> Beta. A single bad Solcast forecast poll could cancel an entire hour's shading
+> dampening. The measured ratio is now an energy-weighted aggregate.
+
+### Fixed
+- **One bad forecast poll can no longer erase an hour of shading**
+  ([issue #52](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/52)).
+  `db_factor` was the weighted **mean of each record's `actual/estimate`**, while
+  `_push_dampening` clamps the resulting factor to `[0, 1]` (dampening can attenuate,
+  never boost). Those don't compose: nine records at `0.8` plus one at `4.1` average to
+  `1.13`, which clamps to `1.0` — *no dampening at all*, discarding the 20% shading the
+  nine honest records measured.
+
+  The mean of ratios is the wrong estimator here — `E[A/F] ≠ E[A]/E[F]`, and `A/F`
+  explodes as `F → 0`, so a slot forecast at 0.2 kW that produced 1.0 kW entered the mean
+  at `5.0`. `db_factor` is now the **energy-weighted aggregate** `Σ(w·actual)/Σ(w·estimate)`,
+  which bounds each record's influence to its own energy. This matches the estimator
+  `load_advisory.compute_confidence` already uses.
+
+  On live data, 41 records in the seasonal window carried `ratio > 1.5`: 31 were clear-sky
+  Solcast poll failures at **full quality weight** (the base polls ~9×/day; a poll re-issued
+  the afternoon as cloudy and was wrong, while the array made 3–4 kW under a measurably
+  clear sky), and 10 were tiny-denominator explosions (max `4.63`). The old estimator read
+  `1.050` at hour 17 — clamped to zero dampening — where the aggregate reads `0.749` and an
+  independent weighted median agrees at `0.721`.
+
+  Effect on pushed factors is ~0.026 today (suppressed by low confidence α), growing to the
+  full 0.06–0.30 as α matures — roughly 5× the magnitude of #50. Capping each ratio at 1.0
+  was considered and rejected: capping the upside but not the downside is a biased
+  estimator that would over-dampen an unshaded array with merely noisy forecasts.
+
+### Internal
+- A slot whose weighted forecast sums to ~0 now reports `no_data` rather than dividing by
+  it. The `_total` aggregate was verified sound in the process (its estimate equals the sum
+  of the per-site estimates; the 1.8–2.0 ratios were faithfully-recorded upstream forecast
+  failures, still present in the base's own undampened data).
+
 ## [1.10.0b6] - 2026-07-17
 
 > Beta. Breaks a feedback loop in shading dampening: the actual/forecast ratio was
