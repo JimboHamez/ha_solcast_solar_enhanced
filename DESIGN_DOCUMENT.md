@@ -267,6 +267,14 @@ midpoint = 30 / average_quality
 
 So with little data the factor sits near a no-op `1.0` and ramps toward the measured ratio as confidence builds. Scaling the midpoint by average quality means a looser cloud threshold needs proportionally more records before the DB factor is trusted.
 
+**`db_factor` is an energy-weighted aggregate, not a mean of ratios.** It is
+
+```
+db_factor(h) = Σ(wᵢ · actualᵢ) / Σ(wᵢ · estimateᵢ)
+```
+
+and deliberately **not** `Σ(wᵢ · actualᵢ/estimateᵢ) / Σ wᵢ`. Two reasons. First, `E[A/F] ≠ E[A]/E[F]`, and `A/F` has an exploding right tail as `F → 0` — a slot forecast at 0.2 kW that produced 1.0 kW enters a mean at `5.0`. Second, and worse, `_push_dampening` clamps the *blended* factor to `[0, 1]`, so an estimator that can return a mean above 1.0 doesn't merely overshoot — it clamps to "no dampening" and silently discards real shading. Nine records at `0.8` plus one at `4.1` mean `1.13` → clamped → 20% shading lost. The base polls Solcast ~9×/day and a poll can re-issue a clear afternoon as cloudy, so those records are *not* rare, and because the sky genuinely was clear the Kt gate awards them **full quality weight**. Under the aggregate form each record's influence is bounded by its own energy. Capping each ratio at 1.0 was rejected: capping the upside but not the downside is biased and would over-dampen an unshaded array with merely noisy forecasts. A weighted median independently agrees with the aggregate to ~0.01 (issue #52, fixed 1.10.0b7).
+
 **The ratio's denominator must be the base's *undampened* forecast.** The `pv_estimate` exposed by the base's `detailedForecast` has already been multiplied by the factors this integration pushed, so dividing by it measures `R/f` rather than the true ratio `R`. Substituting into the blend above gives a fixed point of
 
 ```

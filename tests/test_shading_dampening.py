@@ -413,3 +413,62 @@ def test_compute_dampening_undampened_count_excludes_filtered_records():
     overcast = dict(_loop_record(4.0, 5.0, 10.0), clouds=100)
     result = compute_dampening([clear] * 30 + [overcast] * 70, 20.0, 20, 60, 0.95, 45.0, 180.0)
     assert result["undampened_records"] == 30
+
+
+# ---------------------------------------------------------------------------
+# Energy-weighted aggregate ratio (issue #52)
+# ---------------------------------------------------------------------------
+
+def _ratio_record(pv_actual: float, pv_estimate: float) -> dict:
+    """A clear-sky record with an explicit actual/estimate pair."""
+    return {
+        "pv_actual": pv_actual,
+        "pv_estimate": pv_estimate,
+        "pv_export": 0.0,
+        "battery_charge": 0.0,
+        "clouds": 0,
+        "zenith": 45.0,
+        "azimuth": 180.0,
+    }
+
+
+def test_db_factor_is_energy_aggregate_not_mean_of_ratios():
+    """One tiny-denominator record must not swamp many honest ones.
+
+    A slot forecast at 0.2 kW that produced 1.0 kW is a 5.0 ratio. Under the old
+    weighted-mean-of-ratios it dragged the hour to 1.22 — above 1.0, which the push
+    clamps to "no dampening", silently discarding the real 20% shading the other
+    records measured. Σ(actual)/Σ(estimate) bounds its influence to its own energy.
+    """
+    records = [_ratio_record(0.8, 1.0)] * 360 + [_ratio_record(1.0, 0.2)] * 40
+    result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    # Σa/Σe = (360·0.8 + 40·1.0) / (360·1.0 + 40·0.2) = 328/368
+    assert result["alpha"] > 0.95
+    assert result["factor"] == pytest.approx(328 / 368, abs=0.01)
+    assert result["factor"] < 1.0, "mean-of-ratios would have exceeded 1.0 here"
+
+
+def test_bad_forecast_poll_cannot_cancel_an_hour():
+    """A clear-sky Solcast poll failure carries full quality weight; it must not
+    erase the shading every other record agrees on."""
+    honest = [_ratio_record(0.7, 1.0)] * 380          # 30% shading
+    collapsed = [_ratio_record(4.0, 1.0)] * 20        # forecast collapsed to 1 kW
+    result = compute_dampening(honest + collapsed, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    # Σa/Σe = (380·0.7 + 20·4.0) / 400 = 346/400 = 0.865 — still pulled up, but
+    # proportionally, and the shading survives rather than being clamped away.
+    assert result["factor"] == pytest.approx(0.865, abs=0.01)
+    assert result["factor"] < 1.0
+
+
+def test_db_factor_matches_simple_ratio_for_uniform_records():
+    """With identical records the aggregate must equal the plain ratio (no drift)."""
+    result = compute_dampening([_ratio_record(3.0, 4.0)] * 400, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["factor"] == pytest.approx(0.75, abs=0.01)
+
+
+def test_zero_weighted_estimate_is_no_data():
+    """Records whose forecasts all round to ~0 carry no shading signal."""
+    records = [_ratio_record(0.5, 1e-12)] * 100
+    result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
+    assert result["source"] == "no_data"
+    assert result["factor"] == pytest.approx(1.0)
