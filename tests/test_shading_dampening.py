@@ -472,3 +472,18 @@ def test_zero_weighted_estimate_is_no_data():
     result = compute_dampening(records, 20.0, 20, 60, 0.95, 45.0, 180.0)
     assert result["source"] == "no_data"
     assert result["factor"] == pytest.approx(1.0)
+
+
+def test_average_slot_pairs_preserves_hour_identity():
+    """Hour i must come from slots 2i/2i+1 — not reversed, rotated or offset.
+
+    The other tests here use values that are constant across hours, so a shifted or
+    reversed mapping would still satisfy them. The base applies damp_factor[i] to the
+    i-th local hour, so a mis-mapped curve dampens the wrong part of the day.
+    """
+    # Slot pair for hour i averages to exactly i, so each hour is distinguishable.
+    slots = []
+    for hour in range(24):
+        slots += [hour - 0.25, hour + 0.25]
+    hourly = average_slot_pairs(slots)
+    assert hourly == pytest.approx([float(h) for h in range(24)])

@@ -7,8 +7,10 @@ import pytest
 from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
     _cos_incidence,
+    _extraterrestrial_normal,
     _minimize_tilt,
     clearsky_ghi,
+    normalize_epoch,
     panel_azimuth_to_internal,
     panel_azimuth_to_solcast,
     run_tuning,
@@ -351,3 +353,93 @@ def test_run_tuning_recovers_synthetic_tilt():
     assert result["tilt"] == pytest.approx(true_tilt, abs=1.0)
     assert result["capacity_scale"] == pytest.approx(true_scale, rel=0.02)
     assert result["mae_kw"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_run_tuning_recovers_synthetic_tilt_hay_davies_default():
+    """End-to-end on the model production actually runs.
+
+    `run_tuning`'s default is `model="hay_davies"` and the coordinator never passes
+    `model`, so the anisotropic path is what ships. The isotropic recovery test above
+    would pass even if Hay-Davies were badly broken, since it never exercises it.
+    """
+    from datetime import datetime, timezone
+
+    true_tilt, fixed_az, true_scale, albedo = 35.0, -6.0, 0.006, 0.2
+
+    def hd_poa(tilt, zen, sun_az, ghi, dni, dhi, i0):
+        tr, ar = math.radians(tilt), math.radians(fixed_az)
+        z = math.radians(zen)
+        caoi = max(
+            0.0, math.cos(z) * math.cos(tr)
+            + math.sin(z) * math.sin(tr) * math.cos(math.radians(sun_az) - ar)
+        )
+        ai = min(max(dni / max(i0, 1.0), 0.0), 1.0)   # anisotropy index
+        rb = caoi / max(math.cos(z), 0.035)           # circumsolar geometric factor
+        iso = (1 + math.cos(tr)) / 2
+        return (dni * caoi + dhi * (ai * rb + (1 - ai) * iso)
+                + ghi * albedo * (1 - math.cos(tr)) / 2)
+
+    base_epoch = 1717200000
+    records = []
+    for i in range(200):
+        ep = base_epoch + i * 1800
+        az, zen = solar_position(ep, -37.9, 145.0)
+        if zen >= 85:
+            continue
+        dni, dhi = 850.0, 90.0
+        ghi = dni * math.cos(math.radians(zen)) + dhi
+        doy = datetime.fromtimestamp(normalize_epoch(ep), tz=timezone.utc).timetuple().tm_yday
+        obs = true_scale * hd_poa(true_tilt, zen, az, ghi, dni, dhi, _extraterrestrial_normal(doy))
+        records.append({
+            "period_end_epoch": ep, "pv_actual": obs, "pv_export": 0.0,
+            "pv_estimate": 0.0, "clouds": 0, "zenith": zen, "azimuth": az,
+            "ghi": ghi, "dni": dni, "dhi": dhi,
+        })
+
+    # No `model` argument — exactly how the coordinator calls it.
+    result = run_tuning(records, 100.0, 20, 0.95, fixed_azimuth=fixed_az, albedo=albedo)
+    assert result is not None
+    assert result["tilt"] == pytest.approx(true_tilt, abs=1.0)
+    assert result["capacity_scale"] == pytest.approx(true_scale, rel=0.02)
+    assert result["mae_kw"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_sky_model_choice_materially_changes_tilt():
+    """The two sky models are not interchangeable, so the default needs its own test.
+
+    Fitting isotropic to Hay-Davies data lands ~36° off. This pins *why* the test
+    above must exist: a mismatched sky model is not a rounding difference.
+    """
+    from datetime import datetime, timezone
+
+    true_tilt, fixed_az, true_scale, albedo = 35.0, -6.0, 0.006, 0.2
+    base_epoch = 1717200000
+    records = []
+    for i in range(200):
+        ep = base_epoch + i * 1800
+        az, zen = solar_position(ep, -37.9, 145.0)
+        if zen >= 85:
+            continue
+        dni, dhi = 850.0, 90.0
+        ghi = dni * math.cos(math.radians(zen)) + dhi
+        doy = datetime.fromtimestamp(normalize_epoch(ep), tz=timezone.utc).timetuple().tm_yday
+        i0 = _extraterrestrial_normal(doy)
+        tr, ar = math.radians(true_tilt), math.radians(fixed_az)
+        z = math.radians(zen)
+        caoi = max(0.0, math.cos(z) * math.cos(tr) + math.sin(z) * math.sin(tr) * math.cos(math.radians(az) - ar))
+        ai = min(max(dni / max(i0, 1.0), 0.0), 1.0)
+        obs = true_scale * (
+            dni * caoi
+            + dhi * (ai * caoi / max(math.cos(z), 0.035) + (1 - ai) * (1 + math.cos(tr)) / 2)
+            + ghi * albedo * (1 - math.cos(tr)) / 2
+        )
+        records.append({
+            "period_end_epoch": ep, "pv_actual": obs, "pv_export": 0.0,
+            "pv_estimate": 0.0, "clouds": 0, "zenith": zen, "azimuth": az,
+            "ghi": ghi, "dni": dni, "dhi": dhi,
+        })
+
+    correct = run_tuning(records, 100.0, 20, 0.95, fixed_azimuth=fixed_az, albedo=albedo)
+    mismatched = run_tuning(records, 100.0, 20, 0.95, fixed_azimuth=fixed_az, albedo=albedo, model="isotropic")
+    assert correct["tilt"] == pytest.approx(true_tilt, abs=1.0)
+    assert abs(mismatched["tilt"] - true_tilt) > 20.0
