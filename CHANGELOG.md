@@ -5,6 +5,108 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b8] - 2026-07-19
+
+> Beta. The dampening factor currently in effect is now a first-class sensor,
+> property-wide and per array. The orientation check that could silently switch
+> dampening off is now advisory only.
+
+### Added
+- **Current Hour Dampening sensors** (property-wide + one per configured array).
+  State is the factor being applied for the current local hour — the mean of that
+  hour's two half-hour slots, which is exactly the value `_push_dampening` sends
+  (slot index `i` maps to local half-hour `i`, the same indexing the base applies
+  `damp_factor` on). Previously this number was only reachable as a `hour_NN_factor`
+  attribute on the Dampening sensor, and not at all per-array — per-site visibility
+  stopped at the whole-day average on the Shading sensor.
+
+  Exposed as a state rather than an attribute so it gets recorder history and can be
+  graphed against measured output across the day. Both are `EntityCategory.DIAGNOSTIC`
+  and `entity_registry_enabled_default = False` — a development aid, not something a
+  normal install needs.
+
+  The state carries the same `[0, 1]` clamp and rounding as the push, so it matches
+  what is on the wire rather than the raw computed value, which remains visible as
+  `raw_factor`. Other attributes: `hour`,
+  `factor_first_half` / `factor_second_half` (the two halves can differ sharply —
+  morning shading clearing mid-hour), `alpha`, `source`, `quality_records`,
+  `clear_sky_basis`, `orientation_diverged`, and `pushed` (false when nothing was sent for that
+  target — base auto-dampening on, or the deliberately skipped global push in
+  multi-site). `alpha` is the one to read alongside the state: a factor near 1.0 means
+  "no shading measured" only when alpha is high; at low alpha it means "not enough
+  records yet", and the state alone cannot distinguish them.
+
+  Localized entity names across all 11 shipped locales.
+
+- **Guards against a base granular-dampening table that breaks the per-site push.**
+  The base keys granular dampening by resource_id, but two states of that table make
+  our per-site factors fail *silently*, and this integration now detects both and
+  raises a `granular_dampening_conflict` repair issue:
+  - An **`all` entry** takes precedence over every per-site entry in the base's
+    `dampen.py::get_factor`, so the factors pushed for individual arrays are ignored.
+    The push continues (it is harmless, and means the correct factors are already in
+    place the moment `all` is removed) but the user is told. The base creates such an
+    entry for any 48-factor `set_dampening` call with no `site`.
+  - **Mismatched factor counts** make the base discard the *entire* table and fall
+    back to its traditional hourly values — disabling dampening for every site,
+    including ones this integration doesn't manage. Here the push is **skipped**,
+    because pushing our 24 into a table holding 48 is what would cause the loss.
+
+  The table is read from the base's runtime data rather than its JSON file, so there
+  is no blocking I/O and no path guessing; every attribute hop is defensive, and an
+  unreadable table simply skips the check rather than breaking the push.
+
+### Changed
+- **The orientation check no longer suppresses dampening — it is now advisory.**
+  When PV tuning settled on a tilt diverging >15° from the configured Solcast site
+  (with ≥50 tuning records), that target's dampening factors were forced to a neutral
+  `1.0` until the user reconciled them. The repair-issue warning stays; the
+  suppression is gone.
+
+  The trigger was the wrong quantity to gate on. Tilt is frequently **non-identifiable**
+  from output-vs-irradiance data: rescaling modelled POA at one tilt to best match
+  another leaves only ~1–2% shape residual across the entire plausible range, so the
+  least-squares capacity scale absorbs almost the whole tilt effect and the argmin is
+  set by noise. On a real north-facing Melbourne install the tuned tilt carried a
+  **0°–48° bootstrap confidence interval**, swung 7.8°–30° over ten days, and passed
+  within **0.05°** of tripping the 15° threshold — which would have silently flattened
+  a working shading curve on that array.
+
+  The harm is also asymmetric: a false trigger costs the user *all* shading correction
+  with no visible cause, while a missed one only leaves the curve carrying some
+  orientation error, which — because `_push_dampening` clamps to `[0, 1]` — can still
+  only pull an over-forecast down. Gating a well-determined measurement on a
+  poorly-determined one inverts the reliability ordering.
+
+  Renames that follow: the repair issue id `dampening_gated` → `orientation_diverged`
+  (the legacy id is deleted on unload so pre-b8 issues do not linger), the sensor
+  attribute `gated` → `orientation_diverged` on both the Dampening and Current Hour
+  Dampening sensors, and the option label → "Warn when tuning disagrees with Solcast
+  orientation" across all 11 locales. The option **key** (`dampening_gate`) and its
+  default (on) are unchanged, so existing config entries need no migration.
+
+### Internal
+- The coordinator now tracks which dampening targets were actually pushed and which
+  have a diverged orientation (`_dampening_pushed` / `_orientation_advisory_targets`)
+  rather than only the any-target boolean, so a per-array sensor can report its own
+  array's state instead of inheriting a property-wide flag.
+
+### Documentation
+- **The base integration's "granular dampening" interaction is now documented** (README
+  "How it works", DESIGN_DOCUMENT "How the push lands", CLAUDE.md base-coupling). It was
+  undocumented despite being load-bearing: a per-site `set_dampening` call flips the
+  base's `site_damp` option on as a side effect, so this integration enables granular
+  dampening whether or not the user asked, and un-ticking the box is undone by the next
+  6-hourly push (clearing it also deletes `solcast-dampening.json`). Also captured: an
+  `all` key in that file silently shadows every per-site factor; a Solcast site absent
+  from the file gets a hard `1.0` rather than inheriting the traditional hourly values;
+  the base discards the whole file if its sites disagree on factor count; and the global
+  push clears granular dampening outright, making the already-skipped global push in
+  multi-site mode more load-bearing than its code comment suggests.
+- The per-site sensor table in the README was missing the **Azimuth** and
+  **Tuning RMSE** rows added in 1.10.0b4 (they were described in the release notes but
+  never listed). Both are now in the table.
+
 ## [1.10.0b7] - 2026-07-17
 
 > Beta. A single bad Solcast forecast poll could cancel an entire hour's shading

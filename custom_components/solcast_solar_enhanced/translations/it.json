@@ -52,7 +52,7 @@
         "data": {
           "auto_tuning": "Regolazione FV automatica",
           "auto_dampening": "Smorzamento automatico",
-          "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
+          "dampening_gate": "Avvisa quando la regolazione non concorda con l'orientamento Solcast",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
           "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
@@ -138,7 +138,7 @@
         "data": {
           "auto_tuning": "Regolazione FV automatica",
           "auto_dampening": "Smorzamento automatico",
-          "dampening_gate": "Blocca lo smorzamento finché la regolazione non concorda con l'orientamento Solcast",
+          "dampening_gate": "Avvisa quando la regolazione non concorda con l'orientamento Solcast",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
           "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
@@ -193,6 +193,12 @@
       },
       "site_tuning_rmse": {
         "name": "RMSE di regolazione"
+      },
+      "current_dampening": {
+        "name": "Attenuazione dell'ora corrente"
+      },
+      "site_current_dampening": {
+        "name": "Attenuazione dell'ora corrente"
       }
     }
   },
@@ -219,9 +225,13 @@
       "title": "No weather source for PV tuning & dampening",
       "description": "PV tuning and adaptive dampening need cloud cover (to find clear-sky periods) and, for tuning, solar irradiance. These normally come from Open-Meteo, which is free and needs no API key — but it has been disabled and no OpenWeatherMap key is configured, so every record's weather is unknown and excluded, leaving these features inactive (dampening stays neutral and is not pushed to Solcast). Re-enable Open-Meteo (or add an OpenWeatherMap API key) in this integration's options, or ignore this if you only want history logging."
     },
-    "dampening_gated": {
-      "title": "Dampening paused — tuned tilt differs from Solcast",
-      "description": "PV tuning has confidently converged on a panel tilt that differs materially from the tilt your Solcast site is configured with. Until they agree, the Solcast forecast is based on the wrong geometry, so adaptive dampening would bake that tilt error into its correction instead of capturing genuine shading. Dampening is therefore held neutral (1.0) for the affected array(s) and nothing is pushed to Solcast. Read the current value from the Tuned Panel Tilt sensor, update your Solcast site configuration to match, and dampening will resume automatically. (Azimuth is not tuned, so it is never the cause.) To disable this safeguard, turn off ‘Gate dampening…’ in the integration options."
+    "orientation_diverged": {
+      "title": "Tuned tilt differs from your Solcast site",
+      "description": "PV tuning has settled on a panel tilt that differs materially from the tilt your Solcast site is configured with. This is a heads-up only — adaptive dampening is still being calculated and pushed as normal. Before changing anything in Solcast, check the Tuning RMSE sensor for that array: tilt is often poorly determined from a short or heavily shaded history, and a low-confidence fit can be tens of degrees out without meaning anything is wrong. If the fit is good and the difference persists across several days, update your Solcast site tilt to match the Tuned Tilt value. (Azimuth is never tuned, so it is never the cause.) To stop this warning, turn off 'Warn when tuning disagrees with Solcast orientation' in the integration options."
+    },
+    "granular_dampening_conflict": {
+      "title": "Solcast granular dampening conflicts with per-site dampening",
+      "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
     }
   }
 }

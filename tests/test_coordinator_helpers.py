@@ -475,7 +475,7 @@ async def test_dampening_properties(coordinator):
     assert attrs["hour_00_source"] == "db_blended"
     assert attrs["hour_00_clipped_excluded"] == 2
     assert attrs["overall_source"] == "db_blended"
-    assert attrs["gated"] is False
+    assert attrs["orientation_diverged"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -904,12 +904,14 @@ async def test_run_dampening_pushes_per_site(hass):
         await coord._run_dampening(opts, 1000, -37.9, 145.0)
 
     assert pushed == [rid]
-    assert coord._dampening_gated is False
+    assert coord._orientation_advisory is False
 
 
-async def test_run_dampening_gates_diverged_site(hass):
-    # A confident tuned orientation that diverges from the configured site holds
-    # that site's push at neutral 1.0 and sets the gated flag.
+async def test_run_dampening_warns_but_still_pushes_diverged_site(hass):
+    # A confident tuned orientation that diverges from the configured site raises the
+    # advisory but must NOT neutralise that site's curve (advisory-only as of
+    # 1.10.0b8 -- the tuned tilt is too weakly identified to justify suppressing a
+    # measured shading curve).
     rid = "abcd-1234"
     coord = _orch_coordinator(hass, {
         CONF_SITE_GROUPS: [{"ac_sensor": "sensor.inv_ac", "site": rid}],
@@ -934,8 +936,8 @@ async def test_run_dampening_gates_diverged_site(hass):
         opts = {**coord._entry.data, **coord._entry.options}
         await coord._run_dampening(opts, 1000, -37.9, 145.0)
 
-    assert coord._dampening_gated is True
-    assert pushed[rid] and all(f == 1.0 for f in pushed[rid])
+    assert coord._orientation_advisory is True
+    assert pushed[rid] and all(f == pytest.approx(0.8) for f in pushed[rid])
 
 
 # ---------------------------------------------------------------------------

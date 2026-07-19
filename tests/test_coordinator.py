@@ -23,7 +23,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_OWM_ENABLED,
     DAMPENING_GATE_MIN_RECORDS,
     DOMAIN,
-    ISSUE_DAMPENING_GATED,
+    ISSUE_ORIENTATION_DIVERGED,
     ISSUE_OWM_REQUIRED,
 )
 
@@ -541,28 +541,31 @@ async def _run_gate_dampening(hass, coordinator, tuning_result, gate_on=True):
     return pushed
 
 
-async def test_run_dampening_gate_holds_neutral_and_raises_issue(hass, coordinator):
+async def test_run_dampening_warns_but_still_pushes_when_diverged(hass, coordinator):
+    """Divergence is advisory as of 1.10.0b8: it raises the repair issue but must NOT
+    neutralise the curve. Suppressing the push gated a sound measurement (the shading
+    ratio) on an unsound one (the tuned tilt, often non-identifiable)."""
     diverged = {"tilt": 50.0, "azimuth": 0.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
     pushed = await _run_gate_dampening(hass, coordinator, diverged)
-    assert all(f == 1.0 for f in pushed["hourly"])  # held neutral
-    assert coordinator._dampening_gated is True
-    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is not None
+    assert all(f == pytest.approx(0.8) for f in pushed["hourly"])  # measured curve survives
+    assert coordinator._orientation_advisory is True
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_ORIENTATION_DIVERGED) is not None
 
 
 async def test_run_dampening_pushes_curve_when_aligned(hass, coordinator):
     aligned = {"tilt": 21.0, "azimuth": 2.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
     pushed = await _run_gate_dampening(hass, coordinator, aligned)
     assert any(f != 1.0 for f in pushed["hourly"])  # real curve pushed
-    assert coordinator._dampening_gated is False
-    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is None
+    assert coordinator._orientation_advisory is False
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_ORIENTATION_DIVERGED) is None
 
 
 async def test_run_dampening_gate_disabled_pushes_despite_divergence(hass, coordinator):
     diverged = {"tilt": 50.0, "azimuth": 0.0, "n_records": DAMPENING_GATE_MIN_RECORDS + 50}
     pushed = await _run_gate_dampening(hass, coordinator, diverged, gate_on=False)
     assert any(f != 1.0 for f in pushed["hourly"])  # gate off → no neutralising
-    assert coordinator._dampening_gated is False
-    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_DAMPENING_GATED) is None
+    assert coordinator._orientation_advisory is False
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_ORIENTATION_DIVERGED) is None
 
 
 # ---------------------------------------------------------------------------
