@@ -170,6 +170,29 @@ Recovers panel **tilt** by transposing measured irradiance to the panel plane an
 
 Solar position (azimuth/zenith, ±1°) is computed locally in `pv_tuning.py` from declination, equation of time and hour angle — no extra library — and the same function populates the `azimuth`/`zenith` columns at write time.
 
+### Tilt identifiability
+
+Tilt is only *reported* when the fit can actually determine it. Changing tilt is nearly degenerate with changing the fitted capacity scale — rescaling modelled POA at one tilt to best-match another leaves only **~1–2% shape residual** across the plausible range (10° vs 20°: 2.16%; 15° vs 20°: 0.98%; 25° vs 20°: 0.84%), and `run_tuning` refits that scale for every candidate, absorbing nearly the whole effect. Once the residual noise floor is comparable, the argmin is set by noise rather than geometry.
+
+`run_tuning` therefore emits `tilt_identifiable` / `tilt_unidentifiable_reason` / `fit_rel_error` from two checks on values the grid search already has:
+
+- **`railed`** — the best tilt sits on a `_TILT_BOUNDS` bound. Not an interior minimum: the optimiser ran out of range.
+- **`fit_too_loose`** — relative fit error (`MAE ÷ mean output`) exceeds `_FIT_REL_ERROR_MAX` (0.15).
+
+Calibrated against synthetic records generated at a known 25° tilt (Hay-Davies, matching the tuner's own model — an isotropic generator biases recovery through model mismatch alone):
+
+| synthetic noise | relative fit error | recovered tilt | verdict |
+|---|---|---|---|
+| 2% | 0.016 | 25.8° | identifiable |
+| 10% | 0.080 | 28.5° | identifiable |
+| 20% | 0.159 | 32.0° | rejected |
+| 45% | 0.332 | 57.5° | rejected |
+
+Real north-facing winter arrays measure **0.37–0.41**, past the point where even a clean synthetic fit fails. Consumers honour the flag: both tuned-tilt sensors read unavailable (keeping the raw value as an `unidentified_tilt` attribute for diagnosis), and `_orientation_diverged` returns `None`, so the orientation advisory cannot fire on a noise-driven divergence.
+
+**Known limitation.** This detects *not determined*, not *confidently wrong*. A systematic low-sun deficit (shading, incidence-angle losses) biases tilt downward while the fit stays tight — synthetic data with a 40% morning deficit and 2% noise returns 3.5° for a true 25° and passes both checks. Separating that from genuine geometry would require distinguishing shading from orientation, which this fit cannot do; a test pins the gap so it stays visible.
+
+
 ### Clear-sky selection — clearness-index (Kt) gate
 
 Tuning needs sun-angle diversity across seasons; the clear-sky rows are chosen in `async_get_records_for_tuning` by one of **two mutually exclusive gates**, both applied in SQL before the `LIMIT`:

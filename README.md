@@ -34,13 +34,23 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b8 (beta)
+## 🆕 What's new in v1.10.0b9 (beta)
 
-**You can now watch the dampening factor that's actually in effect right now.** Until now the only way to see what dampening was being applied was to dig through the per-hour attributes on the *Dampening Hours with DB Data* sensor, and per-array there was nothing at all beyond a whole-day average. This beta adds a **Current Hour Dampening** sensor — property-wide, plus one per array — carrying the exact factor pushed to Solcast for the current local hour. Because it's a sensor state rather than an attribute it gets recorder history, so you can graph the dampening curve against your measured output over the day.
+**PV tuning now says "I don't know" instead of guessing your roof tilt.** The tuner searches for the tilt that best explains your clear-sky generation — but on many real roofs that search has no meaningful answer, and it was reporting one anyway. Changing tilt turns out to be almost the same as changing the fitted capacity scale (only ~1–2% different across the whole plausible range), which the fit cancels out. Once your data is noisier than that — and real winter arrays are, by a long way — the "best" tilt is decided by whichever records happened to arrive, not by your roof.
 
-These are **disabled by default**: they're a development and diagnostic aid, not something a normal install needs. Enable them from the integration's entity list if you want them. One thing worth knowing when reading one: a factor near `1.0` only means "no shading measured" when the `alpha` attribute is high. At low alpha it means "not enough records yet", and the state alone can't tell you which.
+On one real install the tuned tilt wandered between 7.8° and 30° across ten days against a configured 24.75°, then drifted down to 2°. Not one of those numbers meant anything.
 
-**Also in b8: the orientation check no longer switches dampening off.** If PV tuning settled on a tilt that disagreed with your Solcast site by more than 15°, this integration used to hold that array's dampening flat at `1.0` until you fixed it. That turned out to be the wrong trade. The check's trigger is the tuned tilt — and tilt is often barely identifiable from real data, because changing it is only ~1–2% different from changing the fitted capacity scale, which the fit cancels out. On a real winter install the tuned tilt swung between 7.8° and 30° on noise alone, coming within **0.05°** of tripping the threshold and silently disabling a perfectly good shading correction. Suppressing a sound measurement on the strength of an unsound one is backwards, so the check is now **advisory**: you still get the repair-issue warning that your Solcast tilt may be wrong, but your dampening keeps working. The option is renamed accordingly ("Warn when tuning disagrees with Solcast orientation") and still defaults to on.
+So the tuner now checks whether the answer is actually supported by the data, and the **Tuned Tilt** sensors read unavailable when it isn't — with the reason and the fit error in the attributes, plus the value it would have reported. The **orientation warning** added in b8 is also silenced in that case: it exists to tell you your Solcast tilt looks wrong, and it shouldn't say that on the strength of a number we know is noise.
+
+If your fit *is* good, nothing changes — the tilt is reported exactly as before.
+
+> **Honest limitation:** this catches "can't tell", not "confidently wrong". An array with heavy morning shading can produce a tight fit at a badly wrong tilt, and that still gets through. Treat a reported tilt as a hint, and check the Tuning RMSE before acting on it.
+
+> **v1.10.0b8 — you can now watch the dampening factor that's actually in effect right now.** Until now the only way to see what dampening was being applied was to dig through the per-hour attributes on the *Dampening Hours with DB Data* sensor, and per-array there was nothing at all beyond a whole-day average. This beta adds a **Current Hour Dampening** sensor — property-wide, plus one per array — carrying the exact factor pushed to Solcast for the current local hour. Because it's a sensor state rather than an attribute it gets recorder history, so you can graph the dampening curve against your measured output over the day.
+
+> These are **disabled by default**: they're a development and diagnostic aid, not something a normal install needs. Enable them from the integration's entity list if you want them. One thing worth knowing when reading one: a factor near `1.0` only means "no shading measured" when the `alpha` attribute is high. At low alpha it means "not enough records yet", and the state alone can't tell you which.
+
+> **Also in b8: the orientation check no longer switches dampening off.** If PV tuning settled on a tilt that disagreed with your Solcast site by more than 15°, this integration used to hold that array's dampening flat at `1.0` until you fixed it. That turned out to be the wrong trade. The check's trigger is the tuned tilt — and tilt is often barely identifiable from real data, because changing it is only ~1–2% different from changing the fitted capacity scale, which the fit cancels out. On a real winter install the tuned tilt swung between 7.8° and 30° on noise alone, coming within **0.05°** of tripping the threshold and silently disabling a perfectly good shading correction. Suppressing a sound measurement on the strength of an unsound one is backwards, so the check is now **advisory**: you still get the repair-issue warning that your Solcast tilt may be wrong, but your dampening keeps working. The option is renamed accordingly ("Warn when tuning disagrees with Solcast orientation") and still defaults to on.
 
 > **v1.10.0b7 — one bad Solcast forecast can no longer cancel out an hour of shading.** Your base integration polls Solcast about nine times a day, and occasionally a poll re-forecasts the afternoon as cloudy when it stays clear — the forecast drops to ~1 kW while your array happily makes 3–4 kW. That single record used to enter the shading average as a ratio of 4.0, dragging the whole hour above 1.0. Since dampening can only *reduce* a forecast, never boost it, the result got clamped to "no dampening at all" — throwing away the real shading every other record had measured. Nine honest records saying 20% shading, plus one bad poll, produced **zero** dampening.
 
@@ -286,7 +296,7 @@ The per-site step asks which of these two topologies you have, then shows only t
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast (from base integration) |
 | Forecast Today | kWh | Total forecast for today (from base integration) |
-| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries `mae_kw`, `capacity_scale`, and a `per_site` attribute in multi-site mode) |
+| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries `mae_kw`, `capacity_scale`, and a `per_site` attribute in multi-site mode). **Unavailable when the fit cannot determine a tilt** — see `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes |
 | Tuned Panel Azimuth | ° | Your configured azimuth — **not tuned** (azimuth is non-identifiable from this data; `azimuth_tuned: false`). Reported for reference only |
 | Tuning RMSE | kW | Goodness of fit for the tuned tilt |
 | Tuning Export Limited Excluded | — | Records dropped from the last tuning run by the export-limit filter |
@@ -310,7 +320,7 @@ When you configure more than one array, each array gets **its own HA device** (g
 |---|---|---|
 | `<array>` PV Power 30min Average | kW | That array's measured generation for the period (DC-share apportioned for shared-inverter setups; `pv_estimate` + `capacity_kw` in attributes) |
 | `<array>` Shading | — | Average daytime dampening factor (1.0 = no shading, < 1 = measured structural shading), with orientation, `shading_pct`, confidence and clear-sky basis in attributes |
-| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes) |
+| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes). Unavailable when the fit cannot determine a tilt |
 | `<array>` Azimuth | ° | That array's orientation as configured in Solcast — held fixed, never tuned |
 | `<array>` Tuning RMSE | kW | *Diagnostic.* That array's tuning fit error; the trust signal for its tuned tilt (lower = tighter fit) |
 | `<array>` Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect for that array for the current local hour — the per-array counterpart to the property-wide sensor above, so differently-shaded arrays can be watched apart |

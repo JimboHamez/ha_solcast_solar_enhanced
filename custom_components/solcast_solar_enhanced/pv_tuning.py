@@ -143,6 +143,21 @@ _GRID_STAGES = (
     (1.0, 0.25),  # ±1° around best, 0.25° step
 )
 _TILT_BOUNDS = (0.0, 90.0)
+# Tilt is only *identifiable* when the fit is tight enough for the objective to
+# discriminate between tilts. Changing tilt is nearly degenerate with changing the
+# fitted capacity scale — rescaling POA at one tilt to best-match another leaves only
+# ~1-2% shape residual across the plausible range — so once the residual noise floor is
+# comparable to that, the argmin is set by noise rather than geometry.
+#
+# Calibrated on synthetic data at a known 25° tilt: at 20% multiplicative noise the
+# relative fit error is 0.15 and tilt is still recovered to within 2.5°; at 30% it is
+# 0.23 and recovery is 6° out; at 40% it is 0.37 and recovery is 11.5° out. Real
+# north-facing winter arrays measured 0.37-0.38 — i.e. already past the point where a
+# clean synthetic fit fails. 0.15 is therefore the cut between "usable" and "noise".
+_FIT_REL_ERROR_MAX = 0.15
+# A best tilt sitting on a grid bound is not an interior minimum at all: the optimiser
+# ran out of range rather than finding a turning point. Always unidentifiable.
+_TILT_RAIL_TOL = 1e-6
 # Solar constant (W/m²) for the Hay-Davies anisotropy index Ai = DNI / I0.
 _SOLAR_CONSTANT = 1361.0
 
@@ -301,8 +316,33 @@ def run_tuning(
     scale = scale_for(best_poa)
     rmse = float(np.sqrt(np.mean((scale * best_poa - obs_a) ** 2)))
 
+    # Is the winning tilt actually *determined* by the data, or just where the noise
+    # happened to put the argmin? Two cheap checks on values the search already has.
+    mean_obs = float(np.mean(obs_a))
+    fit_rel_error = best_mae / mean_obs if mean_obs > 0 else float("inf")
+    lo_b, hi_b = _TILT_BOUNDS
+    railed = best_tilt <= lo_b + _TILT_RAIL_TOL or best_tilt >= hi_b - _TILT_RAIL_TOL
+    if railed:
+        reason = "railed"
+    elif fit_rel_error > _FIT_REL_ERROR_MAX:
+        reason = "fit_too_loose"
+    else:
+        reason = None
+
     return {
         "tilt": best_tilt,
+        # False when the tilt above is not supported by the data — consumers must not
+        # report it or act on it (the sensors read unavailable, the orientation
+        # advisory stays silent). The value itself is kept for diagnostics.
+        #
+        # NOTE this detects "not determined", NOT "confidently wrong". A systematic
+        # low-sun deficit (shading, incidence-angle losses) biases tilt downward while
+        # the fit stays tight: synthetic data with a 40% morning deficit and only 5%
+        # noise returns 3° for a true 25° and passes both checks. Catching that needs
+        # to separate shading from geometry, which this fit cannot do.
+        "tilt_identifiable": reason is None,
+        "tilt_unidentifiable_reason": reason,
+        "fit_rel_error": fit_rel_error,
         # Azimuth is fixed (not tuned); echo it back normalised so the existing
         # consumers (panel_azimuth_to_solcast, the dampening convergence gate) work
         # unchanged — the gate's azimuth delta is then identically ~0.
