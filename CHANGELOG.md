@@ -5,6 +5,49 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b9] - 2026-07-19
+
+> Beta. PV tuning now declines to report a tilt it cannot actually determine, and the
+> orientation advisory no longer fires on one.
+
+### Added
+- **Tilt identifiability check.** `run_tuning` now decides whether the winning tilt is
+  supported by the data, and flags it (`tilt_identifiable`, `tilt_unidentifiable_reason`,
+  `fit_rel_error`) when it is not. Two cheap checks on values the grid search already
+  computes:
+  - **railed** — the best tilt sits on a grid bound, so the optimiser ran out of range
+    rather than finding a turning point;
+  - **fit_too_loose** — relative fit error (MAE ÷ mean output) above `0.15`.
+
+  Tilt is nearly degenerate with the fitted capacity scale: rescaling modelled POA at
+  one tilt to best-match another leaves only ~1–2% shape residual across the plausible
+  range, and `run_tuning` refits that scale for every candidate. Once the residual noise
+  floor is comparable, the argmin is set by noise rather than geometry.
+
+  The `0.15` cut is calibrated on synthetic data at a known 25° tilt: at 10% noise the
+  relative error is 0.08 and tilt recovers to 28.5°; at 20% it is 0.16 and recovery is
+  32°; at 45% it is 0.33 and recovery is 57.5°. Real north-facing winter arrays measure
+  **0.37–0.41** — past the point where even a clean synthetic fit fails.
+
+### Changed
+- **The tuned-tilt sensors read unavailable when the tilt is not identifiable**
+  (property-wide and per-array). Publishing a number the data does not support invites
+  the user to apply it to their Solcast site, which would make the forecast worse. The
+  value the fit produced is kept in the attributes as `unidentified_tilt`, alongside
+  the reason and the relative fit error, so the diagnosis is still visible.
+- **The orientation advisory is silent when the tilt is not identifiable.** The whole
+  advisory rests on the tuned tilt, so a divergence computed from a noise-driven value
+  would tell the user their Solcast orientation is wrong on no evidence. On live data
+  this is not hypothetical: one array's tuned tilt read 2.2° against a configured
+  24.75°, a 22.5° "divergence" that would have fired the warning.
+
+### Known limitation
+- The check detects **"not determined"**, not **"confidently wrong"**. A systematic
+  low-sun deficit (shading, incidence-angle losses) biases tilt downward while the fit
+  stays tight: synthetic data with a 40% morning deficit and only 2% noise returns 3.5°
+  for a true 25° and passes both checks. Separating that from genuine geometry is not
+  something this fit can do. Pinned by a test so the gap stays visible.
+
 ## [1.10.0b8] - 2026-07-19
 
 > Beta. The dampening factor currently in effect is now a first-class sensor,

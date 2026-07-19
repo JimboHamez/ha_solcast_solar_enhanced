@@ -869,6 +869,12 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             return None
         if int(tuning_result.get("n_records", 0)) < DAMPENING_GATE_MIN_RECORDS:
             return None  # not enough clear-sky data to trust the divergence
+        if not tuning_result.get("tilt_identifiable", True):
+            # The whole advisory rests on the tuned tilt. When the fit could not
+            # determine one, telling the user their Solcast orientation is wrong is
+            # worse than saying nothing — it invites them to apply a noise-driven
+            # number to a correctly configured site.
+            return None
         d_tilt = abs(float(tuning_result["tilt"]) - seed_tilt)
         d_az = abs(self._angle_diff(float(tuning_result["azimuth"]), seed_az))
         if d_tilt > DAMPENING_GATE_TILT_TOL or d_az > DAMPENING_GATE_AZIMUTH_TOL:
@@ -2049,8 +2055,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
     @property
     def tuning_tilt(self) -> float | None:
-        """Latest tuned panel tilt in degrees, or None before the first run."""
-        return self._tuning_result["tilt"] if self._tuning_result else None
+        """Latest tuned panel tilt in degrees.
+
+        ``None`` before the first run, and also when the fit could not actually
+        determine a tilt (``tilt_identifiable`` false) — reporting a number the data
+        does not support invites the user to apply it to their Solcast site, which
+        would make the forecast worse. The raw value stays in the attributes.
+        """
+        if not self._tuning_result or not self._tuning_result.get("tilt_identifiable", True):
+            return None
+        return float(self._tuning_result["tilt"])
 
     @property
     def tuning_azimuth(self) -> float | None:
@@ -2094,6 +2108,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "capacity_scale": self._tuning_result.get("capacity_scale"),
                     "n_records": self._tuning_result.get("n_records"),
                     "export_limited_excluded": self._tuning_result.get("export_limited_excluded", 0),
+                    # When the state reads unknown, these say why and what the fit
+                    # would have returned.
+                    "tilt_identifiable": self._tuning_result.get("tilt_identifiable", True),
+                    "tilt_unidentifiable_reason": self._tuning_result.get("tilt_unidentifiable_reason"),
+                    "fit_rel_error": round(self._tuning_result["fit_rel_error"], 4)
+                    if self._tuning_result.get("fit_rel_error") is not None
+                    else None,
+                    "unidentified_tilt": self._tuning_result.get("tilt")
+                    if not self._tuning_result.get("tilt_identifiable", True)
+                    else None,
                 }
             )
         if self._site_tuning_results:
@@ -2105,6 +2129,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                     "azimuth": round(panel_azimuth_to_solcast(r.get("azimuth", 0.0)), 2),
                     "rmse_kw": round(r.get("rmse_kw", 0.0), 4),
                     "n_records": r.get("n_records"),
+                    "tilt_identifiable": r.get("tilt_identifiable", True),
                 }
                 for rid, r in self._site_tuning_results.items()
             ]
@@ -2272,8 +2297,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         }
 
     def site_tuned_tilt(self, site_id: str) -> float | None:
-        """Latest tuned tilt for a site, or ``None`` until that array has been tuned."""
+        """Latest tuned tilt for a site.
+
+        ``None`` until that array has been tuned, and also when the fit could not
+        determine a tilt (see ``tuning_tilt``).
+        """
         tuning = self._site_tuning_results.get(site_id) or {}
+        if not tuning.get("tilt_identifiable", True):
+            return None
         tilt = tuning.get("tilt")
         return round(tilt, 1) if tilt is not None else None
 
@@ -2308,6 +2339,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "name": site.get("name"),
             "resource_id": site_id,
             "rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
+            "tilt_identifiable": tuning.get("tilt_identifiable", True),
+            "tilt_unidentifiable_reason": tuning.get("tilt_unidentifiable_reason"),
+            "fit_rel_error": round(tuning["fit_rel_error"], 4) if tuning.get("fit_rel_error") is not None else None,
+            "unidentified_tilt": tuning.get("tilt") if not tuning.get("tilt_identifiable", True) else None,
             "tuning_records": tuning.get("n_records"),
             "configured_tilt": site.get("tilt"),
             "azimuth_compass": site.get("compass_degrees"),
