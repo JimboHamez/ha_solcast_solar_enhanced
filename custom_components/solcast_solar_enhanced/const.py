@@ -165,14 +165,28 @@ OPENMETEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 # but no OpenWeatherMap source is configured. Translation lives under `issues`.
 ISSUE_OWM_REQUIRED = "owm_required"
 
-# Dampening convergence gate: hold the dampening push at neutral (1.0) when the
-# tuned orientation diverges materially from the configured (Solcast) one, so a
-# mis-configured site can't bake orientation error into the dampening curve (the
-# notebook 3.4b "tuned estimate" prerequisite). Per-site aware.
-ISSUE_DAMPENING_GATED = "dampening_gated"
-DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the gate may act
-DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that trips the gate
-DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that trips the gate
+# Orientation-divergence advisory: warn when the tuned orientation disagrees
+# materially with the configured (Solcast) one, so a mis-configured site can be
+# spotted. **Advisory only** — dampening is still pushed. Suppressing the push (as
+# this did before 1.10.0b8) gated a sound measurement on the tuned tilt, which is
+# frequently non-identifiable and can swing tens of degrees on noise. Per-site aware.
+ISSUE_ORIENTATION_DIVERGED = "orientation_diverged"
+
+# Base granular-dampening conflicts. The base keys its granular dampening table by
+# resource_id, but an "all" entry (which it creates for any 48-factor push with no
+# site) takes precedence over *every* per-site entry in dampen.py::get_factor — so our
+# per-site factors are silently ignored while one exists. Separately, the base discards
+# the entire table if its sites disagree on factor count, so pushing our 24 into a file
+# whose sites hold 48 would turn dampening off for every site.
+BASE_GRANULAR_ALL_KEY = "all"
+PUSH_FACTOR_COUNT = 24  # hourly factors per push; must match every other site in the table
+ISSUE_GRANULAR_CONFLICT = "granular_dampening_conflict"
+# Legacy repair-issue id, deleted on unload so a pre-1.10.0b8 "dampening gated"
+# issue does not linger in the UI after the gate became advisory.
+ISSUE_DAMPENING_GATED_LEGACY = "dampening_gated"
+DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the advisory may fire
+DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that raises the advisory
+DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that raises the advisory
 
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"
@@ -182,6 +196,7 @@ SENSOR_TUNING_AZIMUTH = "tuning_azimuth"
 SENSOR_TUNING_RMSE = "tuning_rmse"
 SENSOR_TUNING_EXPORT_EXCLUDED = "tuning_export_excluded"
 SENSOR_DB_RECORDS = "db_records"
+SENSOR_CURRENT_DAMPENING = "current_dampening"
 SENSOR_DAMPENING = "dampening"
 SENSOR_WEATHER_TEMP = "weather_temp"
 SENSOR_WEATHER_CLOUDS = "weather_clouds"

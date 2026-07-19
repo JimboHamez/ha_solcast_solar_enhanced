@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     SENSOR_BASE_STATUS,
     SENSOR_BATTERY_CHARGE,
+    SENSOR_CURRENT_DAMPENING,
     SENSOR_DAMPENING,
     SENSOR_DB_RECORDS,
     SENSOR_FORECAST_NOW,
@@ -77,6 +78,7 @@ async def async_setup_entry(
         DbRecordsSensor(coordinator, entry),
         MpptDcSensor(coordinator, entry),
         DampeningSensor(coordinator, entry),
+        CurrentDampeningSensor(coordinator, entry),
         WeatherTempSensor(coordinator, entry),
         WeatherCloudsSensor(coordinator, entry),
         BatteryChargeSensor(coordinator, entry),
@@ -94,6 +96,7 @@ async def async_setup_entry(
         entities.append(SiteTunedTiltSensor(coordinator, entry, site_id, name))
         entities.append(SiteAzimuthSensor(coordinator, entry, site_id, name))
         entities.append(SiteTuningRmseSensor(coordinator, entry, site_id, name))
+        entities.append(SiteCurrentDampeningSensor(coordinator, entry, site_id, name))
     async_add_entities(entities)
 
 
@@ -326,6 +329,38 @@ class DampeningSensor(_EnhancedSensorBase):
         return self.coordinator.dampening_attributes
 
 
+class CurrentDampeningSensor(_EnhancedSensorBase):
+    """Diagnostic: the property-wide dampening factor in effect for the current hour.
+
+    1.0 is no dampening; below 1.0 is the correction currently applied to the Solcast
+    forecast. Unlike the Dampening sensor's per-hour attributes this is a plain state,
+    so it gets recorder history and can be graphed against measured output over the
+    day. Disabled by default — it is a development/diagnostic aid, not something a
+    normal install needs.
+
+    Read the ``alpha`` attribute alongside the state: a factor near 1.0 means "no
+    shading measured" only when alpha is high; at low alpha it means "not enough
+    records yet", and the state alone cannot tell the two apart.
+    """
+
+    _attr_translation_key = "current_dampening"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:chart-timeline-variant"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_CURRENT_DAMPENING)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.current_dampening
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.current_dampening_attributes
+
+
 class PvForecastConfidenceSensor(_EnhancedSensorBase):
     """How well recent measured output agrees with the Solcast forecast (0–100).
 
@@ -486,6 +521,33 @@ class SiteTuningRmseSensor(_SiteSensorBase):
     @property
     def native_value(self) -> float | None:
         return self.coordinator.site_tuned_rmse(self._site_id)
+
+
+class SiteCurrentDampeningSensor(_SiteSensorBase):
+    """Diagnostic: one array's dampening factor in effect for the current hour.
+
+    The per-array counterpart to ``CurrentDampeningSensor`` — the number actually
+    pushed for this array's Solcast site, so differently-shaded arrays can be watched
+    apart from each other. Disabled by default; see ``CurrentDampeningSensor`` for how
+    to read it alongside ``alpha``.
+    """
+
+    _attr_translation_key = "site_current_dampening"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:chart-timeline-variant"
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, "site_current_dampening")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_current_dampening(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_current_dampening_attributes(self._site_id)
 
 
 class WeatherTempSensor(_EnhancedSensorBase):

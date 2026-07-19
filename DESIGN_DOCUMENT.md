@@ -203,7 +203,9 @@ Notebook 3.4b requires a **tuned** Solcast estimate as input: 3.4 first corrects
 
 This integration follows the same tune→shade shape, but the tuning loop is **advisory**: `compute_dampening` consumes the raw base forecast, and `run_tuning`'s output is surfaced only on the Tuned Panel Tilt/Azimuth sensors — never fed back into the estimate. The user closes the loop by applying the suggested orientation in their **Solcast account**. So our dampening is a **residual-bias** correction that equals "shading" only when the Solcast site is well-configured.
 
-To stop a mis-configured site baking orientation error into the curve, the push is **gated**: in `_run_dampening`, `_orientation_diverged` compares the latest tuning result against the configured seed. When tuning is confident (`n_records ≥ DAMPENING_GATE_MIN_RECORDS`, 50) **and** tilt or azimuth diverges materially (`|Δtilt| > 15°` or shortest-circle `|Δazimuth| > 25°`), that target's factors are forced to neutral `1.0` and a `dampening_gated` repair issue tells the user to apply the tuned values. The gate is per-site aware (each site judged against its own seed) and on by default (`CONF_DAMPENING_GATE`).
+A mis-configured site can bake orientation error into the curve, so `_run_dampening` checks for it: `_orientation_diverged` compares the latest tuning result against the configured seed, and when tuning is nominally confident (`n_records ≥ DAMPENING_GATE_MIN_RECORDS`, 50) **and** tilt or azimuth diverges materially (`|Δtilt| > 15°` or shortest-circle `|Δazimuth| > 25°`), an `orientation_diverged` repair issue is raised. Per-site aware (each site judged against its own seed) and on by default (`CONF_DAMPENING_GATE`, kept as the option key for config compatibility).
+
+The check is **advisory only as of 1.10.0b8** — it warns, it does not suppress. It previously forced that target's factors to a neutral `1.0`. That was the wrong trade, for two reasons. First, the trigger is the tuned tilt, and tilt is frequently *non-identifiable* from this data: rescaling POA at one tilt to best match another leaves only ~1–2% shape residual across the whole plausible range, so the least-squares capacity scale absorbs nearly the entire tilt effect and the argmin is decided by noise (on a real north-facing winter install the estimate carried a 0°–48° bootstrap CI and swung 7.8°–30° across ten days, passing within 0.05° of the 15° threshold). Gating a well-determined measurement on a poorly-determined one inverts the reliability ordering. Second, the harm is asymmetric and silent: a false trigger removes *all* shading correction with no user-visible cause, while a missed one leaves a curve carrying some orientation error — which, since `_push_dampening` clamps to `[0, 1]`, can still only pull an over-forecast down. The legacy `dampening_gated` issue id is deleted on unload so pre-b8 issues do not linger.
 
 ### Why cloud filtering is essential
 
@@ -301,6 +303,34 @@ which is *stable* for all α < 1 (`|g′(f*)| = αR/f*² < 1`) — so it never o
 | Mixed (Melbourne, Sydney) | 20–25% | 8–12 weeks |
 | Overcast (Hobart, coastal) | 30–35% | 6–10 weeks at relaxed threshold |
 
+### How the push lands: the base's granular dampening
+
+`set_dampening` is not a simple setter — the base has **two** dampening stores and the call selects which one is live (`dampen.py::get_factor`):
+
+| `entry_options["site_damp"]` | factors used |
+|---|---|
+| off | traditional `damp00…damp23` from the base's own options |
+| on | granular `solcast-dampening.json`: an **`all` key wins outright** over every per-site key; a site *absent* from the file gets a hard `1.0` |
+
+Consequences this integration must respect:
+
+- A per-site push (`site=<resource_id>`) sets `site_damp = True` in the base's options, so **the multi-site push enables granular dampening as a side effect**. The user never ticks the box, and clearing it is undone by the next 6-hourly push (clearing it also *deletes* the file, per `__init__.py`).
+- A global push (no `site`, 24 factors) writes `damp00…23` and, *if granular factors exist*, sets `site_damp = False` and permits the reset that deletes the file. The global and per-site pushes are therefore mutually destructive. `_run_dampening` already skips the global push once any site is configured (its comment cites not overwriting per-site factors); the consequence is stronger than that comment implies — the global push would tear down the store the per-site factors live in, not merely overwrite them.
+- 48 factors with no `site` are assigned to `all` by the base, which then shadows every per-site key silently. We only ever emit 24 per-site, so we cannot create one; a pre-existing `all` (manual call, older version) voids the whole per-site scheme with no error. First thing to check when per-site dampening "has no effect".
+- The base rejects a file whose sites disagree on factor count, or whose count is not 24/48 — it discards **all** of it and logs. We always emit 24.
+- Indexing is **local** time-of-day: `_get_granular_factor` uses `period_start.hour` for a 24-list and `hour*2 + (1 if minute else 0)` for a 48-list. This is why `_compute_dampening_slots` builds its slot grid on local time rather than UTC.
+
+**Defences** (`_read_base_granular_factors` / `_granular_conflict`, checked once per multi-site dampening run). The table is read from the base's runtime data (`entry.runtime_data.coordinator.solcast.dampening.factors`), not its JSON file — no blocking I/O, no path guessing, and every attribute hop is a defensive `getattr` so a base refactor degrades to "no check" instead of breaking the push. Both conflicts raise the `granular_dampening_conflict` repair issue, which is cleared when the table is healthy:
+
+| conflict | push | why |
+|---|---|---|
+| `all` key present | **continues** | Our factors are inert while it exists, but writing them is harmless and means they are already correct the instant `all` is removed. Withholding would add a second failure to diagnose. |
+| sites disagree on factor count | **skipped** | Adding our 24 to a table holding 48 is precisely what makes the base discard everything and disable dampening for *all* sites. Here the push is the cause of the harm, so it must not happen. |
+
+The asymmetry is the point: skip only when pushing is what does the damage.
+
+Separately, the base's own **automatic dampening** makes `set_dampening` raise `ServiceValidationError` outright; `_read_base_auto_dampen()` detects this and skips the push (warning once) rather than erroring every cycle.
+
 ### Resolution, schedule and diagnostics
 
 The calculation runs at **48 half-hour slots/day**, each with its own α; adjacent pairs are averaged into 24 hourly values for `set_dampening` (which accepts hourly or half-hourly). Recomputed every 6 hours (or via the `run_dampening_update` service). The `Dampening Hours with DB Data` sensor exposes per-hour diagnostics:
@@ -385,11 +415,14 @@ applied **only when the configured arrays share orientation** — `_azimuth_spre
 
 ### Per-site visibility sensors (v1.10.0b1)
 
-Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `_SiteSensorBase`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Three entities per array:
+Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `_SiteSensorBase`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Six entities per array:
 
 - **`SiteOutputSensor`** (`<array>` PV Power 30min Average) — the array's measured generation (avg kW over the just-completed half-hour), surfaced from `_site_output` (populated in the per-site write loop); attributes carry the slot `pv_estimate` and `capacity_kw`. `None` until a multi-site cycle has produced a per-site read.
 - **`SiteShadingSensor`** (`<array>` Shading) — state is the array's **average daytime dampening factor** (1.0 = no shading, below 1.0 = the measured structural shading applied to that array); attributes carry its discovered orientation (`azimuth_compass`/`tilt`/`capacity_kw`), `shading_pct`, `min_factor`, `hours_with_db`, `clear_sky_basis`, the per-site tuning result, and a **per-site confidence** (each array keeps its own `_site_recent_bias` buffer, mirroring the property-wide advisory). The coordinator retains each array's dampening curve in `_site_dampening_tables` (previously computed-and-pushed but not kept).
 - **`SiteTunedTiltSensor`** (`<array>` Tuned Tilt) — the optimised tilt from that array's last PV tuning run (`_site_tuning_results`), with fit RMSE, record count and configured tilt/orientation as attributes. `None` until the array has tuned.
+- **`SiteAzimuthSensor`** (`<array>` Azimuth) — the array's orientation as discovered from Solcast. Held fixed and never tuned, so this mirrors the configured value rather than a fitted one.
+- **`SiteTuningRmseSensor`** (`<array>` Tuning RMSE, diagnostic) — that array's tuning fit error in kW; the trust signal for its tuned tilt. Tracked per-array because differently-oriented arrays are each fitted against their own records, so the aggregate RMSE blurs them.
+- **`SiteCurrentDampeningSensor`** (`<array>` Current Hour Dampening, diagnostic, **disabled by default**) — the factor being applied to that array for the current local hour. See the property-wide sensor below for the shared semantics.
 
 The entity **display name** comes from an optional per-array field on the `sites` step that defaults to the Solcast site name; precedence is user-entered → Solcast → `Site <short-id>`. The name field uses the embedded-name key convention (the readable key *is* the label), so it needs no translation entries.
 
@@ -409,7 +442,7 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 
 ---
 
-## Sensors (15 total)
+## Sensors (17 property-wide)
 
 | `_attr_name` | Unit | Description |
 |---|---|---|
@@ -422,6 +455,8 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 | Database Records | — | Total DB record count |
 | MPPT DC Voltage (max) | V | Diagnostic: latest captured DC telemetry (max string voltage across the property-wide *and* per-site trackers; per-tracker V/I + per-site in attributes). Unavailable when no DC sensors configured |
 | Dampening Hours with DB Data | — | Hours with DB-derived factors (per-hour diagnostics in attributes) |
+| Current Hour Dampening | — | Diagnostic, **disabled by default**. The factor in effect for the current local hour: `mean(slot[2h], slot[2h+1])` resolved at read time, so it tracks the wall clock between 6-hourly recomputes. Carries the same `[0, 1]` clamp and rounding as `_push_dampening`, so it matches the wire. Attributes: `raw_factor` (unclamped), `factor_first_half`/`factor_second_half`, `alpha`, `source`, `quality_records`, `clear_sky_basis`, `orientation_diverged` (advisory, does not affect the value), `pushed`. A state rather than an attribute so it gets recorder history and can be graphed against measured output; read `alpha` alongside it, since a factor near 1.0 is indistinguishable between "no shading measured" and "not enough records yet" |
+| PV Forecast Confidence | 0–100 | Short-horizon load-scheduling decision aid (see [Feature 7](#feature-7--short-horizon-forecast-confidence-load-scheduling-aid)); never pushed to the base |
 | Weather Temperature | °C | OWM temperature |
 | Cloud Cover | % | OWM cloud cover |
 | Battery Charge 30min Average | kW | Configured battery sensor value (restored across restarts) |

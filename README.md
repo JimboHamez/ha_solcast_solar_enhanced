@@ -34,11 +34,17 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b7 (beta)
+## 🆕 What's new in v1.10.0b8 (beta)
 
-**One bad Solcast forecast can no longer cancel out an hour of shading.** Your base integration polls Solcast about nine times a day, and occasionally a poll re-forecasts the afternoon as cloudy when it stays clear — the forecast drops to ~1 kW while your array happily makes 3–4 kW. That single record used to enter the shading average as a ratio of 4.0, dragging the whole hour above 1.0. Since dampening can only *reduce* a forecast, never boost it, the result got clamped to "no dampening at all" — throwing away the real shading every other record had measured. Nine honest records saying 20% shading, plus one bad poll, produced **zero** dampening.
+**You can now watch the dampening factor that's actually in effect right now.** Until now the only way to see what dampening was being applied was to dig through the per-hour attributes on the *Dampening Hours with DB Data* sensor, and per-array there was nothing at all beyond a whole-day average. This beta adds a **Current Hour Dampening** sensor — property-wide, plus one per array — carrying the exact factor pushed to Solcast for the current local hour. Because it's a sensor state rather than an attribute it gets recorder history, so you can graph the dampening curve against your measured output over the day.
 
-The shading ratio is now an **energy-weighted aggregate** rather than an average of per-slot ratios, so each record counts in proportion to how much energy it actually represents. A slot forecast at 0.2 kW can no longer shout as loudly as a slot forecast at 4 kW ([issue #52](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/52)). Nothing to configure. On real data this recovers shading that was previously being discarded — on one array, an hour that had been reading "no shading needed" actually warranted around 25%.
+These are **disabled by default**: they're a development and diagnostic aid, not something a normal install needs. Enable them from the integration's entity list if you want them. One thing worth knowing when reading one: a factor near `1.0` only means "no shading measured" when the `alpha` attribute is high. At low alpha it means "not enough records yet", and the state alone can't tell you which.
+
+**Also in b8: the orientation check no longer switches dampening off.** If PV tuning settled on a tilt that disagreed with your Solcast site by more than 15°, this integration used to hold that array's dampening flat at `1.0` until you fixed it. That turned out to be the wrong trade. The check's trigger is the tuned tilt — and tilt is often barely identifiable from real data, because changing it is only ~1–2% different from changing the fitted capacity scale, which the fit cancels out. On a real winter install the tuned tilt swung between 7.8° and 30° on noise alone, coming within **0.05°** of tripping the threshold and silently disabling a perfectly good shading correction. Suppressing a sound measurement on the strength of an unsound one is backwards, so the check is now **advisory**: you still get the repair-issue warning that your Solcast tilt may be wrong, but your dampening keeps working. The option is renamed accordingly ("Warn when tuning disagrees with Solcast orientation") and still defaults to on.
+
+> **v1.10.0b7 — one bad Solcast forecast can no longer cancel out an hour of shading.** Your base integration polls Solcast about nine times a day, and occasionally a poll re-forecasts the afternoon as cloudy when it stays clear — the forecast drops to ~1 kW while your array happily makes 3–4 kW. That single record used to enter the shading average as a ratio of 4.0, dragging the whole hour above 1.0. Since dampening can only *reduce* a forecast, never boost it, the result got clamped to "no dampening at all" — throwing away the real shading every other record had measured. Nine honest records saying 20% shading, plus one bad poll, produced **zero** dampening.
+
+> The shading ratio is now an **energy-weighted aggregate** rather than an average of per-slot ratios, so each record counts in proportion to how much energy it actually represents. A slot forecast at 0.2 kW can no longer shout as loudly as a slot forecast at 4 kW ([issue #52](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/52)). Nothing to configure. On real data this recovers shading that was previously being discarded — on one array, an hour that had been reading "no shading needed" actually warranted around 25%.
 
 > **v1.10.0b6 — shading dampening no longer measures your output against its own corrections.** The shading factor is the ratio of measured output to forecast — but the forecast it read back from the base integration had *already* been dampened by the factors this companion pushed. So each cycle compared your array against a forecast it had itself lowered, and the ratio drifted toward "no shading". The maths settles at the **square root** of the true ratio: an array genuinely making 50% of forecast would converge to a 0.71 factor instead of 0.50, while looking perfectly converged. The ratio is now anchored to the base's **pre-dampening** forecast, so shading is measured against a figure this integration never touched ([issue #50](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/50)).
 
@@ -252,6 +258,17 @@ See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 
 Full detail — the confidence model, the weighting maths, convergence timelines by climate, and design decisions — lives in the [design document](DESIGN_DOCUMENT.md).
 
+### About the base integration's "granular dampening" setting
+
+The Solcast PV Forecast integration has a **granular dampening** option (its `site_damp` setting). It decides which set of factors the base applies: with it **off** the base uses its own traditional 24 hourly values from its options; with it **on** the base uses a per-site `solcast-dampening.json` file. In a multi-site setup this integration pushes **per-site** factors, and the base turns granular dampening **on automatically** whenever it receives one. Three consequences worth knowing:
+
+- **You don't need to tick the box, and un-ticking it won't stick.** Clearing it makes the base delete the granular file and fall back to its traditional hourly values — which this integration doesn't maintain in multi-site mode, since it deliberately skips the global push so per-site factors aren't overwritten. Your dampening therefore reverts to whatever those legacy values are (usually all `1.0`), until the next 6-hourly push turns granular back on. If you genuinely want dampening off, disable it here rather than fighting the checkbox.
+- **A stale `all` entry overrides everything — this integration now warns you.** If that file contains an `all` key, the base uses it and ignores every per-site entry. This integration only writes per-site keys so it can't create one, but a manual `set_dampening` call with 48 factors and no `site` will — the base assigns those to `all` automatically. Symptom without the warning: per-site factors look correct in the file but have no effect. You'll now get a repair notification instead.
+- **Mismatched factor counts would disable dampening entirely — so the push stops.** The base discards the whole file if its sites don't all use the same number of factors. This integration pushes 24, so if some other site in the file holds 48, adding ours would bin the lot and leave *every* site undampened. It detects that, skips the push, and raises a repair notification rather than causing the loss.
+- **Sites you haven't configured here get no dampening at all.** Once granular is on, a Solcast site absent from that file receives a flat `1.0` — it does *not* inherit the base's traditional hourly values. So if you add a third array in Solcast, configure it here too, or it'll silently run undampened.
+
+Turning the base's own **automatic dampening** on is a separate matter: it makes the base reject manual `set_dampening` calls outright, so this integration detects that and skips pushing entirely (it logs a warning). Turn the base's auto-dampening off if you want this integration to drive dampening.
+
 ### Multi-site
 
 When the base integration has more than one rooftop array, each is stored, tuned and dampened separately (keyed by its Solcast `resource_id`) alongside the property-wide aggregate. Single-site behaviour is unchanged.
@@ -276,6 +293,7 @@ The per-site step asks which of these two topologies you have, then shows only t
 | Database Records | — | Total records in the store |
 | MPPT DC Voltage (max) | V | Diagnostic — highest captured string voltage this cycle (per-tracker detail in attributes). Unavailable until per-string DC sensors are configured |
 | Dampening Hours with DB Data | — | Hours where DB-derived factors are active (per-hour diagnostics in attributes) |
+| Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect for the current local hour (1.0 = none), with `raw_factor`, `alpha`, `source`, `orientation_diverged` and `pushed` in attributes. A sensor state rather than an attribute, so it graphs over the day |
 | Weather Temperature | °C | Current temperature (Open-Meteo, or OWM if configured) |
 | Cloud Cover | % | Cloud cover (Open-Meteo, or OWM if configured) |
 | Battery Charge 30min Average | kW | From the configured battery sensor (restored across restarts) |
@@ -293,6 +311,9 @@ When you configure more than one array, each array gets **its own HA device** (g
 | `<array>` PV Power 30min Average | kW | That array's measured generation for the period (DC-share apportioned for shared-inverter setups; `pv_estimate` + `capacity_kw` in attributes) |
 | `<array>` Shading | — | Average daytime dampening factor (1.0 = no shading, < 1 = measured structural shading), with orientation, `shading_pct`, confidence and clear-sky basis in attributes |
 | `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes) |
+| `<array>` Azimuth | ° | That array's orientation as configured in Solcast — held fixed, never tuned |
+| `<array>` Tuning RMSE | kW | *Diagnostic.* That array's tuning fit error; the trust signal for its tuned tilt (lower = tighter fit) |
+| `<array>` Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect for that array for the current local hour — the per-array counterpart to the property-wide sensor above, so differently-shaded arrays can be watched apart |
 
 Each array's display name comes from the **sites** config step (defaults to its Solcast site name).
 
