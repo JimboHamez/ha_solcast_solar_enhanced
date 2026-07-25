@@ -12,6 +12,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     SelectSelector,
@@ -21,13 +23,6 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-
-try:
-    from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
-
-    _ENTITY_SELECTOR_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    _ENTITY_SELECTOR_AVAILABLE = False
 
 from .const import (
     CONF_AUTO_DAMPENING,
@@ -142,13 +137,9 @@ async def _validate_weather(hass: HomeAssistant, collected: dict[str, Any]) -> d
     return {}
 
 
-def _entity_selector(domain: str = "sensor") -> Any:
-    if _ENTITY_SELECTOR_AVAILABLE:
-        try:
-            return EntitySelector(EntitySelectorConfig(domain=domain))
-        except Exception:  # noqa: BLE001
-            pass
-    return TextSelector()
+def _entity_selector(domain: str = "sensor") -> EntitySelector:
+    """Entity picker for one domain (``sensor`` unless told otherwise)."""
+    return EntitySelector(EntitySelectorConfig(domain=domain))
 
 
 def _input_mode_selector() -> Any:

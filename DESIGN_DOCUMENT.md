@@ -438,7 +438,7 @@ applied **only when the configured arrays share orientation** — `_azimuth_spre
 
 ### Per-site visibility sensors (v1.10.0b1)
 
-Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `_SiteSensorBase`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Six entities per array:
+Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `SolcastEnhancedSiteEntity`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Six entities per array:
 
 - **`SiteOutputSensor`** (`<array>` PV Power 30min Average) — the array's measured generation (avg kW over the just-completed half-hour), surfaced from `_site_output` (populated in the per-site write loop); attributes carry the slot `pv_estimate` and `capacity_kw`. `None` until a multi-site cycle has produced a per-site read.
 - **`SiteShadingSensor`** (`<array>` Shading) — state is the array's **average daytime dampening factor** (1.0 = no shading, below 1.0 = the measured structural shading applied to that array); attributes carry its discovered orientation (`azimuth_compass`/`tilt`/`capacity_kw`), `shading_pct`, `min_factor`, `hours_with_db`, `clear_sky_basis`, the per-site tuning result, and a **per-site confidence** (each array keeps its own `_site_recent_bias` buffer, mirroring the property-wide advisory). The coordinator retains each array's dampening curve in `_site_dampening_tables` (previously computed-and-pushed but not kept).
@@ -489,7 +489,7 @@ Names below are the English strings. As of **v1.10.0b10** every sensor names its
 | PV Export 30min Average | kW | Period-average export (restored across restarts) |
 | Base Integration Status | — | connected / not_detected |
 
-All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs `f"{DOMAIN}_{entry_id}_{key}"`, and `DeviceEntryType.SERVICE`. The three 30-min averages extend `_RestoringSensorBase` (HA `RestoreSensor`) so they restore their last value after a restart rather than reading *unknown* until the first half-hour cycle.
+All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs `f"{DOMAIN}_{entry_id}_{key}"`, and `DeviceEntryType.SERVICE`. The three 30-min averages extend `RestoringSensorEntity` (HA `RestoreSensor`) so they restore their last value after a restart rather than reading *unknown* until the first half-hour cycle.
 
 ---
 

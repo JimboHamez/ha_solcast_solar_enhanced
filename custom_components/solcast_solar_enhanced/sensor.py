@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     PERCENTAGE,
     EntityCategory,
@@ -14,12 +14,8 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
     SENSOR_BASE_STATUS,
     SENSOR_BATTERY_CHARGE,
     SENSOR_CURRENT_DAMPENING,
@@ -38,13 +34,14 @@ from .const import (
     SENSOR_WEATHER_CLOUDS,
     SENSOR_WEATHER_TEMP,
 )
-from .coordinator import SolcastEnhancedCoordinator
+from .entity import RestoringSensorEntity, SolcastEnhancedEntity, SolcastEnhancedSiteEntity
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from .coordinator import SolcastEnhancedConfigEntry
+    from .coordinator import SolcastEnhancedConfigEntry, SolcastEnhancedCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,69 +99,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class _EnhancedSensorBase(CoordinatorEntity[SolcastEnhancedCoordinator], SensorEntity):
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-
-    def __init__(
-        self,
-        coordinator: SolcastEnhancedCoordinator,
-        entry: ConfigEntry,
-        key: str,
-    ) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
-        self._key = key
-        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Solcast Solar Enhanced",
-            manufacturer="JimboHamez",
-            model="Solcast Solar Enhanced Integration",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._update_from_coordinator()
-        self.async_write_ha_state()
-
-    def _update_from_coordinator(self) -> None:
-        pass
-
-
-class _RestoringSensorBase(_EnhancedSensorBase, RestoreSensor):
-    """Sensor that restores its last value across restarts.
-
-    The coordinator only produces data on the half-hour grid, so after a restart
-    ``coordinator.data`` is empty for up to ~30 min, which would otherwise show
-    the entity as *unknown* until the first update cycle. Restoring the last
-    value bridges that gap. Subclasses implement ``_live_value()``; as soon as
-    the coordinator yields a value it supersedes the restored one.
-    """
-
-    _restored_value: float | None = None
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        last = await self.async_get_last_sensor_data()
-        if last is not None and last.native_value is not None:
-            try:
-                self._restored_value = float(last.native_value)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                self._restored_value = None
-
-    def _live_value(self) -> float | None:
-        """Current value from the coordinator, or None if not yet available."""
-        return None
-
-    @property
-    def native_value(self) -> float | None:
-        live = self._live_value()
-        return live if live is not None else self._restored_value
-
-
-class ForecastNowSensor(_EnhancedSensorBase):
+class ForecastNowSensor(SolcastEnhancedEntity):
     _attr_translation_key = "forecast_now"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -181,7 +116,7 @@ class ForecastNowSensor(_EnhancedSensorBase):
         return self.coordinator.data.get("forecast_now")
 
 
-class ForecastTodaySensor(_EnhancedSensorBase):
+class ForecastTodaySensor(SolcastEnhancedEntity):
     _attr_translation_key = "forecast_today"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
@@ -198,7 +133,7 @@ class ForecastTodaySensor(_EnhancedSensorBase):
         return self.coordinator.data.get("forecast_today")
 
 
-class TuningTiltSensor(_EnhancedSensorBase):
+class TuningTiltSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_tilt"
     _attr_native_unit_of_measurement = "°"
     _attr_icon = "mdi:angle-acute"
@@ -215,7 +150,7 @@ class TuningTiltSensor(_EnhancedSensorBase):
         return self.coordinator.tuning_extra
 
 
-class TuningAzimuthSensor(_EnhancedSensorBase):
+class TuningAzimuthSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_azimuth"
     _attr_native_unit_of_measurement = "°"
     _attr_icon = "mdi:compass"
@@ -228,7 +163,7 @@ class TuningAzimuthSensor(_EnhancedSensorBase):
         return self.coordinator.tuning_azimuth
 
 
-class TuningRmseSensor(_EnhancedSensorBase):
+class TuningRmseSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_rmse"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -242,7 +177,7 @@ class TuningRmseSensor(_EnhancedSensorBase):
         return self.coordinator.tuning_rmse
 
 
-class TuningExportExcludedSensor(_EnhancedSensorBase):
+class TuningExportExcludedSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_export_excluded"
     _attr_icon = "mdi:transmission-tower-off"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -255,7 +190,7 @@ class TuningExportExcludedSensor(_EnhancedSensorBase):
         return self.coordinator.tuning_export_excluded
 
 
-class DbRecordsSensor(_EnhancedSensorBase):
+class DbRecordsSensor(SolcastEnhancedEntity):
     _attr_translation_key = "db_records"
     _attr_icon = "mdi:database"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -283,7 +218,7 @@ class DbRecordsSensor(_EnhancedSensorBase):
         }
 
 
-class MpptDcSensor(_EnhancedSensorBase):
+class MpptDcSensor(SolcastEnhancedEntity):
     """Diagnostic: latest captured per-MPPT DC telemetry (Phase 2).
 
     State is the highest string voltage seen this cycle (the off-MPP-relevant
@@ -315,7 +250,7 @@ class MpptDcSensor(_EnhancedSensorBase):
         return {k: v for k, v in dc.items() if k != "max_voltage"}
 
 
-class DampeningSensor(_EnhancedSensorBase):
+class DampeningSensor(SolcastEnhancedEntity):
     _attr_translation_key = "dampening"
     _attr_icon = "mdi:weather-partly-cloudy"
 
@@ -331,7 +266,7 @@ class DampeningSensor(_EnhancedSensorBase):
         return self.coordinator.dampening_attributes
 
 
-class CurrentDampeningSensor(_EnhancedSensorBase):
+class CurrentDampeningSensor(SolcastEnhancedEntity):
     """Diagnostic: the property-wide dampening factor in effect for the current hour.
 
     1.0 is no dampening; below 1.0 is the correction currently applied to the Solcast
@@ -363,7 +298,7 @@ class CurrentDampeningSensor(_EnhancedSensorBase):
         return self.coordinator.current_dampening_attributes
 
 
-class PvForecastConfidenceSensor(_EnhancedSensorBase):
+class PvForecastConfidenceSensor(SolcastEnhancedEntity):
     """How well recent measured output agrees with the Solcast forecast (0–100).
 
     A decision aid for scheduling heavy loads, not a forecast: high means the next
@@ -387,37 +322,7 @@ class PvForecastConfidenceSensor(_EnhancedSensorBase):
         return self.coordinator.confidence_attributes
 
 
-class _SiteSensorBase(_EnhancedSensorBase):
-    """Base for per-array sensors, each attached to its own per-site HA device.
-
-    A distinct ``DeviceInfo`` (keyed on ``entry_id + resource_id``, linked back to
-    the main integration device via ``via_device``) groups every entity for one
-    array onto its own card. Because ``_attr_has_entity_name`` is set, the device
-    carries the array name and each entity name is just the bare metric (e.g.
-    "Shading"), so HA renders "<Array> Shading" without duplicating the name.
-    """
-
-    def __init__(
-        self,
-        coordinator: SolcastEnhancedCoordinator,
-        entry: ConfigEntry,
-        site_id: str,
-        name: str,
-        key: str,
-    ) -> None:
-        super().__init__(coordinator, entry, f"{key}_{site_id}")
-        self._site_id = site_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_{site_id}")},
-            name=name,
-            manufacturer="JimboHamez",
-            model="Solcast Solar Enhanced Array",
-            via_device=(DOMAIN, entry.entry_id),
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
-
-class SiteShadingSensor(_SiteSensorBase):
+class SiteShadingSensor(SolcastEnhancedSiteEntity):
     """Per-array visibility: average daytime dampening (shading) plus tuning/confidence attrs.
 
     State is the array's average daytime dampening factor (1.0 = no shading correction,
@@ -439,7 +344,7 @@ class SiteShadingSensor(_SiteSensorBase):
         return self.coordinator.site_visibility_attributes(self._site_id)
 
 
-class SiteOutputSensor(_SiteSensorBase):
+class SiteOutputSensor(SolcastEnhancedSiteEntity):
     """Per-array measured generation: average kW over the just-completed half-hour.
 
     Unavailable until a multi-site cycle has produced a per-site reading.
@@ -463,7 +368,7 @@ class SiteOutputSensor(_SiteSensorBase):
         return self.coordinator.site_output_attributes(self._site_id)
 
 
-class SiteTunedTiltSensor(_SiteSensorBase):
+class SiteTunedTiltSensor(SolcastEnhancedSiteEntity):
     """Per-array tuned tilt: the optimised tilt from that array's last PV tuning run.
 
     Unavailable until the array has accumulated enough clear-sky history to tune.
@@ -485,7 +390,7 @@ class SiteTunedTiltSensor(_SiteSensorBase):
         return self.coordinator.site_tuned_tilt_attributes(self._site_id)
 
 
-class SiteAzimuthSensor(_SiteSensorBase):
+class SiteAzimuthSensor(SolcastEnhancedSiteEntity):
     """Per-array azimuth as configured in Solcast (held fixed, never tuned).
 
     Surfaces the discovered orientation on the array's own card alongside the tuned
@@ -504,7 +409,7 @@ class SiteAzimuthSensor(_SiteSensorBase):
         return self.coordinator.site_azimuth(self._site_id)
 
 
-class SiteTuningRmseSensor(_SiteSensorBase):
+class SiteTuningRmseSensor(SolcastEnhancedSiteEntity):
     """Per-array tuning fit error (RMSE, kW) — the trust signal for the tuned tilt.
 
     Lower means a tighter fit. Diagnostic-category, so it sits in the array device's
@@ -525,7 +430,7 @@ class SiteTuningRmseSensor(_SiteSensorBase):
         return self.coordinator.site_tuned_rmse(self._site_id)
 
 
-class SiteCurrentDampeningSensor(_SiteSensorBase):
+class SiteCurrentDampeningSensor(SolcastEnhancedSiteEntity):
     """Diagnostic: one array's dampening factor in effect for the current hour.
 
     The per-array counterpart to ``CurrentDampeningSensor`` — the number actually
@@ -552,7 +457,7 @@ class SiteCurrentDampeningSensor(_SiteSensorBase):
         return self.coordinator.site_current_dampening_attributes(self._site_id)
 
 
-class WeatherTempSensor(_EnhancedSensorBase):
+class WeatherTempSensor(SolcastEnhancedEntity):
     _attr_translation_key = "weather_temp"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -569,7 +474,7 @@ class WeatherTempSensor(_EnhancedSensorBase):
         return float(temp) if temp is not None else None
 
 
-class WeatherCloudsSensor(_EnhancedSensorBase):
+class WeatherCloudsSensor(SolcastEnhancedEntity):
     _attr_translation_key = "weather_clouds"
     _attr_native_unit_of_measurement = "%"
     _attr_icon = "mdi:weather-cloudy"
@@ -586,7 +491,7 @@ class WeatherCloudsSensor(_EnhancedSensorBase):
         return int(clouds) if clouds is not None else None
 
 
-class BatteryChargeSensor(_RestoringSensorBase):
+class BatteryChargeSensor(RestoringSensorEntity):
     _attr_translation_key = "battery_charge"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -602,7 +507,7 @@ class BatteryChargeSensor(_RestoringSensorBase):
         return self.coordinator.data.get("battery_charge")
 
 
-class PvActualSensor(_RestoringSensorBase):
+class PvActualSensor(RestoringSensorEntity):
     _attr_translation_key = "pv_actual"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -618,7 +523,7 @@ class PvActualSensor(_RestoringSensorBase):
         return self.coordinator.data.get("pv_actual")
 
 
-class PvExportSensor(_RestoringSensorBase):
+class PvExportSensor(RestoringSensorEntity):
     _attr_translation_key = "pv_export"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
@@ -634,7 +539,7 @@ class PvExportSensor(_RestoringSensorBase):
         return self.coordinator.data.get("pv_export")
 
 
-class BaseIntegrationSensor(_EnhancedSensorBase):
+class BaseIntegrationSensor(SolcastEnhancedEntity):
     _attr_translation_key = "base_status"
     _attr_icon = "mdi:connection"
 

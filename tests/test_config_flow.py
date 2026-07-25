@@ -44,7 +44,13 @@ from custom_components.solcast_solar_enhanced.const import (
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
-from custom_components.solcast_solar_enhanced.config_flow import _TOPOLOGY_FIELD
+from custom_components.solcast_solar_enhanced.config_flow import (
+    _TOPOLOGY_FIELD,
+    _build_sites_schema,
+    _derive_groups,
+    _parse_sites_input,
+    _seed_flat_mppt,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -649,3 +655,101 @@ async def test_options_weather_step_validates_key(hass, mock_config_entry):
         result = await hass.config_entries.options.async_configure(result["flow_id"], _OWM_ON)
 
     assert result["step_id"] == "battery"
+
+
+# ---------------------------------------------------------------------------
+# Per-site helper edge cases (quality scale: config-flow-test-coverage)
+# ---------------------------------------------------------------------------
+
+_DISCOVERED_AB = [
+    {"resource_id": "AAAA", "name": "Array A"},
+    {"resource_id": "BBBB", "name": "Array B"},
+]
+
+
+def test_derive_groups_dc_split_skips_array_with_no_ac():
+    """An array left blank on the sites step is dropped, not carried as a null group.
+
+    Mirrors the same guard in direct mode: a site with no generation sensor has
+    nothing measurable behind it, and emitting a group with ``ac_sensor: None``
+    would have the coordinator read a nonexistent entity every cycle.
+    """
+    assignments = {
+        "AAAA": {"ac": "sensor.shared", "dc": "sensor.mppt1", "mode": "energy"},
+        "BBBB": {"ac": None, "dc": "sensor.mppt2", "mode": "energy"},
+    }
+
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+
+    assert len(groups) == 1
+    assert groups[0]["site"] == "AAAA"
+
+
+def test_parse_sites_input_skips_array_with_no_ac():
+    """Parsing ignores an array whose generation field was left empty."""
+    _, field_map = _build_sites_schema(_DISCOVERED_AB, {}, default_ac=None, mode=SITE_TOPOLOGY_DIRECT)
+    user_input = {field_map["AAAA"]["ac"]: "sensor.ac_a"}  # BBBB deliberately absent
+
+    assignments = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+
+    assert set(assignments) == {"AAAA"}
+
+
+def test_seed_flat_mppt_leaves_existing_per_site_trackers_alone():
+    """The flat-key migration is skipped once any array already maps a tracker.
+
+    Re-seeding would overwrite the user's own per-array mapping with a guess
+    (MPPT 1 → first site) every time the options flow was reopened.
+    """
+    assignments = {"AAAA": {"ac": "sensor.ac_a", "mppts": [{"voltage_sensor": "sensor.chosen_v"}]}}
+    src = {
+        CONF_MPPT1_VOLTAGE_SENSOR: "sensor.flat1_v",
+        CONF_MPPT1_CURRENT_SENSOR: "sensor.flat1_i",
+    }
+
+    result = _seed_flat_mppt(_DISCOVERED_AB, assignments, src)
+
+    assert result["AAAA"]["mppts"] == [{"voltage_sensor": "sensor.chosen_v"}]
+    assert "BBBB" not in result
+
+
+def test_build_sites_schema_disambiguates_duplicate_site_names():
+    """Two Solcast sites sharing a name get distinct fields, not one merged row.
+
+    Field keys embed the display name, so identical names would collide into a
+    single set of fields and silently lose an array.
+    """
+    duplicates = [
+        {"resource_id": "AAAA", "name": "Roof"},
+        {"resource_id": "BBBB", "name": "Roof"},
+    ]
+
+    _, field_map = _build_sites_schema(duplicates, {}, default_ac=None, mode=SITE_TOPOLOGY_DIRECT)
+
+    assert set(field_map) == {"AAAA", "BBBB"}
+    assert field_map["AAAA"]["ac"] != field_map["BBBB"]["ac"]
+    # The second occurrence is tagged with a resource-id prefix to tell them apart.
+    assert "BBBB"[:4] in field_map["BBBB"]["ac"]
+
+
+async def test_options_sites_step_rejects_incomplete_dc_split(hass):
+    """The options flow validates dc_split too, and reports it on the form."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("opt_invalid", with_topology=True)
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+
+    # Shared AC on both arrays, but only one DC sensor → not a valid split.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.shared", "B": "sensor.shared"},
+            {"A": "sensor.mppt1"},
+        ),
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert result["errors"] == {"base": "dc_split_missing_dc"}
