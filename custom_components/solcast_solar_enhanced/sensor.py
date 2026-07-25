@@ -44,16 +44,18 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+    from .coordinator import SolcastEnhancedConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: SolcastEnhancedConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Solcast Solar Enhanced sensors from a config entry."""
-    coordinator: SolcastEnhancedCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     site_pairs = coordinator.configured_sites_for_entities()
     is_multisite = bool(site_pairs)
 
@@ -163,7 +165,7 @@ class _RestoringSensorBase(_EnhancedSensorBase, RestoreSensor):
 
 
 class ForecastNowSensor(_EnhancedSensorBase):
-    _attr_name = "Forecast Now"
+    _attr_translation_key = "forecast_now"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -180,7 +182,7 @@ class ForecastNowSensor(_EnhancedSensorBase):
 
 
 class ForecastTodaySensor(_EnhancedSensorBase):
-    _attr_name = "Forecast Today"
+    _attr_translation_key = "forecast_today"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL
@@ -197,7 +199,7 @@ class ForecastTodaySensor(_EnhancedSensorBase):
 
 
 class TuningTiltSensor(_EnhancedSensorBase):
-    _attr_name = "Tuned Panel Tilt"
+    _attr_translation_key = "tuning_tilt"
     _attr_native_unit_of_measurement = "°"
     _attr_icon = "mdi:angle-acute"
 
@@ -214,7 +216,7 @@ class TuningTiltSensor(_EnhancedSensorBase):
 
 
 class TuningAzimuthSensor(_EnhancedSensorBase):
-    _attr_name = "Tuned Panel Azimuth"
+    _attr_translation_key = "tuning_azimuth"
     _attr_native_unit_of_measurement = "°"
     _attr_icon = "mdi:compass"
 
@@ -227,7 +229,7 @@ class TuningAzimuthSensor(_EnhancedSensorBase):
 
 
 class TuningRmseSensor(_EnhancedSensorBase):
-    _attr_name = "Tuning RMSE"
+    _attr_translation_key = "tuning_rmse"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_icon = "mdi:chart-bell-curve"
@@ -254,7 +256,7 @@ class TuningExportExcludedSensor(_EnhancedSensorBase):
 
 
 class DbRecordsSensor(_EnhancedSensorBase):
-    _attr_name = "Database Records"
+    _attr_translation_key = "db_records"
     _attr_icon = "mdi:database"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
@@ -290,7 +292,7 @@ class MpptDcSensor(_EnhancedSensorBase):
     data is landing. Unavailable (None) when no DC sensors are configured.
     """
 
-    _attr_name = "MPPT DC Voltage (max)"
+    _attr_translation_key = "mppt_dc"
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_device_class = SensorDeviceClass.VOLTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -314,7 +316,7 @@ class MpptDcSensor(_EnhancedSensorBase):
 
 
 class DampeningSensor(_EnhancedSensorBase):
-    _attr_name = "Dampening Hours with DB Data"
+    _attr_translation_key = "dampening"
     _attr_icon = "mdi:weather-partly-cloudy"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
@@ -551,7 +553,7 @@ class SiteCurrentDampeningSensor(_SiteSensorBase):
 
 
 class WeatherTempSensor(_EnhancedSensorBase):
-    _attr_name = "Weather Temperature"
+    _attr_translation_key = "weather_temp"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -568,7 +570,7 @@ class WeatherTempSensor(_EnhancedSensorBase):
 
 
 class WeatherCloudsSensor(_EnhancedSensorBase):
-    _attr_name = "Cloud Cover"
+    _attr_translation_key = "weather_clouds"
     _attr_native_unit_of_measurement = "%"
     _attr_icon = "mdi:weather-cloudy"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -585,7 +587,7 @@ class WeatherCloudsSensor(_EnhancedSensorBase):
 
 
 class BatteryChargeSensor(_RestoringSensorBase):
-    _attr_name = "Battery Charge 30min Average"
+    _attr_translation_key = "battery_charge"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -601,7 +603,7 @@ class BatteryChargeSensor(_RestoringSensorBase):
 
 
 class PvActualSensor(_RestoringSensorBase):
-    _attr_name = "PV Power 30min Average"
+    _attr_translation_key = "pv_actual"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -617,7 +619,7 @@ class PvActualSensor(_RestoringSensorBase):
 
 
 class PvExportSensor(_RestoringSensorBase):
-    _attr_name = "PV Export 30min Average"
+    _attr_translation_key = "pv_export"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -633,7 +635,7 @@ class PvExportSensor(_RestoringSensorBase):
 
 
 class BaseIntegrationSensor(_EnhancedSensorBase):
-    _attr_name = "Base Integration Status"
+    _attr_translation_key = "base_status"
     _attr_icon = "mdi:connection"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:

@@ -82,7 +82,10 @@
     },
     "error": {
       "dc_split_missing_dc": "DC-split needs a DC/MPPT sensor for every array. Add the missing DC sensor, or switch to 'each array has its own generation sensor'.",
-      "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'."
+      "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'.",
+      "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
+      "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
+      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover."
     }
   },
   "options": {
@@ -168,7 +171,10 @@
     },
     "error": {
       "dc_split_missing_dc": "DC-split needs a DC/MPPT sensor for every array. Add the missing DC sensor, or switch to 'each array has its own generation sensor'.",
-      "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'."
+      "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'.",
+      "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
+      "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
+      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover."
     }
   },
   "entity": {
@@ -199,6 +205,48 @@
       },
       "site_current_dampening": {
         "name": "Current Hour Dampening"
+      },
+      "forecast_now": {
+        "name": "Forecast Now"
+      },
+      "forecast_today": {
+        "name": "Forecast Today"
+      },
+      "tuning_tilt": {
+        "name": "Tuned Panel Tilt"
+      },
+      "tuning_azimuth": {
+        "name": "Tuned Panel Azimuth"
+      },
+      "tuning_rmse": {
+        "name": "Tuning RMSE"
+      },
+      "db_records": {
+        "name": "Database Records"
+      },
+      "mppt_dc": {
+        "name": "MPPT DC Voltage (max)"
+      },
+      "dampening": {
+        "name": "Dampening Hours with DB Data"
+      },
+      "weather_temp": {
+        "name": "Weather Temperature"
+      },
+      "weather_clouds": {
+        "name": "Cloud Cover"
+      },
+      "battery_charge": {
+        "name": "Battery Charge 30min Average"
+      },
+      "pv_actual": {
+        "name": "PV Power 30min Average"
+      },
+      "pv_export": {
+        "name": "PV Export 30min Average"
+      },
+      "base_status": {
+        "name": "Base Integration Status"
       }
     }
   },
@@ -232,6 +280,11 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced is not loaded, so this action cannot run. Check that the integration is enabled and has started successfully."
     }
   }
 }

@@ -1,10 +1,14 @@
 """Test sensor entity native values and attributes."""
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.solcast_solar_enhanced import sensor as sensor_mod
 from custom_components.solcast_solar_enhanced.sensor import (
     BaseIntegrationSensor,
     BatteryChargeSensor,
@@ -266,3 +270,56 @@ def test_base_status_none_when_no_data():
     coord = _make_coordinator(None)
     s = _make_sensor(BaseIntegrationSensor, coord)
     assert s.native_value is None
+
+
+# ---------------------------------------------------------------------------
+# Entity naming (quality scale: has-entity-name + entity-translations)
+# ---------------------------------------------------------------------------
+
+_COMPONENT = Path(sensor_mod.__file__).parent
+_SENSOR_SRC = (_COMPONENT / "sensor.py").read_text(encoding="utf-8")
+
+
+def _strings(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _declared_translation_keys() -> set[str]:
+    """Every ``_attr_translation_key`` literal declared in sensor.py."""
+    return set(re.findall(r'_attr_translation_key = "([^"]+)"', _SENSOR_SRC))
+
+
+def test_no_sensor_names_itself_with_a_raw_string():
+    """Entity names come from translations, never a hardcoded ``_attr_name``.
+
+    A raw ``_attr_name`` is invisible to the translation files, so it would ship
+    an English-only name in all 11 locales while looking perfectly fine in review.
+    """
+    assert "_attr_name" not in _SENSOR_SRC
+
+
+def test_every_translation_key_has_a_name_in_strings_json():
+    """No sensor can reference a key that strings.json does not define."""
+    names = _strings(_COMPONENT / "strings.json")["entity"]["sensor"]
+    missing = _declared_translation_keys() - set(names)
+    assert not missing, f"translation keys with no name: {sorted(missing)}"
+
+
+def test_strings_json_has_no_unused_entity_names():
+    """And strings.json carries no names for keys no sensor uses any more."""
+    names = _strings(_COMPONENT / "strings.json")["entity"]["sensor"]
+    orphaned = set(names) - _declared_translation_keys()
+    assert not orphaned, f"entity names with no sensor: {sorted(orphaned)}"
+
+
+@pytest.mark.parametrize(
+    "locale",
+    sorted(p.name for p in (_COMPONENT / "translations").glob("*.json")),
+)
+def test_every_locale_translates_every_entity_name(locale):
+    """All 11 locales define a non-empty name for every key — no silent English gaps."""
+    expected = set(_strings(_COMPONENT / "strings.json")["entity"]["sensor"])
+    names = _strings(_COMPONENT / "translations" / locale)["entity"]["sensor"]
+
+    assert set(names) == expected, f"{locale} key set differs from strings.json"
+    assert all(entry["name"].strip() for entry in names.values()), f"{locale} has a blank name"

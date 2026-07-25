@@ -82,7 +82,10 @@
     },
     "error": {
       "dc_split_missing_dc": "A divisão por CC precisa de um sensor CC/MPPT para cada arranjo. Adicione o sensor CC em falta ou mude para «cada arranjo tem o seu próprio sensor de geração».",
-      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração»."
+      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração».",
+      "invalid_auth": "O OpenWeatherMap rejeitou esta chave de API. Verifique se não tem erros de digitação — uma chave acabada de criar também pode demorar algumas horas a ser ativada.",
+      "cannot_connect": "Não foi possível contactar o OpenWeatherMap. Verifique a sua ligação à internet e tente novamente.",
+      "owm_key_missing": "O OpenWeatherMap está ativado mas não foi introduzida nenhuma chave de API. Introduza uma chave, ou desative o OpenWeatherMap e deixe o Open-Meteo fornecer a nebulosidade."
     }
   },
   "options": {
@@ -168,7 +171,10 @@
     },
     "error": {
       "dc_split_missing_dc": "A divisão por CC precisa de um sensor CC/MPPT para cada arranjo. Adicione o sensor CC em falta ou mude para «cada arranjo tem o seu próprio sensor de geração».",
-      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração»."
+      "dc_split_ac_mismatch": "A divisão por CC precisa do mesmo sensor de geração CA partilhado em cada arranjo. Use um único sensor CA idêntico em todas as linhas ou mude para «cada arranjo tem o seu próprio sensor de geração».",
+      "invalid_auth": "O OpenWeatherMap rejeitou esta chave de API. Verifique se não tem erros de digitação — uma chave acabada de criar também pode demorar algumas horas a ser ativada.",
+      "cannot_connect": "Não foi possível contactar o OpenWeatherMap. Verifique a sua ligação à internet e tente novamente.",
+      "owm_key_missing": "O OpenWeatherMap está ativado mas não foi introduzida nenhuma chave de API. Introduza uma chave, ou desative o OpenWeatherMap e deixe o Open-Meteo fornecer a nebulosidade."
     }
   },
   "entity": {
@@ -199,6 +205,48 @@
       },
       "site_current_dampening": {
         "name": "Amortecimento da hora atual"
+      },
+      "forecast_now": {
+        "name": "Previsão agora"
+      },
+      "forecast_today": {
+        "name": "Previsão hoje"
+      },
+      "tuning_tilt": {
+        "name": "Inclinação ajustada do painel"
+      },
+      "tuning_azimuth": {
+        "name": "Azimute ajustado do painel"
+      },
+      "tuning_rmse": {
+        "name": "RMSE do ajuste"
+      },
+      "db_records": {
+        "name": "Registos da base de dados"
+      },
+      "mppt_dc": {
+        "name": "Tensão CC do MPPT (máx.)"
+      },
+      "dampening": {
+        "name": "Horas de amortecimento com dados da BD"
+      },
+      "weather_temp": {
+        "name": "Temperatura meteorológica"
+      },
+      "weather_clouds": {
+        "name": "Nebulosidade"
+      },
+      "battery_charge": {
+        "name": "Carga da bateria média de 30 min"
+      },
+      "pv_actual": {
+        "name": "Potência FV média de 30 min"
+      },
+      "pv_export": {
+        "name": "Exportação FV média de 30 min"
+      },
+      "base_status": {
+        "name": "Estado da integração base"
       }
     }
   },
@@ -232,6 +280,11 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "O Solcast Solar Enhanced não está carregado, pelo que esta ação não pode ser executada. Verifique se a integração está ativada e arrancou corretamente."
     }
   }
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from http import HTTPStatus
 from typing import Any
 
 import aiohttp
@@ -20,6 +21,14 @@ _OPENMETEO_VARS = {
     "cloud_cover": "clouds",
     "temperature_2m": "temp",
 }
+
+
+class OWMAuthError(Exception):
+    """OpenWeatherMap rejected the API key."""
+
+
+class OWMConnectionError(Exception):
+    """OpenWeatherMap could not be reached, or replied unusably."""
 
 
 class OWMClient:
@@ -77,6 +86,37 @@ class OWMClient:
             # Unknown weather → None (fail-safe): the record is excluded from
             # tuning/dampening rather than trusted as a false clear-sky reading.
             return {"temp": None, "clouds": None, "description": "unavailable"}
+
+    async def async_validate(self) -> None:
+        """Probe the API with the configured key, for the config flow's connection test.
+
+        Unlike :meth:`async_fetch` — which is deliberately fail-safe and never raises,
+        because a transient outage must not abort a collection cycle — this reports
+        the failure, so setup can refuse a key that will never work.
+
+        Raises:
+            OWMAuthError: If the key was rejected (HTTP 401/403).
+            OWMConnectionError: If the service was unreachable, timed out, or
+                answered with any other error.
+        """
+        params = {
+            "lat": self._lat,
+            "lon": self._lon,
+            "appid": self._api_key,
+            "units": "metric",
+        }
+        try:
+            if self._session is not None:
+                await self._get(self._session, params)
+            else:
+                async with aiohttp.ClientSession() as session:
+                    await self._get(session, params)
+        except aiohttp.ClientResponseError as exc:
+            if exc.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                raise OWMAuthError from exc
+            raise OWMConnectionError from exc
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            raise OWMConnectionError from exc
 
     @staticmethod
     async def _get(session: aiohttp.ClientSession, params: dict[str, Any]) -> dict[str, Any]:

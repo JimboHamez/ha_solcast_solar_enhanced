@@ -82,7 +82,10 @@
     },
     "error": {
       "dc_split_missing_dc": "DC تقسیم کے لیے ہر اری کا DC/MPPT سینسر درکار ہے۔ غائب DC سینسر شامل کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔",
-      "dc_split_ac_mismatch": "DC تقسیم کے لیے ہر اری پر ایک ہی مشترکہ AC جنریشن سینسر درکار ہے۔ تمام قطاروں پر ایک ہی یکساں AC سینسر استعمال کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔"
+      "dc_split_ac_mismatch": "DC تقسیم کے لیے ہر اری پر ایک ہی مشترکہ AC جنریشن سینسر درکار ہے۔ تمام قطاروں پر ایک ہی یکساں AC سینسر استعمال کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔",
+      "invalid_auth": "OpenWeatherMap نے یہ API کلید مسترد کر دی۔ اس میں ٹائپنگ کی غلطی چیک کریں — نئی بنائی گئی کلید کو فعال ہونے میں چند گھنٹے بھی لگ سکتے ہیں۔",
+      "cannot_connect": "OpenWeatherMap تک رسائی نہیں ہو سکی۔ اپنا انٹرنیٹ کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
+      "owm_key_missing": "OpenWeatherMap فعال ہے لیکن کوئی API کلید درج نہیں کی گئی۔ کلید درج کریں، یا OpenWeatherMap بند کر دیں اور بادلوں کی مقدار Open-Meteo سے حاصل ہونے دیں۔"
     }
   },
   "options": {
@@ -168,7 +171,10 @@
     },
     "error": {
       "dc_split_missing_dc": "DC تقسیم کے لیے ہر اری کا DC/MPPT سینسر درکار ہے۔ غائب DC سینسر شامل کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔",
-      "dc_split_ac_mismatch": "DC تقسیم کے لیے ہر اری پر ایک ہی مشترکہ AC جنریشن سینسر درکار ہے۔ تمام قطاروں پر ایک ہی یکساں AC سینسر استعمال کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔"
+      "dc_split_ac_mismatch": "DC تقسیم کے لیے ہر اری پر ایک ہی مشترکہ AC جنریشن سینسر درکار ہے۔ تمام قطاروں پر ایک ہی یکساں AC سینسر استعمال کریں یا 'ہر اری کا اپنا جنریشن سینسر ہوتا ہے' پر سوئچ کریں۔",
+      "invalid_auth": "OpenWeatherMap نے یہ API کلید مسترد کر دی۔ اس میں ٹائپنگ کی غلطی چیک کریں — نئی بنائی گئی کلید کو فعال ہونے میں چند گھنٹے بھی لگ سکتے ہیں۔",
+      "cannot_connect": "OpenWeatherMap تک رسائی نہیں ہو سکی۔ اپنا انٹرنیٹ کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
+      "owm_key_missing": "OpenWeatherMap فعال ہے لیکن کوئی API کلید درج نہیں کی گئی۔ کلید درج کریں، یا OpenWeatherMap بند کر دیں اور بادلوں کی مقدار Open-Meteo سے حاصل ہونے دیں۔"
     }
   },
   "entity": {
@@ -199,6 +205,48 @@
       },
       "site_current_dampening": {
         "name": "موجودہ گھنٹے کی ڈیمپننگ"
+      },
+      "forecast_now": {
+        "name": "پیش گوئی ابھی"
+      },
+      "forecast_today": {
+        "name": "آج کی پیش گوئی"
+      },
+      "tuning_tilt": {
+        "name": "ٹیون شدہ پینل جھکاؤ"
+      },
+      "tuning_azimuth": {
+        "name": "ٹیون شدہ پینل سمت"
+      },
+      "tuning_rmse": {
+        "name": "ٹیوننگ RMSE"
+      },
+      "db_records": {
+        "name": "ڈیٹابیس ریکارڈز"
+      },
+      "mppt_dc": {
+        "name": "MPPT ڈی سی وولٹیج (زیادہ سے زیادہ)"
+      },
+      "dampening": {
+        "name": "ڈی بی ڈیٹا والے ڈیمپننگ گھنٹے"
+      },
+      "weather_temp": {
+        "name": "موسمی درجہ حرارت"
+      },
+      "weather_clouds": {
+        "name": "بادلوں کی مقدار"
+      },
+      "battery_charge": {
+        "name": "بیٹری چارج 30 منٹ اوسط"
+      },
+      "pv_actual": {
+        "name": "پی وی پاور 30 منٹ اوسط"
+      },
+      "pv_export": {
+        "name": "پی وی ایکسپورٹ 30 منٹ اوسط"
+      },
+      "base_status": {
+        "name": "بنیادی انٹیگریشن کی حالت"
       }
     }
   },
@@ -232,6 +280,11 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced لوڈ نہیں ہے، اس لیے یہ ایکشن نہیں چل سکتا۔ چیک کریں کہ انٹیگریشن فعال ہے اور کامیابی سے شروع ہوئی ہے۔"
     }
   }
 }

@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0b10] - 2026-07-25
+
+> Beta. Housekeeping only — no change to tuning, dampening or storage behaviour.
+
+Housekeeping against the Home Assistant [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) — the four Bronze rules the integration was failing, plus the Gold `entity-translations` rule. No behavioural change to tuning, dampening or storage.
+
+### Added
+- **The OpenWeatherMap key is now tested before it is stored** (`test-before-configure`). Enabling OWM in the Weather & Irradiance step probes the API with the key you entered; a rejected key, an unreachable service, or an empty key each fail the step with a specific message instead of being accepted and failing silently every 30 minutes afterwards. The step redisplays what you typed rather than resetting to defaults. Open-Meteo is keyless and the SQLite store is a local file at a fixed path, so neither has anything to test — leaving OWM off passes straight through.
+- **Removal instructions** in the README (`docs-removal-instructions`), including what is deliberately left behind: the history database (so a reinstall resumes rather than restarting the multi-week data build) and any dampening factors already pushed to the base integration, with how to clear each.
+
+### Changed
+- **Every sensor name is now translated** (`entity-translations`). The 14 sensors that still named themselves with a hardcoded `_attr_name` — Forecast Now/Today, Tuned Panel Tilt/Azimuth, Tuning RMSE, Database Records, MPPT DC Voltage, Dampening Hours with DB Data, Weather Temperature, Cloud Cover, and the three 30-min averages plus Base Integration Status — moved to `_attr_translation_key`, with names added to `strings.json` and all 11 translations. Previously those names were English-only in every locale, while the other 9 sensors were translated; the integration now behaves consistently.
+
+  English installs see no change at all. Existing entities everywhere keep their entity IDs, which live in the entity registry keyed by unique ID and are not regenerated. On a **new** install in a non-English language, though, Home Assistant derives each entity ID from the translated name — so the IDs will be localised rather than the English ones in the README. This is the same mechanism that produced issue #41 against the base integration, and it is inherent to the rule; check entity IDs in the UI before writing automations.
+- **The three actions register at component setup rather than entry setup** (`action-setup`). `run_pv_tuning`, `run_dampening_update` and `fetch_weather` are now registered in `async_setup`, so an automation referencing one still validates while the config entry is unloaded. Each handler resolves the entry when called and raises a `ServiceValidationError` if none is loaded — previously calling an action with the entry unloaded did nothing at all, silently.
+- **The coordinator moved from `hass.data` to `entry.runtime_data`** (`runtime-data`), typed through a new `SolcastEnhancedConfigEntry` alias. Internal only.
+
+### Fixed
+- Nothing user-visible. Test coverage rose to 94% overall (`__init__.py` 67% → 92%, config flow 96% → 97%), and four new tests pin the naming contract: no sensor may carry a raw `_attr_name`, every declared translation key must resolve to a name, `strings.json` may carry no orphaned names, and all 11 locales must define a non-empty name for every key.
+
 ## [1.10.0b9] - 2026-07-19
 
 > Beta. PV tuning now declines to report a tilt it cannot actually determine, and the

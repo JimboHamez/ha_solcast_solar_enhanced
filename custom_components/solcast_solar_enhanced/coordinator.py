@@ -103,6 +103,12 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# The coordinator is carried on the entry itself (``entry.runtime_data``) rather
+# than in ``hass.data``; this alias is what makes that access typed at every use
+# site. Lazily evaluated (PEP 695), so the TYPE_CHECKING-only ConfigEntry import
+# above is enough.
+type SolcastEnhancedConfigEntry = ConfigEntry[SolcastEnhancedCoordinator]
+
 
 def _azimuth_spread(azimuths: list[float]) -> float:
     """Largest shortest-arc difference (degrees) between any pair of azimuths.
@@ -158,7 +164,7 @@ def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
 class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     """Coordinator that orchestrates all enhanced features."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: SolcastEnhancedConfigEntry) -> None:
         """Initialise the coordinator (refreshes are wall-clock driven, not interval)."""
         # No free-running interval: refreshes are driven by a wall-clock listener
         # (see async_setup) so each cycle fires on the :00/:30 half-hour grid

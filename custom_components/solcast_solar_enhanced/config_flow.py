@@ -8,7 +8,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
     NumberSelector,
@@ -86,8 +87,59 @@ from .const import (
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
+from .solcast_api import OWMAuthError, OWMClient, OWMConnectionError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _build_weather_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the Weather & Irradiance schema, defaulted from ``current``.
+
+    Shared by both flows so a failed connection test can redisplay the step with
+    the values the user just submitted rather than resetting them.
+    """
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_OPENMETEO_ENABLED,
+                default=current.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED),
+            ): BooleanSelector(),
+            vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
+            vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+        }
+    )
+
+
+async def _validate_weather(hass: HomeAssistant, collected: dict[str, Any]) -> dict[str, str]:
+    """Test the OpenWeatherMap credentials before they are stored.
+
+    Returns a config-flow ``errors`` mapping, empty when the settings are usable.
+    OWM is the only credentialled connection in the wizard — Open-Meteo is keyless
+    and the SQLite store is a local file at a fixed path, so neither has anything
+    to test. Leaving OWM disabled therefore validates trivially.
+    """
+    if not collected.get(CONF_OWM_ENABLED):
+        return {}
+
+    api_key = (collected.get(CONF_OWM_API_KEY) or "").strip()
+    if not api_key:
+        return {CONF_OWM_API_KEY: "owm_key_missing"}
+
+    client = OWMClient(
+        api_key=api_key,
+        latitude=float(collected.get(CONF_LATITUDE, DEFAULT_LATITUDE)),
+        longitude=float(collected.get(CONF_LONGITUDE, DEFAULT_LONGITUDE)),
+        session=async_get_clientsession(hass),
+    )
+    try:
+        await client.async_validate()
+    except OWMAuthError:
+        return {CONF_OWM_API_KEY: "invalid_auth"}
+    except OWMConnectionError:
+        return {"base": "cannot_connect"}
+    return {}
 
 
 def _entity_selector(domain: str = "sensor") -> Any:
@@ -511,22 +563,17 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         Open-Meteo (keyless, default) supplies the irradiance for PV tuning plus
         cloud/temperature; OpenWeatherMap is an optional legacy alternative for
-        cloud/temperature.
+        cloud/temperature. An enabled OWM key is tested here, before it is stored.
         """
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_battery()
+            errors = await _validate_weather(self.hass, {**self._data, **user_input})
+            if not errors:
+                self._data.update(user_input)
+                return await self.async_step_battery()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_OPENMETEO_ENABLED, default=DEFAULT_OPENMETEO_ENABLED): BooleanSelector(),
-                vol.Required(CONF_OWM_ENABLED, default=False): BooleanSelector(),
-                vol.Optional(CONF_OWM_API_KEY, default=""): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="weather", data_schema=schema)
+        current = {**self._data, **(user_input or {})}
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (optional)."""
@@ -680,25 +727,17 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="database", data_schema=schema)
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
-        """Step 3 — Weather & Irradiance (options flow)."""
+        """Step 3 — Weather & Irradiance (options flow). Tests an enabled OWM key."""
+        current = {**self.config_entry.data, **self.config_entry.options, **self._opts}
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._opts.update(user_input)
-            return await self.async_step_battery()
+            errors = await _validate_weather(self.hass, {**current, **user_input})
+            if not errors:
+                self._opts.update(user_input)
+                return await self.async_step_battery()
+            current = {**current, **user_input}
 
-        current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_OPENMETEO_ENABLED,
-                    default=current.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED),
-                ): BooleanSelector(),
-                vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
-                vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="weather", data_schema=schema)
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (options flow)."""

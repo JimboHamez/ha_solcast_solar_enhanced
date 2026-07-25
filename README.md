@@ -34,17 +34,24 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b9 (beta)
+## 🆕 What's new in v1.10.0b10 (beta)
 
-**PV tuning now says "I don't know" instead of guessing your roof tilt.** The tuner searches for the tilt that best explains your clear-sky generation — but on many real roofs that search has no meaningful answer, and it was reporting one anyway. Changing tilt turns out to be almost the same as changing the fitted capacity scale (only ~1–2% different across the whole plausible range), which the fit cancels out. Once your data is noisier than that — and real winter arrays are, by a long way — the "best" tilt is decided by whichever records happened to arrive, not by your roof.
+**A housekeeping release — nothing about how your forecast gets corrected has changed.** No change to tuning, dampening or storage. This beta brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist): the four Bronze rules it was failing, plus the Gold rule on entity naming.
 
-On one real install the tuned tilt wandered between 7.8° and 30° across ten days against a configured 24.75°, then drifted down to 2°. Not one of those numbers meant anything.
+Four things you'll actually notice:
 
-So the tuner now checks whether the answer is actually supported by the data, and the **Tuned Tilt** sensors read unavailable when it isn't — with the reason and the fit error in the attributes, plus the value it would have reported. The **orientation warning** added in b8 is also silenced in that case: it exists to tell you your Solcast tilt looks wrong, and it shouldn't say that on the strength of a number we know is noise.
+- **Every sensor name is now translated.** Fourteen sensors — Forecast Now/Today, Tuned Panel Tilt/Azimuth, Tuning RMSE, Database Records, MPPT DC Voltage, Dampening Hours with DB Data, Weather Temperature, Cloud Cover, the three 30-min averages and Base Integration Status — were still English-only in all 11 shipped locales, while the rest of the sensors were translated. They now follow your Home Assistant language like everything else.
+- **Your OpenWeatherMap key is tested before it's saved.** Enabling OWM in the setup wizard now probes the API with the key you typed. A rejected key, an unreachable service or a blank key each stop you on the step with a specific message, instead of being accepted and then failing quietly on every fetch afterwards. (A brand-new OpenWeatherMap key can take a couple of hours to activate, so it may legitimately be rejected at first.) Open-Meteo is keyless and the database is a local file, so neither needs testing.
+- **The three actions now tell you when they can't run.** `run_pv_tuning`, `run_dampening_update` and `fetch_weather` previously did nothing at all — silently — if the integration wasn't loaded. They now raise a clear error. They're also registered at Home Assistant startup rather than when the integration loads, so automations that reference them keep validating even while it's disabled.
+- **The README documents how to remove the integration** — including the two things deliberately left behind, and why: your history database (so reinstalling resumes instead of restarting the multi-week data build) and any dampening factors already pushed to Solcast.
 
-If your fit *is* good, nothing changes — the tilt is reported exactly as before.
+**Upgrading?** Drop-in. Your existing entities keep their IDs — those live in Home Assistant's entity registry and aren't regenerated.
 
-> **Honest limitation:** this catches "can't tell", not "confidently wrong". An array with heavy morning shading can produce a tight fit at a badly wrong tilt, and that still gets through. Treat a reported tilt as a hint, and check the Tuning RMSE before acting on it.
+> **One caveat, if you run Home Assistant in a language other than English.** Translated entity names mean Home Assistant builds entity IDs from the *translated* name. That only applies to entities being registered for the first time, so upgrading changes nothing — but a **fresh** install in a non-English language will get localized entity IDs rather than the English ones listed in the Sensors table below. Check the IDs in the UI before writing automations against them. This is the same mechanism behind the b5 fix ([issue #41](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/41)), and it's inherent to naming entities the way Home Assistant asks.
+
+> **v1.10.0b9 — PV tuning now says "I don't know" instead of guessing your roof tilt.** The tuner searches for the tilt that best explains your clear-sky generation, but on many real roofs that search has no meaningful answer and it was reporting one anyway. Changing tilt turns out to be almost the same as changing the fitted capacity scale (only ~1–2% different across the whole plausible range), which the fit cancels out — so once your data is noisier than that, and real winter arrays are by a long way, the "best" tilt is decided by whichever records happened to arrive rather than by your roof. On one real install the tuned tilt wandered between 7.8° and 30° across ten days against a configured 24.75°, then drifted down to 2°. Not one of those numbers meant anything.
+
+> The tuner now checks whether the answer is actually supported by the data, and the **Tuned Tilt** sensors read unavailable when it isn't — with the reason and the fit error in the attributes, plus the value it would have reported. The **orientation warning** added in b8 is silenced in that case too: it exists to tell you your Solcast tilt looks wrong, and it shouldn't say that on the strength of a number we know is noise. If your fit *is* good, nothing changes. **Honest limitation:** this catches "can't tell", not "confidently wrong" — an array with heavy morning shading can produce a tight fit at a badly wrong tilt, and that still gets through. Treat a reported tilt as a hint and check the Tuning RMSE before acting on it.
 
 > **v1.10.0b8 — you can now watch the dampening factor that's actually in effect right now.** Until now the only way to see what dampening was being applied was to dig through the per-hour attributes on the *Dampening Hours with DB Data* sensor, and per-array there was nothing at all beyond a whole-day average. This beta adds a **Current Hour Dampening** sensor — property-wide, plus one per array — carrying the exact factor pushed to Solcast for the current local hour. Because it's a sensor state rather than an attribute it gets recorder history, so you can graph the dampening curve against your measured output over the day.
 
@@ -155,6 +162,17 @@ Tuning and dampening only learn from *clear-sky* periods (cloudy ones tell you n
 
 Storage uses the Python standard library, so there's nothing to install. PV tuning uses **numpy**, which Home Assistant already ships (and which runs on a Raspberry Pi) — so a normal HA install needs nothing extra.
 
+### Removing the integration
+
+1. Go to **Settings → Devices & Services**, find **Solcast Solar Enhanced**, open the ⋮ menu on the entry and choose **Delete**. This removes the config entry along with every device and entity it created.
+2. If you installed via HACS, open HACS → **Solcast Solar Enhanced** → ⋮ → **Remove**. For a manual install, delete `config/custom_components/solcast_solar_enhanced/`.
+3. Restart Home Assistant.
+
+Two things are deliberately left behind, because deleting them is not reversible:
+
+- **The history database.** `config/solcast_solar_enhanced.db` (plus any `-wal`/`-shm` files beside it) holds every actual-vs-forecast record ever collected. Deleting the integration leaves it in place, so reinstalling picks up where you left off. Delete the file yourself if you want the history gone — from scratch, the dampening blend needs weeks of records before it carries real weight again.
+- **Dampening factors already pushed to the base integration.** Removing this integration stops future pushes but does not undo the last one, so the Solcast PV Forecast integration keeps applying whatever factors it was last given. To clear them, either clear **granular dampening** in the Solcast PV Forecast options (which deletes `solcast-dampening.json`), or call `solcast_solar.set_dampening` with 24 factors of `1.0` and no site. Leaving them in place is harmless but means your forecast stays shaded by the last measured curve.
+
 ---
 
 ## Configuration
@@ -208,6 +226,8 @@ Open-Meteo (keyless) is on by default and powers tuning & dampening (see [§4 ab
 | Enable Open-Meteo | **On** | Keyless irradiance (GHI/DNI/DHI) + cloud/temperature |
 | Enable OWM | **Off** | Optional legacy cloud/temperature source; needs a key |
 | OWM API key | — | Free key from openweathermap.org (only if OWM enabled) |
+
+If you enable OWM, the key is tested against the API before the step is accepted — a rejected key, an unreachable service or a blank key each fail here with a message rather than being stored and failing quietly on every later fetch. Note that a newly created OpenWeatherMap key can take a couple of hours to activate, so a brand-new key may legitimately be rejected at first.
 
 ### Step 4 — Battery Storage
 
@@ -312,6 +332,8 @@ The per-site step asks which of these two topologies you have, then shows only t
 | PV Forecast Confidence | 0–100 | Short-horizon load-scheduling decision aid — how well recent output is tracking the forecast (`rating` high/medium/low + `recent_bias` in attributes). A decision aid, not a forecast; never pushed to the base |
 | Base Integration Status | — | `connected` or `not_detected` |
 
+All sensor names above are **translated into your Home Assistant language** (11 locales ship with the integration); the English names are shown here. Existing entities keep the entity IDs they were registered with, so nothing breaks on upgrade — but note that on a *fresh* install in a non-English language, Home Assistant builds each entity ID from the translated name, so the IDs will not be the English ones listed here. Check the entity IDs in Home Assistant before writing automations against them.
+
 ### Per-site sensors (multi-site only)
 
 When you configure more than one array, each array gets **its own HA device** (grouped on its own card, nested under the main integration device), carrying these entities:
@@ -336,6 +358,8 @@ Each array's display name comes from the **sites** config step (defaults to its 
 | `solcast_solar_enhanced.run_pv_tuning` | Force immediate PV tuning |
 | `solcast_solar_enhanced.run_dampening_update` | Force immediate dampening recalculation and push |
 | `solcast_solar_enhanced.fetch_weather` | Force immediate weather fetch (Open-Meteo / OWM) |
+
+All three take no parameters and act on the configured entry. They stay registered even while the integration is unloaded, so automations that reference them keep validating; calling one in that state raises an error telling you the integration isn't loaded, rather than doing nothing.
 
 ---
 

@@ -82,7 +82,10 @@
     },
     "error": {
       "dc_split_missing_dc": "Podział DC wymaga czujnika DC/MPPT dla każdego łańcucha. Dodaj brakujący czujnik DC lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
-      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”."
+      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
+      "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
+      "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
+      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo."
     }
   },
   "options": {
@@ -168,7 +171,10 @@
     },
     "error": {
       "dc_split_missing_dc": "Podział DC wymaga czujnika DC/MPPT dla każdego łańcucha. Dodaj brakujący czujnik DC lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
-      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”."
+      "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
+      "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
+      "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
+      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo."
     }
   },
   "entity": {
@@ -199,6 +205,48 @@
       },
       "site_current_dampening": {
         "name": "Tłumienie w bieżącej godzinie"
+      },
+      "forecast_now": {
+        "name": "Prognoza teraz"
+      },
+      "forecast_today": {
+        "name": "Prognoza dzisiaj"
+      },
+      "tuning_tilt": {
+        "name": "Dostrojony kąt nachylenia panelu"
+      },
+      "tuning_azimuth": {
+        "name": "Dostrojony azymut panelu"
+      },
+      "tuning_rmse": {
+        "name": "RMSE strojenia"
+      },
+      "db_records": {
+        "name": "Rekordy bazy danych"
+      },
+      "mppt_dc": {
+        "name": "Napięcie DC MPPT (maks.)"
+      },
+      "dampening": {
+        "name": "Godziny tłumienia z danymi z bazy"
+      },
+      "weather_temp": {
+        "name": "Temperatura pogodowa"
+      },
+      "weather_clouds": {
+        "name": "Zachmurzenie"
+      },
+      "battery_charge": {
+        "name": "Ładowanie akumulatora średnia 30 min"
+      },
+      "pv_actual": {
+        "name": "Moc PV średnia 30 min"
+      },
+      "pv_export": {
+        "name": "Oddawanie PV średnia 30 min"
+      },
+      "base_status": {
+        "name": "Stan integracji bazowej"
       }
     }
   },
@@ -232,6 +280,11 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced nie jest załadowany, więc ta akcja nie może zostać wykonana. Sprawdź, czy integracja jest włączona i poprawnie uruchomiona."
     }
   }
 }

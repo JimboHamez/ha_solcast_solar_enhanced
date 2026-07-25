@@ -4,11 +4,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+import aiohttp
 import pytest
 
 from custom_components.solcast_solar_enhanced.solcast_api import (
     OpenMeteoClient,
+    OWMAuthError,
     OWMClient,
+    OWMConnectionError,
 )
 
 _OWM_PAYLOAD = {
@@ -76,6 +79,66 @@ async def test_owm_fetch_handles_errors_gracefully():
     # Unknown weather → None (fail-safe), NOT 0. A 0 would read as clear sky and
     # be trusted by the tuning/dampening clear-sky filters.
     assert result == {"temp": None, "clouds": None, "description": "unavailable"}
+
+
+async def test_owm_validate_passes_on_success():
+    """A working key returns normally, so the config flow can proceed."""
+    session = _FakeSession(_OWM_PAYLOAD)
+    client = OWMClient("key", -37.9, 145.0, session=session)
+    assert await client.async_validate() is None
+    assert session.get_calls == 1
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_owm_validate_maps_rejected_key_to_auth_error(status):
+    """401/403 mean the key itself is bad — distinguishable from an outage."""
+
+    class _Rejects(_FakeSession):
+        def get(self, url, params=None, timeout=None):
+            raise aiohttp.ClientResponseError(None, (), status=status)
+
+    client = OWMClient("key", -37.9, 145.0, session=_Rejects(_OWM_PAYLOAD))
+    with pytest.raises(OWMAuthError):
+        await client.async_validate()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        aiohttp.ClientResponseError(None, (), status=500),
+        aiohttp.ClientError("refused"),
+        TimeoutError(),
+    ],
+)
+async def test_owm_validate_maps_outage_to_connection_error(error):
+    """Anything that is not a rejected key reads as 'could not connect'."""
+
+    class _Down(_FakeSession):
+        def get(self, url, params=None, timeout=None):
+            raise error
+
+    client = OWMClient("key", -37.9, 145.0, session=_Down(_OWM_PAYLOAD))
+    with pytest.raises(OWMConnectionError):
+        await client.async_validate()
+
+
+async def test_owm_validate_raises_where_fetch_stays_silent():
+    """The two entry points differ on purpose: validate reports, fetch absorbs.
+
+    ``async_fetch`` must never raise — a transient outage mid-collection would
+    otherwise abort the cycle — but that same silence would let the config flow
+    store a key that can never work.
+    """
+
+    class _Down(_FakeSession):
+        def get(self, url, params=None, timeout=None):
+            raise aiohttp.ClientError("refused")
+
+    client = OWMClient("key", -37.9, 145.0, session=_Down(_OWM_PAYLOAD))
+
+    assert await client.async_fetch() == {"temp": None, "clouds": None, "description": "unavailable"}
+    with pytest.raises(OWMConnectionError):
+        await client.async_validate()
 
 
 async def test_owm_fetch_missing_clouds_is_unknown_not_zero():

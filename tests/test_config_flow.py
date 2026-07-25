@@ -4,9 +4,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockModule, mock_integration
+
+from custom_components.solcast_solar_enhanced.solcast_api import OWMAuthError, OWMConnectionError
 
 from custom_components.solcast_solar_enhanced.const import (
     BASE_DOMAIN,
@@ -524,3 +527,125 @@ async def test_options_migrates_flat_mppt_to_per_site(hass):
     assert data[CONF_SITE_GROUPS]  # groups derived
     for k in _MPPT_KEYS:
         assert data[k] is None  # flat keys retired
+
+
+# ---------------------------------------------------------------------------
+# Connection test before configure (quality scale: test-before-configure)
+# ---------------------------------------------------------------------------
+
+_OWM_ON = {
+    CONF_OPENMETEO_ENABLED: True,
+    CONF_OWM_ENABLED: True,
+    CONF_OWM_API_KEY: "deadbeef",
+}
+
+_VALIDATE = "custom_components.solcast_solar_enhanced.config_flow.OWMClient.async_validate"
+
+
+async def _advance_to_weather(hass) -> dict:
+    """Walk the config flow as far as the weather step."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_SITE)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_DATABASE)
+    assert result["step_id"] == "weather"
+    return result
+
+
+async def test_weather_step_rejects_key_owm_refuses(hass):
+    """A key OWM rejects fails the step rather than being stored."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "weather"
+    assert result["errors"] == {CONF_OWM_API_KEY: "invalid_auth"}
+
+
+async def test_weather_step_reports_owm_unreachable(hass):
+    """An unreachable OWM is reported on the form, not against the key field."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMConnectionError)):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_weather_step_requires_key_when_owm_enabled(hass):
+    """Enabling OWM without a key is caught locally, with no network call."""
+    result = await _advance_to_weather(hass)
+
+    validate = AsyncMock()
+    with patch(_VALIDATE, new=validate):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**_OWM_ON, CONF_OWM_API_KEY: "   "}
+        )
+
+    assert result["errors"] == {CONF_OWM_API_KEY: "owm_key_missing"}
+    validate.assert_not_awaited()
+
+
+async def test_weather_step_accepts_working_key(hass):
+    """A key OWM accepts lets the wizard continue."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(return_value=None)) as validate:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["step_id"] == "battery"
+    validate.assert_awaited_once()
+
+
+async def test_weather_step_skips_test_when_owm_disabled(hass):
+    """Open-Meteo is keyless, so leaving OWM off performs no connection test."""
+    result = await _advance_to_weather(hass)
+
+    validate = AsyncMock()
+    with patch(_VALIDATE, new=validate):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_WEATHER)
+
+    assert result["step_id"] == "battery"
+    validate.assert_not_awaited()
+
+
+async def test_weather_step_redisplay_keeps_submitted_values(hass):
+    """A failed test redisplays the step with what the user typed, not the defaults."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**_OWM_ON, CONF_OPENMETEO_ENABLED: False}
+        )
+
+    defaults = {
+        str(key.schema): key.default() for key in result["data_schema"].schema if key.default is not vol.UNDEFINED
+    }
+    assert defaults[CONF_OWM_ENABLED] is True
+    assert defaults[CONF_OPENMETEO_ENABLED] is False
+    assert defaults[CONF_OWM_API_KEY] == "deadbeef"
+
+
+async def test_options_weather_step_validates_key(hass, mock_config_entry):
+    """The options flow runs the same connection test before saving a changed key."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], STEP_SITE)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], STEP_DATABASE)
+    assert result["step_id"] == "weather"
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {CONF_OWM_API_KEY: "invalid_auth"}
+
+    with patch(_VALIDATE, new=AsyncMock(return_value=None)):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["step_id"] == "battery"

@@ -467,7 +467,9 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 
 ## Sensors (17 property-wide)
 
-| `_attr_name` | Unit | Description |
+Names below are the English strings. As of **v1.10.0b10** every sensor names itself with `_attr_translation_key` (no raw `_attr_name` remains), so the displayed name — and, for newly registered entities, the slugified entity id — follows the user's Home Assistant language.
+
+| Name (English) | Unit | Description |
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast |
 | Forecast Today | kWh | Total forecast for today |
@@ -645,7 +647,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`).
 
 ---
 
