@@ -104,7 +104,6 @@ class ForecastNowSensor(SolcastEnhancedEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:solar-power"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_FORECAST_NOW)
@@ -121,7 +120,6 @@ class ForecastTodaySensor(SolcastEnhancedEntity):
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL
-    _attr_icon = "mdi:solar-power-variant"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_FORECAST_TODAY)
@@ -136,7 +134,6 @@ class ForecastTodaySensor(SolcastEnhancedEntity):
 class TuningTiltSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_tilt"
     _attr_native_unit_of_measurement = "°"
-    _attr_icon = "mdi:angle-acute"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_TUNING_TILT)
@@ -153,7 +150,6 @@ class TuningTiltSensor(SolcastEnhancedEntity):
 class TuningAzimuthSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_azimuth"
     _attr_native_unit_of_measurement = "°"
-    _attr_icon = "mdi:compass"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_TUNING_AZIMUTH)
@@ -167,7 +163,6 @@ class TuningRmseSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_rmse"
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
-    _attr_icon = "mdi:chart-bell-curve"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_TUNING_RMSE)
@@ -179,7 +174,6 @@ class TuningRmseSensor(SolcastEnhancedEntity):
 
 class TuningExportExcludedSensor(SolcastEnhancedEntity):
     _attr_translation_key = "tuning_export_excluded"
-    _attr_icon = "mdi:transmission-tower-off"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
@@ -192,7 +186,6 @@ class TuningExportExcludedSensor(SolcastEnhancedEntity):
 
 class DbRecordsSensor(SolcastEnhancedEntity):
     _attr_translation_key = "db_records"
-    _attr_icon = "mdi:database"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
@@ -232,7 +225,6 @@ class MpptDcSensor(SolcastEnhancedEntity):
     _attr_device_class = SensorDeviceClass.VOLTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:current-dc"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_MPPT_DC)
@@ -252,7 +244,6 @@ class MpptDcSensor(SolcastEnhancedEntity):
 
 class DampeningSensor(SolcastEnhancedEntity):
     _attr_translation_key = "dampening"
-    _attr_icon = "mdi:weather-partly-cloudy"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_DAMPENING)
@@ -284,7 +275,6 @@ class CurrentDampeningSensor(SolcastEnhancedEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
-    _attr_icon = "mdi:chart-timeline-variant"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_CURRENT_DAMPENING)
@@ -308,7 +298,6 @@ class PvForecastConfidenceSensor(SolcastEnhancedEntity):
     _attr_translation_key = "pv_forecast_confidence"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:check-decagram"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_PV_CONFIDENCE)
@@ -330,7 +319,6 @@ class SiteShadingSensor(SolcastEnhancedSiteEntity):
     """
 
     _attr_translation_key = "site_shading"
-    _attr_icon = "mdi:home-roof"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_shading")
@@ -354,7 +342,6 @@ class SiteOutputSensor(SolcastEnhancedSiteEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:solar-power"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_output")
@@ -376,7 +363,6 @@ class SiteTunedTiltSensor(SolcastEnhancedSiteEntity):
 
     _attr_translation_key = "site_tuned_tilt"
     _attr_native_unit_of_measurement = "°"
-    _attr_icon = "mdi:angle-acute"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_tuned_tilt")
@@ -399,7 +385,6 @@ class SiteAzimuthSensor(SolcastEnhancedSiteEntity):
 
     _attr_translation_key = "site_azimuth"
     _attr_native_unit_of_measurement = "°"
-    _attr_icon = "mdi:compass"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_azimuth")
@@ -420,7 +405,6 @@ class SiteTuningRmseSensor(SolcastEnhancedSiteEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:chart-bell-curve"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_tuning_rmse")
@@ -443,7 +427,6 @@ class SiteCurrentDampeningSensor(SolcastEnhancedSiteEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
-    _attr_icon = "mdi:chart-timeline-variant"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
         super().__init__(coordinator, entry, site_id, name, "site_current_dampening")
@@ -477,7 +460,6 @@ class WeatherTempSensor(SolcastEnhancedEntity):
 class WeatherCloudsSensor(SolcastEnhancedEntity):
     _attr_translation_key = "weather_clouds"
     _attr_native_unit_of_measurement = "%"
-    _attr_icon = "mdi:weather-cloudy"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
@@ -496,7 +478,6 @@ class BatteryChargeSensor(RestoringSensorEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:battery-charging"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_BATTERY_CHARGE)
@@ -512,7 +493,6 @@ class PvActualSensor(RestoringSensorEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:solar-panel"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_PV_ACTUAL)
@@ -528,7 +508,6 @@ class PvExportSensor(RestoringSensorEntity):
     _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:transmission-tower-export"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_PV_EXPORT)
@@ -541,7 +520,6 @@ class PvExportSensor(RestoringSensorEntity):
 
 class BaseIntegrationSensor(SolcastEnhancedEntity):
     _attr_translation_key = "base_status"
-    _attr_icon = "mdi:connection"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_BASE_STATUS)

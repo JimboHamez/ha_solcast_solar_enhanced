@@ -1,0 +1,83 @@
+{
+  "entity": {
+    "sensor": {
+      "base_status": {
+        "default": "mdi:connection"
+      },
+      "battery_charge": {
+        "default": "mdi:battery-charging"
+      },
+      "current_dampening": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "dampening": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "db_records": {
+        "default": "mdi:database"
+      },
+      "forecast_now": {
+        "default": "mdi:solar-power"
+      },
+      "forecast_today": {
+        "default": "mdi:solar-power-variant"
+      },
+      "mppt_dc": {
+        "default": "mdi:current-dc"
+      },
+      "pv_actual": {
+        "default": "mdi:solar-panel"
+      },
+      "pv_export": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "pv_forecast_confidence": {
+        "default": "mdi:check-decagram"
+      },
+      "site_azimuth": {
+        "default": "mdi:compass"
+      },
+      "site_current_dampening": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "site_output": {
+        "default": "mdi:solar-power"
+      },
+      "site_shading": {
+        "default": "mdi:home-roof"
+      },
+      "site_tuned_tilt": {
+        "default": "mdi:angle-acute"
+      },
+      "site_tuning_rmse": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "tuning_azimuth": {
+        "default": "mdi:compass"
+      },
+      "tuning_export_excluded": {
+        "default": "mdi:transmission-tower-off"
+      },
+      "tuning_rmse": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "tuning_tilt": {
+        "default": "mdi:angle-acute"
+      },
+      "weather_clouds": {
+        "default": "mdi:weather-cloudy"
+      }
+    }
+  },
+  "services": {
+    "fetch_weather": {
+      "service": "mdi:cloud-download"
+    },
+    "run_dampening_update": {
+      "service": "mdi:weather-partly-cloudy"
+    },
+    "run_pv_tuning": {
+      "service": "mdi:tune"
+    }
+  }
+}

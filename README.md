@@ -426,7 +426,7 @@ Above Bronze the picture is mixed, and worth stating plainly rather than roundin
 | Tier | Passing | Outstanding |
 |---|---|---|
 | Silver | `config-entry-unloading`, `integration-owner`, both docs rules | `parallel-updates`, `entity-unavailable`, `action-exceptions`; overall coverage 94% against a required 95% (`reauthentication-flow` doesn't apply — OWM is optional and there's no primary credential) |
-| Gold | `devices`, `repair-issues`, `entity-translations`, `entity-device-class`, `entity-disabled-by-default`, `entity-category` | `diagnostics`, `icon-translations`, `reconfiguration-flow`, `stale-devices`, `dynamic-devices`, and three docs rules (`docs-examples`, `docs-troubleshooting`, `docs-known-limitations`) |
+| Gold | `devices`, `repair-issues`, `entity-translations`, `icon-translations`, `entity-device-class`, `entity-disabled-by-default`, `entity-category` | `diagnostics`, `reconfiguration-flow`, `stale-devices`, `dynamic-devices`, and three docs rules (`docs-examples`, `docs-troubleshooting`, `docs-known-limitations`) |
 | Platinum | `strict-typing` — `mypy --strict` is clean across the package | `async-dependency` and `inject-websession` are only vacuously met: the API client lives in-component rather than as a separate library |
 
 ---

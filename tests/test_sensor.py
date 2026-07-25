@@ -323,3 +323,49 @@ def test_every_locale_translates_every_entity_name(locale):
 
     assert set(names) == expected, f"{locale} key set differs from strings.json"
     assert all(entry["name"].strip() for entry in names.values()), f"{locale} has a blank name"
+
+
+# ---------------------------------------------------------------------------
+# Entity icons (quality scale: icon-translations)
+# ---------------------------------------------------------------------------
+
+
+def _icons() -> dict:
+    return _strings(_COMPONENT / "icons.json")
+
+
+def test_no_sensor_sets_its_icon_in_code():
+    """Icons live in icons.json, never as a hardcoded ``_attr_icon``.
+
+    An `_attr_icon` wins over icons.json silently, so a stray one would leave
+    the JSON entry looking correct while doing nothing.
+    """
+    assert "_attr_icon" not in _SENSOR_SRC
+
+
+def test_every_icon_key_belongs_to_a_real_sensor():
+    """icons.json cannot carry an icon for a translation key no sensor declares."""
+    orphaned = set(_icons()["entity"]["sensor"]) - _declared_translation_keys()
+    assert not orphaned, f"icons for no sensor: {sorted(orphaned)}"
+
+
+def test_icons_cover_every_sensor_without_a_device_class():
+    """A sensor with no device class needs an explicit icon, or it renders blank.
+
+    Sensors that *do* carry a device class inherit an icon from it, so they are
+    allowed to be absent from icons.json rather than forced to duplicate it.
+    """
+    icon_keys = set(_icons()["entity"]["sensor"])
+    for block in _SENSOR_SRC.split("\nclass ")[1:]:
+        key = re.search(r'_attr_translation_key = "([^"]+)"', block)
+        if key and "_attr_device_class" not in block:
+            assert key.group(1) in icon_keys, f"{key.group(1)} has neither a device class nor an icon"
+
+
+def test_every_action_has_an_icon():
+    """All three actions carry an icon, matching services.yaml."""
+    import yaml
+
+    services = yaml.safe_load((_COMPONENT / "services.yaml").read_text(encoding="utf-8"))
+    assert set(_icons()["services"]) == set(services)
+    assert all(entry["service"].startswith("mdi:") for entry in _icons()["services"].values())
