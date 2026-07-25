@@ -13,6 +13,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 
 ### Added
 - **The OpenWeatherMap key is now tested before it is stored** (`test-before-configure`). Enabling OWM in the Weather & Irradiance step probes the API with the key you entered; a rejected key, an unreachable service, or an empty key each fail the step with a specific message instead of being accepted and failing silently every 30 minutes afterwards. The step redisplays what you typed rather than resetting to defaults. Open-Meteo is keyless and the SQLite store is a local file at a fixed path, so neither has anything to test — leaving OWM off passes straight through.
+- **A quality-scale badge and self-assessment section** in the README. The badge reports Bronze at 15 of 17 applicable rules and links to a section stating plainly that this is our own audit, not an awarded tier — the quality scale is a programme for integrations shipping inside Home Assistant Core, and a custom integration is not eligible for an official rating. The section names the two Bronze rules still outstanding (`config-flow-test-coverage` at 97%, and base entities living in `sensor.py` rather than `entity.py`) and summarises the mixed picture above Bronze.
 - **Removal instructions** in the README (`docs-removal-instructions`), including what is deliberately left behind: the history database (so a reinstall resumes rather than restarting the multi-week data build) and any dampening factors already pushed to the base integration, with how to clear each.
 
 ### Changed

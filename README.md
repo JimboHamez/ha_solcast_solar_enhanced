@@ -6,6 +6,7 @@
 ![GitHub License](https://img.shields.io/github/license/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/y/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 ![Maintenance](https://img.shields.io/maintenance/yes/2026?style=for-the-badge)
+[![HA quality scale](https://img.shields.io/badge/HA%20quality%20scale-bronze%3A%2015%2F17-CD7F32?style=for-the-badge)](#home-assistant-quality-scale)
 
 [![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
 [![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
@@ -409,6 +410,23 @@ See the [design document](DESIGN_DOCUMENT.md#roadmap) for the full plan and the 
 | Python | 3.12+ |
 | Storage | stdlib `sqlite3` — no install |
 | numpy | PV tuning — 1.21.0+ (ships with Home Assistant) |
+
+---
+
+## Home Assistant quality scale
+
+This integration is measured against Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) — the checklist core integrations are held to, covering setup, entity naming, documentation, typing and test coverage.
+
+**This is a self-assessment, not an awarded tier.** The quality scale is a programme for integrations that ship inside Home Assistant Core; a custom/HACS integration like this one is not eligible for an official rating, and no tier is declared in `manifest.json`. The badge reports our own audit against the published rules, so you can see what has and hasn't been done rather than take "custom integration" on trust.
+
+**Bronze — 15 of 17 applicable rules.** Three Bronze rules don't apply: `brands` (custom integrations can't be listed in the Home Assistant brands repository), and `docs-triggers` / `docs-conditions` (this integration provides none). Two are genuinely outstanding:
+
+| Rule | Status |
+|---|---|
+| `config-flow-test-coverage` | 97% — the rule requires 100%. The gap is defensive branches: import guards, a duplicate-name tiebreak, and one options-flow error path |
+| `common-modules` | The base entity classes live in `sensor.py` rather than a dedicated `entity.py` |
+
+Above Bronze, the picture is mixed and honest: `strict-typing` (Platinum) passes — `mypy --strict` is clean across the package — and `devices`, `repair-issues`, `entity-translations`, `entity-device-class` and `entity-disabled-by-default` (Gold) are met, while `diagnostics`, `icon-translations`, `reconfiguration-flow` and `stale-devices` are not yet. At Silver, `parallel-updates`, `entity-unavailable` and `action-exceptions` remain, and overall test coverage is 94% against the required 95%.
 
 ---
 
