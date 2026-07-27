@@ -556,11 +556,9 @@ This integration is measured against Home Assistant's [Integration Quality Scale
 
 One Gold rule doesn't apply. `dynamic-devices` asks that devices discovered after setup be added automatically — but an array here only becomes a device once you tell the integration *which sensor measures it*, which cannot be inferred. A new Solcast rooftop appearing in the base integration therefore can't produce a device on its own; mapping it in the sites step does, and that reloads the entry.
 
-Platinum is genuinely partial, and worth stating plainly rather than rounding up:
+**Platinum — all three rules pass, one of them with an asterisk.** `strict-typing` is met outright: `mypy --strict` is clean across the package and a `py.typed` marker ships with it. `async-dependency` and `inject-websession` are met in substance — the HTTP clients are `aiohttp` with no blocking I/O anywhere, and every call site injects Home Assistant's shared session (`async_get_clientsession(hass)`, in both the coordinator and the config flow's connection test) rather than opening its own.
 
-| Tier | Passing | Outstanding |
-|---|---|---|
-| Platinum | `strict-typing` — `mypy --strict` is clean across the package | `async-dependency` and `inject-websession` are only vacuously met: the API client lives in-component rather than as a separate library |
+The asterisk is architectural: those two rules assume the API code lives in a **separate published library** declared in `manifest.json` `requirements`, and here it lives in-component as `solcast_api.py`. That split is deliberate. The rule exists so Home Assistant Core can version a dependency independently of the integration that uses it; this integration ships as one unit through HACS, and the "client" is ~260 lines of two thin read-only wrappers over one OpenWeatherMap endpoint and one Open-Meteo endpoint. Splitting it would buy a second repository, a second release cadence and a version-compatibility surface between them, in exchange for nothing a user would notice.
 
 ### Where entities read *unavailable* vs *unknown*
 

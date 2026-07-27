@@ -48,6 +48,13 @@ class OWMClient:
         # Prefer Home Assistant's shared session (passed in) to avoid building a
         # new TCP/TLS connector on every 30-min fetch. Falls back to an owned
         # session when used standalone (e.g. the tuning CLI / tests).
+        #
+        # Under Home Assistant that fallback never fires: every call site injects
+        # `async_get_clientsession(hass)` (the coordinator and the config flow's
+        # connection test), per the quality scale's `inject-websession` rule. The
+        # owned-session branches below exist solely so this module stays usable
+        # outside HA, where there is no shared session to borrow — do not read
+        # them as the integration opening its own connections.
         self._session = session
 
     async def async_fetch(self) -> dict[str, Any]:
@@ -151,6 +158,9 @@ class OpenMeteoClient:
         """Store location and the optional shared aiohttp session."""
         self._lat = latitude
         self._lon = longitude
+        # As on OWMClient: Home Assistant always injects its shared session
+        # (`inject-websession`), so the owned-session branch in `_fetch` is only
+        # reached by the standalone tools, which have none to borrow.
         self._session = session
 
     async def async_get_interval(self, period_end_epoch: int) -> dict[str, Any]:
