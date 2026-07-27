@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap ha rifiutato questa chiave API. Controlla che non contenga errori di battitura: una chiave appena creata può inoltre richiedere un paio d'ore per attivarsi.",
       "cannot_connect": "Impossibile raggiungere OpenWeatherMap. Controlla la connessione a internet e riprova.",
       "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità."
+    },
+    "abort": {
+      "reconfigure_successful": "Riconfigurazione completata correttamente"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced non è caricato, quindi questa azione non può essere eseguita. Verifica che l'integrazione sia abilitata e si sia avviata correttamente."
+    },
+    "pv_tuning_failed": {
+      "message": "Non è stato possibile eseguire la taratura FV: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Non è stato possibile completare l'aggiornamento dell'attenuazione: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Non è stato possibile completare l'aggiornamento meteo: {error}"
+    },
+    "no_weather_source": {
+      "message": "Nessuna fonte meteo è abilitata, quindi non c'è nulla da scaricare. Attiva Open-Meteo (non serve una chiave API) oppure inserisci una chiave OpenWeatherMap nelle opzioni dell'integrazione."
     }
   }
 }

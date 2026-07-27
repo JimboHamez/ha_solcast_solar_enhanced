@@ -6,7 +6,7 @@
 ![GitHub License](https://img.shields.io/github/license/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/y/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 ![Maintenance](https://img.shields.io/maintenance/yes/2026?style=for-the-badge)
-[![HA quality scale](https://img.shields.io/badge/HA%20quality%20scale-bronze-CD7F32?style=for-the-badge)](#home-assistant-quality-scale)
+[![HA quality scale](https://img.shields.io/badge/HA%20quality%20scale-gold-CFB53B?style=for-the-badge)](#home-assistant-quality-scale)
 
 [![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
 [![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
@@ -37,13 +37,20 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ## 🆕 What's new in v1.10.0b10 (beta)
 
-**A housekeeping release — nothing about how your forecast gets corrected has changed.** No change to tuning, dampening or storage. This beta brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist): the four Bronze rules it was failing, plus the Gold rule on entity naming.
+**A housekeeping release — nothing about how your forecast gets corrected has changed.** No change to tuning, dampening or storage. This beta brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist), clearing every applicable **Bronze, Silver and Gold** rule.
 
-Four things you'll actually notice:
+Ten things you'll actually notice:
+
+- **You can download diagnostics.** **⋮ → Download diagnostics** on the integration page now produces one file with the effective configuration, the last collector readings, the full half-hour dampening curve, the tuning fit and the store's coverage. Previously, answering "why is it doing that?" meant screenshotting a dozen entity attributes. Your OpenWeatherMap key and your site coordinates are redacted, so it's safe to attach to an issue.
+- **There's now a Reconfigure option.** The full setup wizard can be re-run against your existing entry from the integration's menu, prefilled with what you have configured today. The options flow already covered the same ground; Reconfigure is what Home Assistant's UI now steers people to, and it writes both halves of the config so a value you enter can't be shadowed by an older options value.
+- **Devices for arrays you stop measuring are cleaned up.** Removing an array in the sites step used to leave an empty device card behind that you couldn't get rid of. It's now removed on reload, and any array device we no longer own can be deleted by hand from its device page.
+- **The README gained Examples, Troubleshooting and Known limitations sections** — ready-to-paste automations, a symptom-to-cause table for the things that actually go wrong (dampening that appears to do nothing, a Tuned Tilt reading *unknown*, per-site sensors sitting at zero), and a plain list of what this integration cannot do and why.
 
 - **Every sensor name is now translated.** Fourteen sensors — Forecast Now/Today, Tuned Panel Tilt/Azimuth, Tuning RMSE, Database Records, MPPT DC Voltage, Dampening Hours with DB Data, Weather Temperature, Cloud Cover, the three 30-min averages and Base Integration Status — were still English-only in all 11 shipped locales, while the rest of the sensors were translated. They now follow your Home Assistant language like everything else.
 - **Your OpenWeatherMap key is tested before it's saved.** Enabling OWM in the setup wizard now probes the API with the key you typed. A rejected key, an unreachable service or a blank key each stop you on the step with a specific message, instead of being accepted and then failing quietly on every fetch afterwards. (A brand-new OpenWeatherMap key can take a couple of hours to activate, so it may legitimately be rejected at first.) Open-Meteo is keyless and the database is a local file, so neither needs testing.
-- **The three actions now tell you when they can't run.** `run_pv_tuning`, `run_dampening_update` and `fetch_weather` previously did nothing at all — silently — if the integration wasn't loaded. They now raise a clear error. They're also registered at Home Assistant startup rather than when the integration loads, so automations that reference them keep validating even while it's disabled.
+- **The three actions now tell you when they can't run — and when they didn't work.** `run_pv_tuning`, `run_dampening_update` and `fetch_weather` previously did nothing at all — silently — if the integration wasn't loaded, and a failure *inside* one was written to the log and otherwise swallowed, so the action reported success. Both now raise an error you can see. They're also registered at Home Assistant startup rather than when the integration loads, so automations that reference them keep validating even while it's disabled.
+- **`fetch_weather` now actually refreshes Open-Meteo.** It only ever refreshed OpenWeatherMap — so on a default install, where Open-Meteo is the keyless source and OWM isn't configured, calling it did nothing whatsoever and still reported success. It now refreshes whichever sources you have enabled, and tells you if you've enabled none.
+- **Sensors that have lost their data source now read *unavailable* rather than sitting blank.** *Weather Temperature* and *Cloud Cover* when no weather source is enabled or a fetch comes back empty; *MPPT DC Voltage* when no per-string DC sensors are configured. A blank value can't be told apart from a genuine zero at a glance — *unavailable* can. See [the note in the quality-scale section](#where-entities-read-unavailable-vs-unknown) for where this deliberately does *not* apply.
 - **The README documents how to remove the integration** — including the two things deliberately left behind, and why: your history database (so reinstalling resumes instead of restarting the multi-week data build) and any dampening factors already pushed to Solcast.
 
 **Upgrading?** Drop-in. Your existing entities keep their IDs — those live in Home Assistant's entity registry and aren't regenerated.
@@ -52,7 +59,7 @@ Four things you'll actually notice:
 
 > **v1.10.0b9 — PV tuning now says "I don't know" instead of guessing your roof tilt.** The tuner searches for the tilt that best explains your clear-sky generation, but on many real roofs that search has no meaningful answer and it was reporting one anyway. Changing tilt turns out to be almost the same as changing the fitted capacity scale (only ~1–2% different across the whole plausible range), which the fit cancels out — so once your data is noisier than that, and real winter arrays are by a long way, the "best" tilt is decided by whichever records happened to arrive rather than by your roof. On one real install the tuned tilt wandered between 7.8° and 30° across ten days against a configured 24.75°, then drifted down to 2°. Not one of those numbers meant anything.
 
-> The tuner now checks whether the answer is actually supported by the data, and the **Tuned Tilt** sensors read unavailable when it isn't — with the reason and the fit error in the attributes, plus the value it would have reported. The **orientation warning** added in b8 is silenced in that case too: it exists to tell you your Solcast tilt looks wrong, and it shouldn't say that on the strength of a number we know is noise. If your fit *is* good, nothing changes. **Honest limitation:** this catches "can't tell", not "confidently wrong" — an array with heavy morning shading can produce a tight fit at a badly wrong tilt, and that still gets through. Treat a reported tilt as a hint and check the Tuning RMSE before acting on it.
+> The tuner now checks whether the answer is actually supported by the data, and the **Tuned Tilt** sensors report no value when it isn't — with the reason and the fit error in the attributes, plus the value it would have reported. (The b9 notes described this as *unavailable*; the state is in fact *unknown*, deliberately, because Home Assistant hides the attributes of an unavailable entity and the attributes are the whole point here.) The **orientation warning** added in b8 is silenced in that case too: it exists to tell you your Solcast tilt looks wrong, and it shouldn't say that on the strength of a number we know is noise. If your fit *is* good, nothing changes. **Honest limitation:** this catches "can't tell", not "confidently wrong" — an array with heavy morning shading can produce a tight fit at a badly wrong tilt, and that still gets through. Treat a reported tilt as a hint and check the Tuning RMSE before acting on it.
 
 > **v1.10.0b8 — you can now watch the dampening factor that's actually in effect right now.** Until now the only way to see what dampening was being applied was to dig through the per-hour attributes on the *Dampening Hours with DB Data* sensor, and per-array there was nothing at all beyond a whole-day average. This beta adds a **Current Hour Dampening** sensor — property-wide, plus one per array — carrying the exact factor pushed to Solcast for the current local hour. Because it's a sensor state rather than an attribute it gets recorder history, so you can graph the dampening curve against your measured output over the day.
 
@@ -358,9 +365,131 @@ Each array's display name comes from the **sites** config step (defaults to its 
 |---|---|
 | `solcast_solar_enhanced.run_pv_tuning` | Force immediate PV tuning |
 | `solcast_solar_enhanced.run_dampening_update` | Force immediate dampening recalculation and push |
-| `solcast_solar_enhanced.fetch_weather` | Force immediate weather fetch (Open-Meteo / OWM) |
+| `solcast_solar_enhanced.fetch_weather` | Force an immediate refresh of every enabled weather/irradiance source (Open-Meteo, OWM) |
 
 All three take no parameters and act on the configured entry. They stay registered even while the integration is unloaded, so automations that reference them keep validating; calling one in that state raises an error telling you the integration isn't loaded, rather than doing nothing.
+
+They also raise when the work itself fails, rather than logging quietly and reporting success — so an automation step built on one will stop instead of carrying on as though it had run. `fetch_weather` additionally refuses when no weather source is enabled at all, since there would be nothing to fetch.
+
+---
+
+## Examples
+
+> The entity IDs below are the **English** defaults. On a non-English install Home Assistant builds them from the translated names, so check yours under **Developer tools → States** before copying anything.
+
+### Run a heavy load when the forecast is being trusted
+
+*PV Forecast Confidence* scores how well the last few hours of real output tracked the forecast. It is a scheduling aid, not a forecast — high confidence means "today's forecast is behaving", which is when it is safe to commit a dishwasher or a car charge to it.
+
+```yaml
+automation:
+  - alias: Charge the car on a forecast we can trust
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.solcast_solar_enhanced_pv_forecast_confidence
+        above: 75
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.solcast_solar_enhanced_forecast_now
+        above: 3.0
+    actions:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.ev_charger
+```
+
+### Re-tune after you change something physical
+
+Tuning runs itself every 24 h, so this is for when you have just cleaned the panels, cut back a tree, or corrected the tilt in Solcast and do not want to wait a day to see the effect.
+
+```yaml
+automation:
+  - alias: Re-tune after panel maintenance
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.panels_cleaned
+        to: "on"
+    actions:
+      - action: solcast_solar_enhanced.run_pv_tuning
+      - delay: "00:01:00"
+      - action: solcast_solar_enhanced.run_dampening_update
+```
+
+### See what dampening is actually being applied right now
+
+*Current Hour Dampening* is disabled by default (it is diagnostic) — enable it under the device page first. It reports the factor for the current local hour, which is what the base integration is applying to this hour's forecast.
+
+```yaml
+template:
+  - sensor:
+      - name: Shading loss this hour
+        unit_of_measurement: "%"
+        state: >
+          {% set f = states('sensor.solcast_solar_enhanced_current_hour_dampening') | float(1) %}
+          {{ ((1 - f) * 100) | round(1) }}
+```
+
+### Get told when the tuned orientation disagrees with Solcast
+
+This also raises a repair issue, so the automation is only worth adding if you want it pushed to your phone. It is **advisory** — dampening is still applied either way.
+
+```yaml
+automation:
+  - alias: Notify on orientation divergence
+    triggers:
+      - trigger: state
+        entity_id: sensor.solcast_solar_enhanced_dampening_hours_with_db_data
+        attribute: orientation_diverged
+        to: true
+    actions:
+      - action: notify.mobile_app
+        data:
+          message: >
+            Tuned orientation no longer matches the Solcast site configuration.
+```
+
+### Turn on debug logging
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.solcast_solar_enhanced: debug
+```
+
+---
+
+## Troubleshooting
+
+**Start with a diagnostics download.** On the integration page choose **⋮ → Download diagnostics**. It contains the effective configuration, the last collector readings, the full half-hour dampening curve, the tuning fit and the store's coverage — enough to answer most "why is it doing that?" questions without any screenshots. Your OpenWeatherMap key and your site coordinates are redacted; everything else is measurement data, so it is safe to attach to an issue.
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| **Dampening seems to have no effect** | The base integration's *automatic dampening* is on — it rejects manual `set_dampening`, so we skip the push entirely | Turn automatic dampening off in the base integration's options |
+| **…still no effect, multi-site** | A pre-existing `all` key in the base's granular dampening file shadows every per-site key | Check the repair issues — we detect this and raise one. Clear the `all` entry (a global `set_dampening` call, or the base's own UI) and our next push will land |
+| **Dampening factors are all 1.0** | Not enough history yet. The blend ramps from a neutral 1.0 toward the measured ratio as quality-weighted records accumulate | Check `alpha` and `quality_records` in the *Dampening Hours with DB Data* attributes. In winter, or after a database reset, this legitimately takes weeks |
+| **Tuned Tilt reads *unknown*** | By design — the fit could not actually determine a tilt, and reporting one you might apply to Solcast would make your forecast worse | Read `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes. `railed` means the best fit sat on a search bound; `fit_too_loose` means the residual was too large relative to output |
+| **Per-site sensors read 0 or *unknown*** | The base integration is not exposing per-site forecast detail, and the arrays' azimuths differ by more than 10°, so we will not invent a capacity split | Confirm the base's `detailedForecast-<resource_id>` attribute exists. With divergent orientations, per-site dampening needs real per-site detail |
+| **Database Records is not growing** | Storage disabled, or the base integration is not loaded | Check *Base Integration Status* reads `connected`, and that Storage is enabled in the options |
+| **Weather Temperature / Cloud Cover unavailable** | No weather source is enabled, or the last fetch came back empty | Enable Open-Meteo (keyless) in the Weather step. *Unavailable* here means "no source", not "zero" |
+| **MPPT DC Voltage unavailable** | No per-string DC sensors are configured | Optional feature — map them in the sites step if your inverter exposes per-tracker voltage and current |
+| **Entity IDs don't match the docs** | On a fresh non-English install, Home Assistant derives entity IDs from the *translated* names | Look the real IDs up in **Developer tools → States** |
+
+---
+
+## Known limitations
+
+Stated plainly, because most of these are consequences of what the data can and cannot support rather than bugs waiting to be fixed:
+
+- **Tilt is frequently not identifiable, and azimuth never is.** Rescaling plane-of-array irradiance from one tilt to another leaves only ~1–2% shape residual across the plausible range, and the least-squares capacity scale absorbs almost all of it — so the best-fit tilt is often set by noise. We detect the two clear failure cases and report *unknown*. What this does **not** catch is a fit that is confidently wrong: a moderate low-sun deficit can bias the tilt down while the fit stays tight. Treat a reported tilt as a hint, not an instruction. Azimuth is not tuned at all — it is degenerate with the irradiance-to-power time offset — so *Tuned Panel Azimuth* only echoes what you configured.
+- **Dampening needs clear-sky history, and winter is slow.** The confidence blend `α` is a function of quality-weighted record count, so real, strong morning shading can sit largely suppressed for weeks after a fresh install or a database reset — not because the shading was not measured, but because too few clear records have accumulated to trust it yet.
+- **The clear-sky gate is GHI-based.** The clearness index `Kt` uses global horizontal irradiance, which admits beam-poor days — thin high cloud or haze that leaves GHI looking healthy while direct beam is gone. A beam-fraction test is the known fix and is not implemented yet.
+- **The shading ratio's clean denominator cannot be backfilled.** The ratio divides by the base's forecast *before* our dampening was applied, which the base only retains for about 28 days. Rows written before that window fall back to the dampened figure, whose ratio is biased toward 1.0. `undampened_records` in the *Dampening* attributes tells you how many records have the clean denominator; it only climbs as new data arrives.
+- **Per-site forecasts are sometimes apportioned, not measured.** Many base installs don't populate the per-site `detailedForecast` attribute. We fall back to splitting the property-wide forecast by capacity share, but only when the arrays' azimuths agree within 10° — a per-slot capacity split across divergent orientations would invent timing that isn't there. Arrays that fail that test get no per-site forecast, and so no per-site dampening.
+- **Our push and the base's granular dampening are coupled.** Pushing per-site factors switches the base's `site_damp` option on automatically, and un-ticking it is undone by our next 6-hourly push. A global (single-site) push and a per-site push are mutually destructive, so we never emit both for one property.
+- **Battery support is not exercised on live hardware.** The battery read paths are covered by the test suite, but the author's system has no home battery, so they have never run against a real one. Treat battery features as the least-proven part of the integration.
+- **Seasonal queries do a full table scan.** The day-of-year window is a computed expression with no index behind it. Harmless at the sizes a single property produces; noted in the [design document](DESIGN_DOCUMENT.md#roadmap) alongside the retention plan.
+- **One property per Home Assistant instance.** `single_config_entry` is set: there is one base integration, one property and one shared database.
 
 ---
 
@@ -421,13 +550,24 @@ This integration is measured against Home Assistant's [Integration Quality Scale
 
 **Bronze — all 17 applicable rules pass.** `config_flow.py` carries 100% test coverage, entities are uniquely identified and named through translations, the coordinator lives on `entry.runtime_data`, actions register at startup and raise rather than fail silently, and the connection is tested before setup completes. Three Bronze rules don't apply: `brands` (custom integrations can't be listed in the Home Assistant brands repository), and `docs-triggers` / `docs-conditions` (this integration provides none).
 
-Above Bronze the picture is mixed, and worth stating plainly rather than rounding up:
+**Silver — all 9 applicable rules pass.** The config entry unloads cleanly, the coordinator logs an outage once rather than every cycle, actions raise a translated error when the work fails instead of logging and returning, entities that have lost their data source report *unavailable*, `PARALLEL_UPDATES` is declared, and test coverage sits at 96% against the required 95%. `reauthentication-flow` doesn't apply: there is no primary credential to re-authenticate — OpenWeatherMap is optional and the integration runs fully without it.
+
+**Gold — all applicable rules pass.** Each array is its own device, a diagnostics download is available from the integration page, the whole wizard can be re-run against an existing entry via **Reconfigure**, devices for arrays you stop measuring are cleaned up (and can be deleted by hand), problems surface as repair issues, entity names and icons come from translations, and the docs carry examples, troubleshooting and a known-limitations list.
+
+One Gold rule doesn't apply. `dynamic-devices` asks that devices discovered after setup be added automatically — but an array here only becomes a device once you tell the integration *which sensor measures it*, which cannot be inferred. A new Solcast rooftop appearing in the base integration therefore can't produce a device on its own; mapping it in the sites step does, and that reloads the entry.
+
+Platinum is genuinely partial, and worth stating plainly rather than rounding up:
 
 | Tier | Passing | Outstanding |
 |---|---|---|
-| Silver | `config-entry-unloading`, `integration-owner`, both docs rules | `parallel-updates`, `entity-unavailable`, `action-exceptions`; overall coverage 94% against a required 95% (`reauthentication-flow` doesn't apply — OWM is optional and there's no primary credential) |
-| Gold | `devices`, `repair-issues`, `entity-translations`, `icon-translations`, `entity-device-class`, `entity-disabled-by-default`, `entity-category` | `diagnostics`, `reconfiguration-flow`, `stale-devices`, `dynamic-devices`, and three docs rules (`docs-examples`, `docs-troubleshooting`, `docs-known-limitations`) |
 | Platinum | `strict-typing` — `mypy --strict` is clean across the package | `async-dependency` and `inject-websession` are only vacuously met: the API client lives in-component rather than as a separate library |
+
+### Where entities read *unavailable* vs *unknown*
+
+The two are not interchangeable, and the distinction is deliberate:
+
+- **Unavailable** means there is no source to read. *Weather Temperature* and *Cloud Cover* go unavailable when no weather source is enabled or a fetch came back empty; *MPPT DC Voltage* goes unavailable when no per-string DC sensors are configured.
+- **Unknown** means the source is fine but the value hasn't been measured yet — a per-array sensor before the first half-hour cycle completes, or a **Tuned Tilt** whose fit couldn't pin the tilt down. Tuned Tilt is deliberately *not* marked unavailable in that case: Home Assistant hides the attributes of an unavailable entity, and those attributes carry the reason and the tilt the fit produced.
 
 ---
 

@@ -2,9 +2,9 @@
 
 Everything in b10 is quality-scale housekeeping: **no change to tuning, dampening or storage**. A forecast corrected by b10 is corrected identically to b9. What *did* change is how the integration is wired into Home Assistant — and those are exactly the parts a test suite has to mock, so they need confirming on a real instance.
 
-The automated suite (506 tests, `mypy --strict`, ruff, 100% config-flow coverage) has been run and is green. It was run against **Home Assistant 2026.2.3** in the dev venv, while the manifest requires **2026.5.4** — so passing tests are weaker evidence than usual here.
+The automated suite (553 tests, `mypy --strict`, ruff, 96% coverage with the config flow at 100%) has been run and is green. It was run against **Home Assistant 2026.2.3** in the dev venv, while the manifest requires **2026.5.4** — so passing tests are weaker evidence than usual here.
 
-Four changes carry real risk on a live box:
+Six changes carry real risk on a live box:
 
 | Change | If it's wrong, you'd see |
 |---|---|
@@ -12,6 +12,8 @@ Four changes carry real risk on a live box:
 | Actions register in `async_setup` | Actions missing, or erroring when they shouldn't |
 | Base entity classes moved to `entity.py` | Entities on the wrong device, or restore broken |
 | Icons moved to `icons.json` | Blank or generic icons |
+| Weather / MPPT sensors made conditionally unavailable | A sensor reading `unavailable` that should be showing a number |
+| `fetch_weather` rewritten to cover Open-Meteo | The action erroring, or no longer updating Cloud Cover |
 
 ---
 
@@ -73,7 +75,29 @@ Then the genuinely new behaviour:
 
 On b9 that same call did nothing whatsoever, with no feedback. Silence was the bug.
 
-## 4. The OpenWeatherMap key test
+## 4. `fetch_weather` on the default (keyless) setup
+
+This is the change most likely to show up as a regression, because on b9 the action was a no-op here and a no-op never fails. Your install has **Open-Meteo on, OWM off**, which is exactly the case b9 didn't handle.
+
+- [ ] Note the current state and `last_changed` of **Cloud Cover** and **Weather Temperature**
+- [ ] Developer Tools → Actions → run `solcast_solar_enhanced.fetch_weather`
+- [ ] It completes **without** an error dialog
+- [ ] Cloud Cover / Weather Temperature update — `last_changed` moves, or the value does
+
+On b9 nothing would have moved. If you now get an error instead, that's the new `ServiceValidationError` firing when it shouldn't — send the message, it names which source it thought was missing.
+
+## 5. Sensors that should read *unavailable*
+
+New in b10: a sensor with no data source reads `unavailable` rather than sitting blank forever. The risk is over-reach — something reading `unavailable` that should be showing a number.
+
+- [ ] **MPPT DC Voltage** — you have DC sensors mapped, so this should show a **voltage**, not `unavailable`
+- [ ] **Weather Temperature** and **Cloud Cover** — Open-Meteo is on, so both should show **numbers**
+- [ ] Neither array's **Site Output** or **Tuned Tilt** reads `unavailable` (these were deliberately left alone — they show `unknown` before their first value)
+- [ ] **Tuned Tilt**, if it has no value, still shows its attributes (`unidentified_tilt`, the reason, the fit error) in Developer Tools → States
+
+That last one is the point of the exception: an unavailable entity has no attributes in the UI, and on this install the attributes are the useful part.
+
+## 6. The OpenWeatherMap key test
 
 You can exercise this fully **without owning an OWM key**.
 
@@ -94,7 +118,7 @@ You can exercise this fully **without owning an OWM key**.
 
 If instead you see *"Could not reach OpenWeatherMap"*, that's the network-failure path rather than the auth path — worth telling me, since it means the HTTP status didn't come back as expected.
 
-## 5. Restart, and check the restoring sensors
+## 7. Restart, and check the restoring sensors
 
 The restore path moved into `entity.py`. The move shouldn't have changed it, which is exactly why it's worth checking — this is the kind of thing that breaks quietly.
 
@@ -123,7 +147,7 @@ Send the log lines around the failure rather than just the symptom:
 
 **Settings → System → Logs → Load Full Logs**, or `config/home-assistant.log`, filtered to `solcast_solar_enhanced`.
 
-The error text usually identifies which of the four changes caused it:
+The error text usually identifies which of the changes caused it:
 
 | Symptom in the log | Likely cause |
 |---|---|
@@ -131,6 +155,8 @@ The error text usually identifies which of the four changes caused it:
 | `ServiceNotFound`, or actions missing entirely | The `async_setup` registration move |
 | `ImportError` / `ModuleNotFoundError` naming `entity` | Half-copied install — replace the whole directory |
 | Icons blank or generic | `icons.json` malformed or not copied |
+| A weather/MPPT sensor stuck on `unavailable` | The new `available` overrides reading the coordinator payload wrongly |
+| `fetch_weather` raising "No weather source is enabled" | The action's source check, when Open-Meteo *is* on |
 
 ---
 

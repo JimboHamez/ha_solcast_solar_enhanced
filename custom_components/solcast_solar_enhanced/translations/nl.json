@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap heeft deze API-sleutel geweigerd. Controleer op typefouten — een nieuw aangemaakte sleutel kan ook een paar uur nodig hebben om actief te worden.",
       "cannot_connect": "Kan OpenWeatherMap niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
       "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren."
+    },
+    "abort": {
+      "reconfigure_successful": "Herconfiguratie is geslaagd"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced is niet geladen, dus deze actie kan niet worden uitgevoerd. Controleer of de integratie is ingeschakeld en correct is gestart."
+    },
+    "pv_tuning_failed": {
+      "message": "De PV-afstemming kon niet worden uitgevoerd: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "De dempingsupdate kon niet worden voltooid: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "De weerupdate kon niet worden voltooid: {error}"
+    },
+    "no_weather_source": {
+      "message": "Er is geen weerbron ingeschakeld, dus er valt niets op te halen. Schakel Open-Meteo in (geen API-sleutel nodig) of voeg een OpenWeatherMap-sleutel toe in de integratie-opties."
     }
   }
 }

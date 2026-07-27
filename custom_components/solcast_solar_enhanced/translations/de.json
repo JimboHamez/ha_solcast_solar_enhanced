@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap hat diesen API-Schlüssel abgelehnt. Prüfe ihn auf Tippfehler — ein neu erstellter Schlüssel kann außerdem einige Stunden bis zur Aktivierung brauchen.",
       "cannot_connect": "OpenWeatherMap ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
       "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern."
+    },
+    "abort": {
+      "reconfigure_successful": "Neukonfiguration war erfolgreich"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced ist nicht geladen, daher kann diese Aktion nicht ausgeführt werden. Prüfe, ob die Integration aktiviert ist und erfolgreich gestartet wurde."
+    },
+    "pv_tuning_failed": {
+      "message": "Die PV-Abstimmung konnte nicht ausgeführt werden: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Die Dämpfungsaktualisierung konnte nicht abgeschlossen werden: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Die Wetteraktualisierung konnte nicht abgeschlossen werden: {error}"
+    },
+    "no_weather_source": {
+      "message": "Es ist keine Wetterquelle aktiviert, es gibt also nichts abzurufen. Aktiviere Open-Meteo (kein API-Schlüssel nötig) oder hinterlege in den Integrationsoptionen einen OpenWeatherMap-Schlüssel."
     }
   }
 }

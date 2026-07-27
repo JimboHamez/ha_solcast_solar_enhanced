@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap がこの API キーを拒否しました。入力ミスがないか確認してください。新しく作成したキーは有効化までに数時間かかることがあります。",
       "cannot_connect": "OpenWeatherMap に接続できませんでした。インターネット接続を確認して再試行してください。",
       "owm_key_missing": "OpenWeatherMap が有効ですが API キーが入力されていません。キーを入力するか、OpenWeatherMap を無効にして雲量を Open-Meteo から取得してください。"
+    },
+    "abort": {
+      "reconfigure_successful": "再設定が完了しました"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced が読み込まれていないため、このアクションを実行できません。統合が有効で正常に起動しているか確認してください。"
+    },
+    "pv_tuning_failed": {
+      "message": "PV チューニングを実行できませんでした: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "ダンピングの更新を完了できませんでした: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "気象データの更新を完了できませんでした: {error}"
+    },
+    "no_weather_source": {
+      "message": "気象データの取得元が有効になっていないため、取得するものがありません。Open-Meteo（API キー不要）を有効にするか、統合のオプションで OpenWeatherMap のキーを設定してください。"
     }
   }
 }

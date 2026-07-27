@@ -753,3 +753,104 @@ async def test_options_sites_step_rejects_incomplete_dc_split(hass):
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "sites"
     assert result["errors"] == {"base": "dc_split_missing_dc"}
+
+
+# ---------------------------------------------------------------------------
+# Reconfigure flow (quality scale: gold/reconfiguration-flow)
+# ---------------------------------------------------------------------------
+
+
+def _defaults(result) -> dict:
+    """Map field name → default for every defaulted field on the shown form."""
+    return {
+        str(key.schema): key.default() for key in result["data_schema"].schema if key.default is not vol.UNDEFINED
+    }
+
+
+async def _start_reconfigure(hass, entry):
+    """Open the reconfigure flow for ``entry`` and return the first form."""
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+
+
+async def _run_reconfigure(hass, entry, *, tuning=None):
+    """Walk the whole reconfigure wizard, returning the final result."""
+    result = await _start_reconfigure(hass, entry)
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], step_data)
+    return await hass.config_entries.flow.async_configure(result["flow_id"], tuning or STEP_TUNING)
+
+
+async def test_reconfigure_starts_at_site_step(hass, mock_config_entry):
+    """Reconfigure re-runs the wizard rather than aborting as a duplicate entry.
+
+    The integration is single_config_entry, so a plain user-sourced add aborts;
+    reconfigure must not.
+    """
+    mock_config_entry.add_to_hass(hass)
+
+    result = await _start_reconfigure(hass, mock_config_entry)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "site"
+
+
+async def test_reconfigure_prefills_current_settings(hass):
+    """Every step opens on what is configured today, not on the first-run defaults."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={**STEP_SITE, CONF_TILT: 33.0},
+        options={CONF_CLOUD_THRESHOLD: 41, CONF_DB_ENABLED: True},
+        entry_id="reconfig_prefill",
+    )
+    entry.add_to_hass(hass)
+
+    result = await _start_reconfigure(hass, entry)
+    assert _defaults(result)[CONF_TILT] == pytest.approx(33.0)
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_SITE)
+    assert _defaults(result)[CONF_DB_ENABLED] is True
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_DATABASE)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_WEATHER)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_BATTERY)
+    # The option value, not DEFAULT_CLOUD_THRESHOLD.
+    assert _defaults(result)[CONF_CLOUD_THRESHOLD] == 41
+
+
+async def test_reconfigure_updates_entry_in_place(hass, mock_config_entry):
+    """Finishing updates the existing entry and reloads it — no second entry."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+        result = await _run_reconfigure(hass, mock_config_entry, tuning={**STEP_TUNING, CONF_CLOUD_THRESHOLD: 37})
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+    assert mock_config_entry.data[CONF_CLOUD_THRESHOLD] == 37
+
+
+async def test_reconfigure_is_not_shadowed_by_stale_options(hass):
+    """A value entered in reconfigure wins over what the options flow stored.
+
+    The coordinator reads ``{**data, **options}``, so writing only ``data`` would
+    leave an older options value shadowing the one just entered and the
+    reconfigure would silently appear to have done nothing.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={**STEP_SITE, CONF_TILT: 20.0},
+        # A previous options-flow run stored a different tilt.
+        options={CONF_TILT: 55.0},
+        entry_id="reconfig_shadow",
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+        await _run_reconfigure(hass, entry)
+
+    merged = {**entry.data, **entry.options}
+    assert merged[CONF_TILT] == pytest.approx(STEP_SITE[CONF_TILT])

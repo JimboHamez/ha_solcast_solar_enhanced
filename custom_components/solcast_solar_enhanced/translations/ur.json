@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap نے یہ API کلید مسترد کر دی۔ اس میں ٹائپنگ کی غلطی چیک کریں — نئی بنائی گئی کلید کو فعال ہونے میں چند گھنٹے بھی لگ سکتے ہیں۔",
       "cannot_connect": "OpenWeatherMap تک رسائی نہیں ہو سکی۔ اپنا انٹرنیٹ کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
       "owm_key_missing": "OpenWeatherMap فعال ہے لیکن کوئی API کلید درج نہیں کی گئی۔ کلید درج کریں، یا OpenWeatherMap بند کر دیں اور بادلوں کی مقدار Open-Meteo سے حاصل ہونے دیں۔"
+    },
+    "abort": {
+      "reconfigure_successful": "دوبارہ ترتیب دینا کامیاب رہا"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced لوڈ نہیں ہے، اس لیے یہ ایکشن نہیں چل سکتا۔ چیک کریں کہ انٹیگریشن فعال ہے اور کامیابی سے شروع ہوئی ہے۔"
+    },
+    "pv_tuning_failed": {
+      "message": "پی وی ٹیوننگ نہیں چلائی جا سکی: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "ڈیمپننگ کی اپ ڈیٹ مکمل نہیں ہو سکی: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "موسم کی اپ ڈیٹ مکمل نہیں ہو سکی: {error}"
+    },
+    "no_weather_source": {
+      "message": "کوئی موسمی ذریعہ فعال نہیں ہے، اس لیے حاصل کرنے کو کچھ نہیں۔ Open-Meteo کو فعال کریں (API کلید کی ضرورت نہیں) یا انٹیگریشن کی آپشنز میں OpenWeatherMap کی کلید شامل کریں۔"
     }
   }
 }

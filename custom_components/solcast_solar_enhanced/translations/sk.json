@@ -86,6 +86,9 @@
       "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
       "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
       "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo."
+    },
+    "abort": {
+      "reconfigure_successful": "Rekonfigurácia bola úspešná"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "Solcast Solar Enhanced nie je načítaný, takže túto akciu nemožno spustiť. Skontrolujte, či je integrácia zapnutá a či sa úspešne spustila."
+    },
+    "pv_tuning_failed": {
+      "message": "Ladenie FV sa nepodarilo spustiť: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Aktualizáciu tlmenia sa nepodarilo dokončiť: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Aktualizáciu počasia sa nepodarilo dokončiť: {error}"
+    },
+    "no_weather_source": {
+      "message": "Nie je zapnutý žiadny zdroj počasia, takže nie je čo načítať. Zapnite Open-Meteo (nevyžaduje API kľúč) alebo v možnostiach integrácie pridajte kľúč OpenWeatherMap."
     }
   }
 }

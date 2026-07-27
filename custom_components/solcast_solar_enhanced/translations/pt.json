@@ -86,6 +86,9 @@
       "invalid_auth": "O OpenWeatherMap rejeitou esta chave de API. Verifique se não tem erros de digitação — uma chave acabada de criar também pode demorar algumas horas a ser ativada.",
       "cannot_connect": "Não foi possível contactar o OpenWeatherMap. Verifique a sua ligação à internet e tente novamente.",
       "owm_key_missing": "O OpenWeatherMap está ativado mas não foi introduzida nenhuma chave de API. Introduza uma chave, ou desative o OpenWeatherMap e deixe o Open-Meteo fornecer a nebulosidade."
+    },
+    "abort": {
+      "reconfigure_successful": "A reconfiguração foi bem-sucedida"
     }
   },
   "options": {
@@ -285,6 +288,18 @@
   "exceptions": {
     "entry_not_loaded": {
       "message": "O Solcast Solar Enhanced não está carregado, pelo que esta ação não pode ser executada. Verifique se a integração está ativada e arrancou corretamente."
+    },
+    "pv_tuning_failed": {
+      "message": "Não foi possível executar a afinação FV: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Não foi possível concluir a atualização do amortecimento: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Não foi possível concluir a atualização meteorológica: {error}"
+    },
+    "no_weather_source": {
+      "message": "Não há nenhuma fonte meteorológica ativada, por isso não há nada para obter. Ative o Open-Meteo (não precisa de chave de API) ou adicione uma chave do OpenWeatherMap nas opções da integração."
     }
   }
 }

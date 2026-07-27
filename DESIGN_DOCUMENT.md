@@ -36,9 +36,11 @@ This enhancement restores that on-device: it banks actual-vs-forecast history lo
 solcast_solar_enhanced/
 ├── __init__.py              Integration setup, service registration
 ├── manifest.json            HA integration metadata
-├── config_flow.py           5-step setup wizard + options flow
+├── config_flow.py           6-step setup wizard + options + reconfigure flows
 ├── const.py                 All constants
 ├── coordinator.py           DataUpdateCoordinator — orchestrates everything
+├── diagnostics.py           Downloadable diagnostics (redacts key + coordinates)
+├── entity.py                Base entity classes (unique id, devices, restore)
 ├── sqlite_store.py          Built-in stdlib sqlite3 store (executor jobs, WAL)
 ├── pv_tuning.py             Tilt/azimuth optimisation (numpy grid search)
 ├── shading_dampening.py     Quality-weighted dampening calculation
@@ -499,7 +501,7 @@ All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs 
 |---|---|
 | `run_pv_tuning` | Force PV tuning immediately (requires DB) |
 | `run_dampening_update` | Force dampening recalculation (DB or fallback) |
-| `fetch_weather` | Force OWM weather fetch |
+| `fetch_weather` | Force a refresh of every enabled weather/irradiance source (Open-Meteo, OWM) |
 
 ---
 

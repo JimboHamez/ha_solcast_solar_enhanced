@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
@@ -54,6 +55,7 @@ from .const import (
     CONF_PV_EXPORT_SENSOR,
     CONF_SITE_AUTODISCOVER,
     CONF_SITE_GROUPS,
+    CONF_SITE_TOPOLOGY,
     CONF_TILT,
     DAMPENING_GATE_AZIMUTH_TOL,
     DAMPENING_GATE_MIN_RECORDS,
@@ -419,27 +421,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             await self._save_baselines()
         battery_charge = self._read_battery(opts)
 
-        # Fetch OWM weather
-        if self._owm:
-            self._weather = await self._owm.async_fetch()
-
-        # Fetch Open-Meteo irradiance as the half-hour mean over [period_start,
-        # period_end) — the average of the two 15-min preceding-mean samples that
-        # tile the period — so it matches pv_actual (also a half-hour average)
-        # rather than a single point sample. Stored as-is; None on miss (fail-safe).
-        if self._openmeteo:
-            fetched = await self._openmeteo.async_get_interval(period_epoch)
-            self._irradiance = {k: fetched.get(k) for k in ("ghi", "dni", "dhi")}
-            # Open-Meteo also supplies cloud cover + temperature. Use it as the
-            # weather source when OWM is not configured (the keyless default), so
-            # tuning/dampening get clear-sky data without an API key. OWM, when
-            # configured, keeps precedence (set just above) for back-compatibility.
-            if self._owm is None and fetched.get("clouds") is not None:
-                self._weather = {
-                    "temp": fetched.get("temp"),
-                    "clouds": int(fetched["clouds"]),
-                    "description": "open-meteo",
-                }
+        await self._fetch_weather_sources(period_epoch)
 
         # Solar position at the interval *midpoint* (period_end − 15 min), the
         # representative sun position for a value averaged across the half-hour —
@@ -1180,14 +1162,49 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(self.data or {})
 
     async def async_force_fetch_weather(self) -> None:
-        """Fetch weather immediately (service handler)."""
-        if self._owm:
-            self._weather = await self._owm.async_fetch()
+        """Refresh every configured weather/irradiance source immediately.
+
+        Raises:
+            ServiceValidationError: If neither Open-Meteo nor OpenWeatherMap is
+                enabled, so the action reports that there is nothing to fetch
+                instead of appearing to succeed while doing nothing.
+        """
+        if not self._owm and not self._openmeteo:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="no_weather_source")
+        await self._fetch_weather_sources(self._snap_to_half_hour(normalize_epoch(time.time())))
         self.async_set_updated_data(self.data or {})
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    async def _fetch_weather_sources(self, period_epoch: int) -> None:
+        """Refresh ``_weather`` and ``_irradiance`` from the configured sources.
+
+        Args:
+            period_epoch: Slot end (Unix epoch, snapped to the half-hour) that the
+                irradiance mean should cover.
+        """
+        if self._owm:
+            self._weather = await self._owm.async_fetch()
+
+        # Open-Meteo irradiance is taken as the half-hour mean over [period_start,
+        # period_end) — the average of the two 15-min preceding-mean samples that
+        # tile the period — so it matches pv_actual (also a half-hour average)
+        # rather than a single point sample. Stored as-is; None on miss (fail-safe).
+        if self._openmeteo:
+            fetched = await self._openmeteo.async_get_interval(period_epoch)
+            self._irradiance = {k: fetched.get(k) for k in ("ghi", "dni", "dhi")}
+            # Open-Meteo also supplies cloud cover + temperature. Use it as the
+            # weather source when OWM is not configured (the keyless default), so
+            # tuning/dampening get clear-sky data without an API key. OWM, when
+            # configured, keeps precedence (set just above) for back-compatibility.
+            if self._owm is None and fetched.get("clouds") is not None:
+                self._weather = {
+                    "temp": fetched.get("temp"),
+                    "clouds": int(fetched["clouds"]),
+                    "description": "open-meteo",
+                }
 
     def _get_base_coordinator(self) -> Any | None:
         return self.hass.data.get(BASE_DOMAIN)
@@ -2428,3 +2445,66 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # site's configured geometry may be wrong.
         attrs["orientation_diverged"] = self._orientation_advisory
         return attrs
+
+    def diagnostics_snapshot(self) -> dict[str, Any]:
+        """Return the coordinator's internal state for a diagnostics download.
+
+        Collects what a shading/tuning problem report needs — collector inputs, the
+        raw half-hour dampening curve (not the hour-averaged sensor attributes, since
+        the half-hour grid is what gets averaged and pushed), the tuning fit and the
+        store's coverage — so ``diagnostics.py`` does not have to reach into private
+        attributes. Contains no credentials; the caller redacts the config entry.
+
+        Returns:
+            A JSON-serialisable snapshot keyed by subsystem.
+        """
+        return {
+            "coordinator": {
+                "last_update_success": self.last_update_success,
+                "base_integration_status": self._base_status,
+                "configured_orientation": {
+                    "tilt": self._opts.get(CONF_TILT),
+                    "azimuth": self._opts.get(CONF_AZIMUTH),
+                },
+                "site_topology": self._opts.get(CONF_SITE_TOPOLOGY),
+                "data": dict(self.data or {}),
+                "weather": dict(self._weather),
+                "irradiance": dict(self._irradiance),
+                "discovered_sites": self._sites,
+                "configured_sites": [
+                    {"resource_id": sid, "name": name} for sid, name in self.configured_sites_for_entities()
+                ],
+            },
+            "storage": {
+                "connected": self._db is not None,
+                "record_count": self._db_record_count,
+                "latest_period_end": self._db_latest_period_end,
+                "sites_in_db": self._db_sites,
+            },
+            "tuning": {
+                "tilt": self.tuning_tilt,
+                "azimuth": self.tuning_azimuth,
+                "rmse_kw": self.tuning_rmse,
+                "export_excluded": self.tuning_export_excluded,
+                "extra": self.tuning_extra,
+                "per_site": self._site_tuning_results,
+                "last_run_ts": self._last_tuning_ts,
+            },
+            "dampening": {
+                "slots": self._dampening_table,
+                "per_site_slots": self._site_dampening_tables,
+                "hours_with_db": self.dampening_hours_with_db,
+                "current_factor": self.current_dampening,
+                "pushed_targets": sorted(self._dampening_pushed),
+                "orientation_advisory": self._orientation_advisory,
+                "orientation_advisory_targets": sorted(self._orientation_advisory_targets),
+                "base_auto_dampening": self._read_base_auto_dampen(),
+                "last_run_ts": self._last_dampening_ts,
+            },
+            "confidence": {
+                "score": self.confidence,
+                **self.confidence_attributes,
+                "per_site": {sid: c.get("confidence") for sid, c in self._site_confidence.items()},
+            },
+            "dc_telemetry": self._dc_telemetry,
+        }

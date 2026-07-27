@@ -45,6 +45,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Every entity here is read-only and fed from the single coordinator refresh — no
+# entity performs I/O of its own and none writes to a device — so there is nothing
+# to serialise and no limit is needed.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -230,6 +235,16 @@ class MpptDcSensor(SolcastEnhancedEntity):
         super().__init__(coordinator, entry, SENSOR_MPPT_DC)
 
     @property
+    def available(self) -> bool:
+        """Available only while DC telemetry is actually being captured.
+
+        With no per-MPPT sensors configured — or none of them readable — there is no
+        source to report, which is *unavailable* rather than a value we happen not to
+        know yet.
+        """
+        return super().available and bool((self.coordinator.data or {}).get("dc_telemetry"))
+
+    @property
     def native_value(self) -> float | None:
         dc = (self.coordinator.data or {}).get("dc_telemetry")
         return dc.get("max_voltage") if dc else None
@@ -335,7 +350,9 @@ class SiteShadingSensor(SolcastEnhancedSiteEntity):
 class SiteOutputSensor(SolcastEnhancedSiteEntity):
     """Per-array measured generation: average kW over the just-completed half-hour.
 
-    Unavailable until a multi-site cycle has produced a per-site reading.
+    Unknown (not unavailable) until a multi-site cycle has produced a per-site
+    reading: the sensor is configured and working, the value simply has not been
+    measured yet.
     """
 
     _attr_translation_key = "site_output"
@@ -358,7 +375,11 @@ class SiteOutputSensor(SolcastEnhancedSiteEntity):
 class SiteTunedTiltSensor(SolcastEnhancedSiteEntity):
     """Per-array tuned tilt: the optimised tilt from that array's last PV tuning run.
 
-    Unavailable until the array has accumulated enough clear-sky history to tune.
+    Unknown until the array has accumulated enough clear-sky history to tune, and
+    also whenever the fit cannot pin the tilt down (see ``pv_tuning``). Deliberately
+    *not* marked unavailable in either case — the attributes carry the reason and
+    the unreported raw tilt, and Home Assistant hides the attributes of an
+    unavailable entity.
     """
 
     _attr_translation_key = "site_tuned_tilt"
@@ -440,36 +461,58 @@ class SiteCurrentDampeningSensor(SolcastEnhancedSiteEntity):
         return self.coordinator.site_current_dampening_attributes(self._site_id)
 
 
-class WeatherTempSensor(SolcastEnhancedEntity):
+class _WeatherSensor(SolcastEnhancedEntity):
+    """Base for the two weather readings, which share one fetched payload.
+
+    Both go *unavailable* rather than *unknown* when their field is missing: the
+    weather source is optional and can be turned off entirely, and a fetch that
+    fails is handled fail-safe by the client (it returns no reading rather than
+    aborting the collection cycle). Either way there is nothing to report, which
+    is a source problem, not an unknown value.
+    """
+
+    _weather_field: str
+
+    def _reading(self) -> Any | None:
+        """Return this sensor's field from the last weather payload, if any."""
+        if not self.coordinator.data:
+            return None
+        return (self.coordinator.data.get("weather") or {}).get(self._weather_field)
+
+    @property
+    def available(self) -> bool:
+        """Available only while a weather source is supplying this field."""
+        return super().available and self._reading() is not None
+
+
+class WeatherTempSensor(_WeatherSensor):
     _attr_translation_key = "weather_temp"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _weather_field = "temp"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_WEATHER_TEMP)
 
     @property
     def native_value(self) -> float | None:
-        if not self.coordinator.data:
-            return None
-        temp = self.coordinator.data.get("weather", {}).get("temp")
+        temp = self._reading()
         return float(temp) if temp is not None else None
 
 
-class WeatherCloudsSensor(SolcastEnhancedEntity):
+class WeatherCloudsSensor(_WeatherSensor):
     _attr_translation_key = "weather_clouds"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _weather_field = "clouds"
 
     def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SENSOR_WEATHER_CLOUDS)
 
     @property
     def native_value(self) -> int | None:
-        if not self.coordinator.data:
-            return None
-        clouds = self.coordinator.data.get("weather", {}).get("clouds")
+        clouds = self._reading()
         return int(clouds) if clouds is not None else None
 
 
