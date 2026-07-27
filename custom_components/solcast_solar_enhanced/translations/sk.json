@@ -82,7 +82,13 @@
     },
     "error": {
       "dc_split_missing_dc": "Rozdelenie podľa DC vyžaduje snímač DC/MPPT pre každé pole. Pridajte chýbajúci DC snímač alebo prepnite na „každé pole má vlastný snímač výroby“.",
-      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“."
+      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“.",
+      "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
+      "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
+      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo."
+    },
+    "abort": {
+      "reconfigure_successful": "Rekonfigurácia bola úspešná"
     }
   },
   "options": {
@@ -168,7 +174,10 @@
     },
     "error": {
       "dc_split_missing_dc": "Rozdelenie podľa DC vyžaduje snímač DC/MPPT pre každé pole. Pridajte chýbajúci DC snímač alebo prepnite na „každé pole má vlastný snímač výroby“.",
-      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“."
+      "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“.",
+      "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
+      "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
+      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo."
     }
   },
   "entity": {
@@ -199,6 +208,48 @@
       },
       "site_current_dampening": {
         "name": "Tlmenie aktuálnej hodiny"
+      },
+      "forecast_now": {
+        "name": "Predpoveď teraz"
+      },
+      "forecast_today": {
+        "name": "Predpoveď dnes"
+      },
+      "tuning_tilt": {
+        "name": "Doladený sklon panelu"
+      },
+      "tuning_azimuth": {
+        "name": "Doladený azimut panelu"
+      },
+      "tuning_rmse": {
+        "name": "RMSE ladenia"
+      },
+      "db_records": {
+        "name": "Záznamy databázy"
+      },
+      "mppt_dc": {
+        "name": "Jednosmerné napätie MPPT (max.)"
+      },
+      "dampening": {
+        "name": "Hodiny tlmenia s údajmi z DB"
+      },
+      "weather_temp": {
+        "name": "Teplota počasia"
+      },
+      "weather_clouds": {
+        "name": "Oblačnosť"
+      },
+      "battery_charge": {
+        "name": "Nabíjanie batérie priemer za 30 min"
+      },
+      "pv_actual": {
+        "name": "Výkon FV priemer za 30 min"
+      },
+      "pv_export": {
+        "name": "Dodávka FV priemer za 30 min"
+      },
+      "base_status": {
+        "name": "Stav základnej integrácie"
       }
     }
   },
@@ -232,6 +283,23 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced nie je načítaný, takže túto akciu nemožno spustiť. Skontrolujte, či je integrácia zapnutá a či sa úspešne spustila."
+    },
+    "pv_tuning_failed": {
+      "message": "Ladenie FV sa nepodarilo spustiť: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Aktualizáciu tlmenia sa nepodarilo dokončiť: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Aktualizáciu počasia sa nepodarilo dokončiť: {error}"
+    },
+    "no_weather_source": {
+      "message": "Nie je zapnutý žiadny zdroj počasia, takže nie je čo načítať. Zapnite Open-Meteo (nevyžaduje API kľúč) alebo v možnostiach integrácie pridajte kľúč OpenWeatherMap."
     }
   }
 }

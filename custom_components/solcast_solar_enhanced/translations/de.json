@@ -82,7 +82,13 @@
     },
     "error": {
       "dc_split_missing_dc": "Die DC-Aufteilung benötigt für jedes Array einen DC/MPPT-Sensor. Fügen Sie den fehlenden DC-Sensor hinzu oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
-      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“."
+      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
+      "invalid_auth": "OpenWeatherMap hat diesen API-Schlüssel abgelehnt. Prüfe ihn auf Tippfehler — ein neu erstellter Schlüssel kann außerdem einige Stunden bis zur Aktivierung brauchen.",
+      "cannot_connect": "OpenWeatherMap ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
+      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern."
+    },
+    "abort": {
+      "reconfigure_successful": "Neukonfiguration war erfolgreich"
     }
   },
   "options": {
@@ -168,7 +174,10 @@
     },
     "error": {
       "dc_split_missing_dc": "Die DC-Aufteilung benötigt für jedes Array einen DC/MPPT-Sensor. Fügen Sie den fehlenden DC-Sensor hinzu oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
-      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“."
+      "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
+      "invalid_auth": "OpenWeatherMap hat diesen API-Schlüssel abgelehnt. Prüfe ihn auf Tippfehler — ein neu erstellter Schlüssel kann außerdem einige Stunden bis zur Aktivierung brauchen.",
+      "cannot_connect": "OpenWeatherMap ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
+      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern."
     }
   },
   "entity": {
@@ -199,6 +208,48 @@
       },
       "site_current_dampening": {
         "name": "Dämpfung aktuelle Stunde"
+      },
+      "forecast_now": {
+        "name": "Prognose jetzt"
+      },
+      "forecast_today": {
+        "name": "Prognose heute"
+      },
+      "tuning_tilt": {
+        "name": "Abgestimmte Modulneigung"
+      },
+      "tuning_azimuth": {
+        "name": "Abgestimmter Modulazimut"
+      },
+      "tuning_rmse": {
+        "name": "Abstimmungs-RMSE"
+      },
+      "db_records": {
+        "name": "Datenbankeinträge"
+      },
+      "mppt_dc": {
+        "name": "MPPT-DC-Spannung (max.)"
+      },
+      "dampening": {
+        "name": "Dämpfungsstunden mit DB-Daten"
+      },
+      "weather_temp": {
+        "name": "Wettertemperatur"
+      },
+      "weather_clouds": {
+        "name": "Bewölkung"
+      },
+      "battery_charge": {
+        "name": "Batterieladung 30-Min-Mittel"
+      },
+      "pv_actual": {
+        "name": "PV-Leistung 30-Min-Mittel"
+      },
+      "pv_export": {
+        "name": "PV-Einspeisung 30-Min-Mittel"
+      },
+      "base_status": {
+        "name": "Status der Basis-Integration"
       }
     }
   },
@@ -232,6 +283,23 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced ist nicht geladen, daher kann diese Aktion nicht ausgeführt werden. Prüfe, ob die Integration aktiviert ist und erfolgreich gestartet wurde."
+    },
+    "pv_tuning_failed": {
+      "message": "Die PV-Abstimmung konnte nicht ausgeführt werden: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "Die Dämpfungsaktualisierung konnte nicht abgeschlossen werden: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "Die Wetteraktualisierung konnte nicht abgeschlossen werden: {error}"
+    },
+    "no_weather_source": {
+      "message": "Es ist keine Wetterquelle aktiviert, es gibt also nichts abzurufen. Aktiviere Open-Meteo (kein API-Schlüssel nötig) oder hinterlege in den Integrationsoptionen einen OpenWeatherMap-Schlüssel."
     }
   }
 }

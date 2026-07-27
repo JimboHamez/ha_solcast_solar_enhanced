@@ -15,5 +15,6 @@ run_dampening_update:
 fetch_weather:
   name: Fetch Weather
   description: >
-    Force an immediate OpenWeatherMap weather fetch. Requires OWM to be
-    enabled and an API key to be configured.
+    Force an immediate refresh of every configured weather and irradiance
+    source: Open-Meteo (keyless, on by default) and OpenWeatherMap if an API
+    key is configured. Fails with an error if neither source is enabled.

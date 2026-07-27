@@ -36,9 +36,11 @@ This enhancement restores that on-device: it banks actual-vs-forecast history lo
 solcast_solar_enhanced/
 ├── __init__.py              Integration setup, service registration
 ├── manifest.json            HA integration metadata
-├── config_flow.py           5-step setup wizard + options flow
+├── config_flow.py           6-step setup wizard + options + reconfigure flows
 ├── const.py                 All constants
 ├── coordinator.py           DataUpdateCoordinator — orchestrates everything
+├── diagnostics.py           Downloadable diagnostics (redacts key + coordinates)
+├── entity.py                Base entity classes (unique id, devices, restore)
 ├── sqlite_store.py          Built-in stdlib sqlite3 store (executor jobs, WAL)
 ├── pv_tuning.py             Tilt/azimuth optimisation (numpy grid search)
 ├── shading_dampening.py     Quality-weighted dampening calculation
@@ -438,7 +440,7 @@ applied **only when the configured arrays share orientation** — `_azimuth_spre
 
 ### Per-site visibility sensors (v1.10.0b1)
 
-Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `_SiteSensorBase`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Six entities per array:
+Each configured array gets its **own HA device** (`configured_sites_for_entities()` drives entity setup). The per-site sensors share `SolcastEnhancedSiteEntity`, which attaches a distinct `DeviceInfo` keyed on `entry_id + resource_id` and linked back to the main integration device via `via_device`, so HA groups every entity for one array onto its own card nested under the main device. Because `_attr_has_entity_name` is set, the device carries the array name and each entity name is the bare metric, so HA renders "&lt;Array&gt; Shading" without duplicating the name. Six entities per array:
 
 - **`SiteOutputSensor`** (`<array>` PV Power 30min Average) — the array's measured generation (avg kW over the just-completed half-hour), surfaced from `_site_output` (populated in the per-site write loop); attributes carry the slot `pv_estimate` and `capacity_kw`. `None` until a multi-site cycle has produced a per-site read.
 - **`SiteShadingSensor`** (`<array>` Shading) — state is the array's **average daytime dampening factor** (1.0 = no shading, below 1.0 = the measured structural shading applied to that array); attributes carry its discovered orientation (`azimuth_compass`/`tilt`/`capacity_kw`), `shading_pct`, `min_factor`, `hours_with_db`, `clear_sky_basis`, the per-site tuning result, and a **per-site confidence** (each array keeps its own `_site_recent_bias` buffer, mirroring the property-wide advisory). The coordinator retains each array's dampening curve in `_site_dampening_tables` (previously computed-and-pushed but not kept).
@@ -467,7 +469,9 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 
 ## Sensors (17 property-wide)
 
-| `_attr_name` | Unit | Description |
+Names below are the English strings. As of **v1.10.0b10** every sensor names itself with `_attr_translation_key` (no raw `_attr_name` remains), so the displayed name — and, for newly registered entities, the slugified entity id — follows the user's Home Assistant language.
+
+| Name (English) | Unit | Description |
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast |
 | Forecast Today | kWh | Total forecast for today |
@@ -487,7 +491,7 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 | PV Export 30min Average | kW | Period-average export (restored across restarts) |
 | Base Integration Status | — | connected / not_detected |
 
-All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs `f"{DOMAIN}_{entry_id}_{key}"`, and `DeviceEntryType.SERVICE`. The three 30-min averages extend `_RestoringSensorBase` (HA `RestoreSensor`) so they restore their last value after a restart rather than reading *unknown* until the first half-hour cycle.
+All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs `f"{DOMAIN}_{entry_id}_{key}"`, and `DeviceEntryType.SERVICE`. The three 30-min averages extend `RestoringSensorEntity` (HA `RestoreSensor`) so they restore their last value after a restart rather than reading *unknown* until the first half-hour cycle.
 
 ---
 
@@ -497,7 +501,7 @@ All use `_attr_has_entity_name = True`, `_attr_should_poll = False`, unique IDs 
 |---|---|
 | `run_pv_tuning` | Force PV tuning immediately (requires DB) |
 | `run_dampening_update` | Force dampening recalculation (DB or fallback) |
-| `fetch_weather` | Force OWM weather fetch |
+| `fetch_weather` | Force a refresh of every enabled weather/irradiance source (Open-Meteo, OWM) |
 
 ---
 
@@ -645,7 +649,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0).
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`).
 
 ---
 

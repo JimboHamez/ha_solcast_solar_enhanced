@@ -82,7 +82,13 @@
     },
     "error": {
       "dc_split_missing_dc": "DC分配には各アレイにDC/MPPTセンサーが必要です。不足しているDCセンサーを追加するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
-      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。"
+      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
+      "invalid_auth": "OpenWeatherMap がこの API キーを拒否しました。入力ミスがないか確認してください。新しく作成したキーは有効化までに数時間かかることがあります。",
+      "cannot_connect": "OpenWeatherMap に接続できませんでした。インターネット接続を確認して再試行してください。",
+      "owm_key_missing": "OpenWeatherMap が有効ですが API キーが入力されていません。キーを入力するか、OpenWeatherMap を無効にして雲量を Open-Meteo から取得してください。"
+    },
+    "abort": {
+      "reconfigure_successful": "再設定が完了しました"
     }
   },
   "options": {
@@ -168,7 +174,10 @@
     },
     "error": {
       "dc_split_missing_dc": "DC分配には各アレイにDC/MPPTセンサーが必要です。不足しているDCセンサーを追加するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
-      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。"
+      "dc_split_ac_mismatch": "DC分配にはすべてのアレイで同じ共有AC発電センサーが必要です。すべての行で同一のACセンサーを使用するか、「各アレイに独自の発電センサーがある」に切り替えてください。",
+      "invalid_auth": "OpenWeatherMap がこの API キーを拒否しました。入力ミスがないか確認してください。新しく作成したキーは有効化までに数時間かかることがあります。",
+      "cannot_connect": "OpenWeatherMap に接続できませんでした。インターネット接続を確認して再試行してください。",
+      "owm_key_missing": "OpenWeatherMap が有効ですが API キーが入力されていません。キーを入力するか、OpenWeatherMap を無効にして雲量を Open-Meteo から取得してください。"
     }
   },
   "entity": {
@@ -199,6 +208,48 @@
       },
       "site_current_dampening": {
         "name": "現在時刻のダンピング"
+      },
+      "forecast_now": {
+        "name": "現在の予測"
+      },
+      "forecast_today": {
+        "name": "本日の予測"
+      },
+      "tuning_tilt": {
+        "name": "調整済みパネル傾斜角"
+      },
+      "tuning_azimuth": {
+        "name": "調整済みパネル方位角"
+      },
+      "tuning_rmse": {
+        "name": "チューニングRMSE"
+      },
+      "db_records": {
+        "name": "データベースレコード数"
+      },
+      "mppt_dc": {
+        "name": "MPPT DC電圧（最大）"
+      },
+      "dampening": {
+        "name": "DBデータのあるダンピング時間数"
+      },
+      "weather_temp": {
+        "name": "気温"
+      },
+      "weather_clouds": {
+        "name": "雲量"
+      },
+      "battery_charge": {
+        "name": "バッテリー充電 30分平均"
+      },
+      "pv_actual": {
+        "name": "PV電力 30分平均"
+      },
+      "pv_export": {
+        "name": "PV売電 30分平均"
+      },
+      "base_status": {
+        "name": "ベース統合のステータス"
       }
     }
   },
@@ -232,6 +283,23 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Solcast Solar Enhanced が読み込まれていないため、このアクションを実行できません。統合が有効で正常に起動しているか確認してください。"
+    },
+    "pv_tuning_failed": {
+      "message": "PV チューニングを実行できませんでした: {error}"
+    },
+    "dampening_update_failed": {
+      "message": "ダンピングの更新を完了できませんでした: {error}"
+    },
+    "weather_fetch_failed": {
+      "message": "気象データの更新を完了できませんでした: {error}"
+    },
+    "no_weather_source": {
+      "message": "気象データの取得元が有効になっていないため、取得するものがありません。Open-Meteo（API キー不要）を有効にするか、統合のオプションで OpenWeatherMap のキーを設定してください。"
     }
   }
 }

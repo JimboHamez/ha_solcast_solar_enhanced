@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.exceptions import ServiceValidationError
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -501,6 +502,52 @@ async def test_async_force_fetch_weather_uses_owm(hass, coordinator):
     coordinator._owm = type("O", (), {"async_fetch": AsyncMock(return_value={"temp": 9, "clouds": 50, "description": "x"})})()
     await coordinator.async_force_fetch_weather()
     assert coordinator._weather["clouds"] == 50
+
+
+async def test_async_force_fetch_weather_refreshes_open_meteo_too(hass, coordinator):
+    """The action must cover the keyless default source, not just OWM.
+
+    Open-Meteo is on by default and OWM is optional, so an action that only ever
+    touched OWM did nothing at all on a typical install.
+    """
+    coordinator.data = {}
+    coordinator._owm = None
+    fetched = {"ghi": 720.0, "dni": 810.0, "dhi": 95.0, "clouds": 12, "temp": 18.5}
+    coordinator._openmeteo = SimpleNamespace(async_get_interval=AsyncMock(return_value=fetched))
+
+    await coordinator.async_force_fetch_weather()
+
+    assert coordinator._irradiance == {"ghi": 720.0, "dni": 810.0, "dhi": 95.0}
+    # With no OWM key, Open-Meteo doubles as the cloud/temperature source.
+    assert coordinator._weather == {"temp": 18.5, "clouds": 12, "description": "open-meteo"}
+
+
+async def test_open_meteo_does_not_displace_a_configured_owm_reading(hass, coordinator):
+    """OWM keeps precedence for the weather fields when both sources are enabled."""
+    coordinator.data = {}
+    coordinator._owm = SimpleNamespace(
+        async_fetch=AsyncMock(return_value={"temp": 9.0, "clouds": 88, "description": "owm"})
+    )
+    coordinator._openmeteo = SimpleNamespace(
+        async_get_interval=AsyncMock(return_value={"ghi": 400.0, "dni": 0.0, "dhi": 400.0, "clouds": 12, "temp": 18.5})
+    )
+
+    await coordinator.async_force_fetch_weather()
+
+    assert coordinator._weather["description"] == "owm"
+    assert coordinator._weather["clouds"] == 88
+    # Irradiance still comes from Open-Meteo — OWM has none.
+    assert coordinator._irradiance["ghi"] == 400.0
+
+
+async def test_async_force_fetch_weather_raises_when_no_source_is_enabled(hass, coordinator):
+    """Nothing to fetch is reported, not silently treated as success."""
+    coordinator.data = {}
+    coordinator._owm = None
+    coordinator._openmeteo = None
+
+    with pytest.raises(ServiceValidationError):
+        await coordinator.async_force_fetch_weather()
 
 
 # ---------------------------------------------------------------------------

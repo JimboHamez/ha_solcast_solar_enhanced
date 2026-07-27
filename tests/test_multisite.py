@@ -491,7 +491,7 @@ async def test_property_tuning_sensors_hidden_only_in_multisite(hass, coordinato
         TuningTiltSensor,
     )
 
-    hass.data.setdefault(DOMAIN, {})[mock_config_entry.entry_id] = coordinator
+    mock_config_entry.runtime_data = coordinator
     captured: list = []
 
     def _add(entities):

@@ -4,9 +4,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockModule, mock_integration
+
+from custom_components.solcast_solar_enhanced.solcast_api import OWMAuthError, OWMConnectionError
 
 from custom_components.solcast_solar_enhanced.const import (
     BASE_DOMAIN,
@@ -41,7 +44,13 @@ from custom_components.solcast_solar_enhanced.const import (
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
-from custom_components.solcast_solar_enhanced.config_flow import _TOPOLOGY_FIELD
+from custom_components.solcast_solar_enhanced.config_flow import (
+    _TOPOLOGY_FIELD,
+    _build_sites_schema,
+    _derive_groups,
+    _parse_sites_input,
+    _seed_flat_mppt,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -524,3 +533,324 @@ async def test_options_migrates_flat_mppt_to_per_site(hass):
     assert data[CONF_SITE_GROUPS]  # groups derived
     for k in _MPPT_KEYS:
         assert data[k] is None  # flat keys retired
+
+
+# ---------------------------------------------------------------------------
+# Connection test before configure (quality scale: test-before-configure)
+# ---------------------------------------------------------------------------
+
+_OWM_ON = {
+    CONF_OPENMETEO_ENABLED: True,
+    CONF_OWM_ENABLED: True,
+    CONF_OWM_API_KEY: "deadbeef",
+}
+
+_VALIDATE = "custom_components.solcast_solar_enhanced.config_flow.OWMClient.async_validate"
+
+
+async def _advance_to_weather(hass) -> dict:
+    """Walk the config flow as far as the weather step."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_SITE)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_DATABASE)
+    assert result["step_id"] == "weather"
+    return result
+
+
+async def test_weather_step_rejects_key_owm_refuses(hass):
+    """A key OWM rejects fails the step rather than being stored."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "weather"
+    assert result["errors"] == {CONF_OWM_API_KEY: "invalid_auth"}
+
+
+async def test_weather_step_reports_owm_unreachable(hass):
+    """An unreachable OWM is reported on the form, not against the key field."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMConnectionError)):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_weather_step_requires_key_when_owm_enabled(hass):
+    """Enabling OWM without a key is caught locally, with no network call."""
+    result = await _advance_to_weather(hass)
+
+    validate = AsyncMock()
+    with patch(_VALIDATE, new=validate):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**_OWM_ON, CONF_OWM_API_KEY: "   "}
+        )
+
+    assert result["errors"] == {CONF_OWM_API_KEY: "owm_key_missing"}
+    validate.assert_not_awaited()
+
+
+async def test_weather_step_accepts_working_key(hass):
+    """A key OWM accepts lets the wizard continue."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(return_value=None)) as validate:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["step_id"] == "battery"
+    validate.assert_awaited_once()
+
+
+async def test_weather_step_skips_test_when_owm_disabled(hass):
+    """Open-Meteo is keyless, so leaving OWM off performs no connection test."""
+    result = await _advance_to_weather(hass)
+
+    validate = AsyncMock()
+    with patch(_VALIDATE, new=validate):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_WEATHER)
+
+    assert result["step_id"] == "battery"
+    validate.assert_not_awaited()
+
+
+async def test_weather_step_redisplay_keeps_submitted_values(hass):
+    """A failed test redisplays the step with what the user typed, not the defaults."""
+    result = await _advance_to_weather(hass)
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**_OWM_ON, CONF_OPENMETEO_ENABLED: False}
+        )
+
+    defaults = {
+        str(key.schema): key.default() for key in result["data_schema"].schema if key.default is not vol.UNDEFINED
+    }
+    assert defaults[CONF_OWM_ENABLED] is True
+    assert defaults[CONF_OPENMETEO_ENABLED] is False
+    assert defaults[CONF_OWM_API_KEY] == "deadbeef"
+
+
+async def test_options_weather_step_validates_key(hass, mock_config_entry):
+    """The options flow runs the same connection test before saving a changed key."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], STEP_SITE)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], STEP_DATABASE)
+    assert result["step_id"] == "weather"
+
+    with patch(_VALIDATE, new=AsyncMock(side_effect=OWMAuthError)):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {CONF_OWM_API_KEY: "invalid_auth"}
+
+    with patch(_VALIDATE, new=AsyncMock(return_value=None)):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], _OWM_ON)
+
+    assert result["step_id"] == "battery"
+
+
+# ---------------------------------------------------------------------------
+# Per-site helper edge cases (quality scale: config-flow-test-coverage)
+# ---------------------------------------------------------------------------
+
+_DISCOVERED_AB = [
+    {"resource_id": "AAAA", "name": "Array A"},
+    {"resource_id": "BBBB", "name": "Array B"},
+]
+
+
+def test_derive_groups_dc_split_skips_array_with_no_ac():
+    """An array left blank on the sites step is dropped, not carried as a null group.
+
+    Mirrors the same guard in direct mode: a site with no generation sensor has
+    nothing measurable behind it, and emitting a group with ``ac_sensor: None``
+    would have the coordinator read a nonexistent entity every cycle.
+    """
+    assignments = {
+        "AAAA": {"ac": "sensor.shared", "dc": "sensor.mppt1", "mode": "energy"},
+        "BBBB": {"ac": None, "dc": "sensor.mppt2", "mode": "energy"},
+    }
+
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+
+    assert len(groups) == 1
+    assert groups[0]["site"] == "AAAA"
+
+
+def test_parse_sites_input_skips_array_with_no_ac():
+    """Parsing ignores an array whose generation field was left empty."""
+    _, field_map = _build_sites_schema(_DISCOVERED_AB, {}, default_ac=None, mode=SITE_TOPOLOGY_DIRECT)
+    user_input = {field_map["AAAA"]["ac"]: "sensor.ac_a"}  # BBBB deliberately absent
+
+    assignments = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
+
+    assert set(assignments) == {"AAAA"}
+
+
+def test_seed_flat_mppt_leaves_existing_per_site_trackers_alone():
+    """The flat-key migration is skipped once any array already maps a tracker.
+
+    Re-seeding would overwrite the user's own per-array mapping with a guess
+    (MPPT 1 → first site) every time the options flow was reopened.
+    """
+    assignments = {"AAAA": {"ac": "sensor.ac_a", "mppts": [{"voltage_sensor": "sensor.chosen_v"}]}}
+    src = {
+        CONF_MPPT1_VOLTAGE_SENSOR: "sensor.flat1_v",
+        CONF_MPPT1_CURRENT_SENSOR: "sensor.flat1_i",
+    }
+
+    result = _seed_flat_mppt(_DISCOVERED_AB, assignments, src)
+
+    assert result["AAAA"]["mppts"] == [{"voltage_sensor": "sensor.chosen_v"}]
+    assert "BBBB" not in result
+
+
+def test_build_sites_schema_disambiguates_duplicate_site_names():
+    """Two Solcast sites sharing a name get distinct fields, not one merged row.
+
+    Field keys embed the display name, so identical names would collide into a
+    single set of fields and silently lose an array.
+    """
+    duplicates = [
+        {"resource_id": "AAAA", "name": "Roof"},
+        {"resource_id": "BBBB", "name": "Roof"},
+    ]
+
+    _, field_map = _build_sites_schema(duplicates, {}, default_ac=None, mode=SITE_TOPOLOGY_DIRECT)
+
+    assert set(field_map) == {"AAAA", "BBBB"}
+    assert field_map["AAAA"]["ac"] != field_map["BBBB"]["ac"]
+    # The second occurrence is tagged with a resource-id prefix to tell them apart.
+    assert "BBBB"[:4] in field_map["BBBB"]["ac"]
+
+
+async def test_options_sites_step_rejects_incomplete_dc_split(hass):
+    """The options flow validates dc_split too, and reports it on the form."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("opt_invalid", with_topology=True)
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+
+    # Shared AC on both arrays, but only one DC sensor → not a valid split.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.shared", "B": "sensor.shared"},
+            {"A": "sensor.mppt1"},
+        ),
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert result["errors"] == {"base": "dc_split_missing_dc"}
+
+
+# ---------------------------------------------------------------------------
+# Reconfigure flow (quality scale: gold/reconfiguration-flow)
+# ---------------------------------------------------------------------------
+
+
+def _defaults(result) -> dict:
+    """Map field name → default for every defaulted field on the shown form."""
+    return {
+        str(key.schema): key.default() for key in result["data_schema"].schema if key.default is not vol.UNDEFINED
+    }
+
+
+async def _start_reconfigure(hass, entry):
+    """Open the reconfigure flow for ``entry`` and return the first form."""
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+
+
+async def _run_reconfigure(hass, entry, *, tuning=None):
+    """Walk the whole reconfigure wizard, returning the final result."""
+    result = await _start_reconfigure(hass, entry)
+    for step_data in (STEP_SITE, STEP_DATABASE, STEP_WEATHER, STEP_BATTERY):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], step_data)
+    return await hass.config_entries.flow.async_configure(result["flow_id"], tuning or STEP_TUNING)
+
+
+async def test_reconfigure_starts_at_site_step(hass, mock_config_entry):
+    """Reconfigure re-runs the wizard rather than aborting as a duplicate entry.
+
+    The integration is single_config_entry, so a plain user-sourced add aborts;
+    reconfigure must not.
+    """
+    mock_config_entry.add_to_hass(hass)
+
+    result = await _start_reconfigure(hass, mock_config_entry)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "site"
+
+
+async def test_reconfigure_prefills_current_settings(hass):
+    """Every step opens on what is configured today, not on the first-run defaults."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={**STEP_SITE, CONF_TILT: 33.0},
+        options={CONF_CLOUD_THRESHOLD: 41, CONF_DB_ENABLED: True},
+        entry_id="reconfig_prefill",
+    )
+    entry.add_to_hass(hass)
+
+    result = await _start_reconfigure(hass, entry)
+    assert _defaults(result)[CONF_TILT] == pytest.approx(33.0)
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_SITE)
+    assert _defaults(result)[CONF_DB_ENABLED] is True
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_DATABASE)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_WEATHER)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], STEP_BATTERY)
+    # The option value, not DEFAULT_CLOUD_THRESHOLD.
+    assert _defaults(result)[CONF_CLOUD_THRESHOLD] == 41
+
+
+async def test_reconfigure_updates_entry_in_place(hass, mock_config_entry):
+    """Finishing updates the existing entry and reloads it — no second entry."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+        result = await _run_reconfigure(hass, mock_config_entry, tuning={**STEP_TUNING, CONF_CLOUD_THRESHOLD: 37})
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+    assert mock_config_entry.data[CONF_CLOUD_THRESHOLD] == 37
+
+
+async def test_reconfigure_is_not_shadowed_by_stale_options(hass):
+    """A value entered in reconfigure wins over what the options flow stored.
+
+    The coordinator reads ``{**data, **options}``, so writing only ``data`` would
+    leave an older options value shadowing the one just entered and the
+    reconfigure would silently appear to have done nothing.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={**STEP_SITE, CONF_TILT: 20.0},
+        # A previous options-flow run stored a different tilt.
+        options={CONF_TILT: 55.0},
+        entry_id="reconfig_shadow",
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+        await _run_reconfigure(hass, entry)
+
+    merged = {**entry.data, **entry.options}
+    assert merged[CONF_TILT] == pytest.approx(STEP_SITE[CONF_TILT])

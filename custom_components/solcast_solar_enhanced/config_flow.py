@@ -8,9 +8,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     SelectSelector,
@@ -20,13 +23,6 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-
-try:
-    from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
-
-    _ENTITY_SELECTOR_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    _ENTITY_SELECTOR_AVAILABLE = False
 
 from .const import (
     CONF_AUTO_DAMPENING,
@@ -86,17 +82,130 @@ from .const import (
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
 )
+from .solcast_api import OWMAuthError, OWMClient, OWMConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _entity_selector(domain: str = "sensor") -> Any:
-    if _ENTITY_SELECTOR_AVAILABLE:
-        try:
-            return EntitySelector(EntitySelectorConfig(domain=domain))
-        except Exception:  # noqa: BLE001
-            pass
-    return TextSelector()
+def _build_weather_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the Weather & Irradiance schema, defaulted from ``current``.
+
+    Shared by both flows so a failed connection test can redisplay the step with
+    the values the user just submitted rather than resetting them.
+    """
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_OPENMETEO_ENABLED,
+                default=current.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED),
+            ): BooleanSelector(),
+            vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
+            vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+        }
+    )
+
+
+def _build_database_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the Storage schema, defaulted from ``current``.
+
+    ``current`` is empty on a first-run setup, which yields the plain defaults.
+    """
+    return vol.Schema(
+        {
+            vol.Required(CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED)): BooleanSelector(),
+            vol.Required(
+                CONF_DB_RETENTION_DAYS,
+                default=current.get(CONF_DB_RETENTION_DAYS, DEFAULT_DB_RETENTION_DAYS),
+            ): NumberSelector(NumberSelectorConfig(min=0, max=3650, step=1)),
+        }
+    )
+
+
+def _build_battery_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the Battery Storage schema, defaulted from ``current``."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_BATTERY_ENABLED, default=current.get(CONF_BATTERY_ENABLED, False)): BooleanSelector(),
+            vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, "net")): SelectSelector(
+                SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
+            ),
+            vol.Optional(
+                CONF_BATTERY_NET_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_NET_SENSOR)}
+            ): _entity_selector(),
+            vol.Optional(
+                CONF_BATTERY_CHARGE_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_CHARGE_SENSOR)}
+            ): _entity_selector(),
+        }
+    )
+
+
+def _build_tuning_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the PV Tuning & Dampening schema, defaulted from ``current``."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_AUTO_TUNING, default=current.get(CONF_AUTO_TUNING, DEFAULT_AUTO_TUNING)): (
+                BooleanSelector()
+            ),
+            vol.Required(
+                CONF_AUTO_DAMPENING, default=current.get(CONF_AUTO_DAMPENING, DEFAULT_AUTO_DAMPENING)
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_DAMPENING_GATE, default=current.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_CLOUD_THRESHOLD, default=current.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)
+            ): NumberSelector(NumberSelectorConfig(min=10, max=50, step=1)),
+            vol.Required(
+                CONF_CLOUD_MAX_INCLUDE, default=current.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE)
+            ): NumberSelector(NumberSelectorConfig(min=20, max=100, step=1)),
+            vol.Required(
+                CONF_KT_THRESHOLD, default=current.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)
+            ): NumberSelector(NumberSelectorConfig(min=0.5, max=1.0, step=0.05)),
+            vol.Required(
+                CONF_CLIPPING_THRESHOLD, default=current.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)
+            ): NumberSelector(NumberSelectorConfig(min=0.5, max=1.0, step=0.01)),
+            vol.Required(
+                CONF_EXPORT_LIMIT_KW, default=current.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW)
+            ): NumberSelector(NumberSelectorConfig(min=0.0, max=100.0, step=0.1)),
+        }
+    )
+
+
+async def _validate_weather(hass: HomeAssistant, collected: dict[str, Any]) -> dict[str, str]:
+    """Test the OpenWeatherMap credentials before they are stored.
+
+    Returns a config-flow ``errors`` mapping, empty when the settings are usable.
+    OWM is the only credentialled connection in the wizard — Open-Meteo is keyless
+    and the SQLite store is a local file at a fixed path, so neither has anything
+    to test. Leaving OWM disabled therefore validates trivially.
+    """
+    if not collected.get(CONF_OWM_ENABLED):
+        return {}
+
+    api_key = (collected.get(CONF_OWM_API_KEY) or "").strip()
+    if not api_key:
+        return {CONF_OWM_API_KEY: "owm_key_missing"}
+
+    client = OWMClient(
+        api_key=api_key,
+        latitude=float(collected.get(CONF_LATITUDE, DEFAULT_LATITUDE)),
+        longitude=float(collected.get(CONF_LONGITUDE, DEFAULT_LONGITUDE)),
+        session=async_get_clientsession(hass),
+    )
+    try:
+        await client.async_validate()
+    except OWMAuthError:
+        return {CONF_OWM_API_KEY: "invalid_auth"}
+    except OWMConnectionError:
+        return {"base": "cannot_connect"}
+    return {}
+
+
+def _entity_selector(domain: str = "sensor") -> EntitySelector:
+    """Entity picker for one domain (``sensor`` unless told otherwise)."""
+    return EntitySelector(EntitySelectorConfig(domain=domain))
 
 
 def _input_mode_selector() -> Any:
@@ -481,13 +590,40 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Entry point — start the wizard at the Site & System step."""
         return await self.async_step_site(user_input)
 
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Re-run the whole wizard against an existing entry.
+
+        Seeded with the entry's current settings so every step opens on what is
+        configured today; the last step updates the entry in place and reloads it
+        instead of creating a second one.
+        """
+        entry = self._get_reconfigure_entry()
+        self._data = {**entry.data, **entry.options}
+        return await self.async_step_site(user_input)
+
+    def _finish(self) -> config_entries.ConfigFlowResult:
+        """Create the entry, or update the existing one when reconfiguring.
+
+        The collected settings are written to *both* ``data`` and ``options``: the
+        coordinator reads ``{**data, **options}``, so writing only ``data`` would
+        leave any value a previous options-flow run had stored shadowing the one
+        just entered, and the reconfigure would silently appear to do nothing.
+        """
+        if self.source == config_entries.SOURCE_RECONFIGURE:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(),
+                data=self._data,
+                options=self._data,
+            )
+        return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
+
     async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System."""
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_database()
 
-        schema = _build_site_schema({}, single_site=self._is_single_site())
+        schema = _build_site_schema(self._data, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema, errors={})
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -496,37 +632,24 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_weather()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_DB_ENABLED, default=DEFAULT_DB_ENABLED): BooleanSelector(),
-                vol.Required(CONF_DB_RETENTION_DAYS, default=DEFAULT_DB_RETENTION_DAYS): NumberSelector(
-                    NumberSelectorConfig(min=0, max=3650, step=1)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="database", data_schema=schema)
+        return self.async_show_form(step_id="database", data_schema=_build_database_schema(self._data))
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 3 — Weather & irradiance.
 
         Open-Meteo (keyless, default) supplies the irradiance for PV tuning plus
         cloud/temperature; OpenWeatherMap is an optional legacy alternative for
-        cloud/temperature.
+        cloud/temperature. An enabled OWM key is tested here, before it is stored.
         """
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_battery()
+            errors = await _validate_weather(self.hass, {**self._data, **user_input})
+            if not errors:
+                self._data.update(user_input)
+                return await self.async_step_battery()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_OPENMETEO_ENABLED, default=DEFAULT_OPENMETEO_ENABLED): BooleanSelector(),
-                vol.Required(CONF_OWM_ENABLED, default=False): BooleanSelector(),
-                vol.Optional(CONF_OWM_API_KEY, default=""): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="weather", data_schema=schema)
+        current = {**self._data, **(user_input or {})}
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (optional)."""
@@ -534,17 +657,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_tuning()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_BATTERY_ENABLED, default=False): BooleanSelector(),
-                vol.Optional(CONF_BATTERY_MODE, default="net"): SelectSelector(
-                    SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
-                ),
-                vol.Optional(CONF_BATTERY_NET_SENSOR): _entity_selector(),
-                vol.Optional(CONF_BATTERY_CHARGE_SENSOR): _entity_selector(),
-            }
-        )
-        return self.async_show_form(step_id="battery", data_schema=schema)
+        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(self._data))
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening."""
@@ -552,29 +665,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_sites()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_AUTO_TUNING, default=DEFAULT_AUTO_TUNING): BooleanSelector(),
-                vol.Required(CONF_AUTO_DAMPENING, default=DEFAULT_AUTO_DAMPENING): BooleanSelector(),
-                vol.Required(CONF_DAMPENING_GATE, default=DEFAULT_DAMPENING_GATE): BooleanSelector(),
-                vol.Required(CONF_CLOUD_THRESHOLD, default=DEFAULT_CLOUD_THRESHOLD): NumberSelector(
-                    NumberSelectorConfig(min=10, max=50, step=1)
-                ),
-                vol.Required(CONF_CLOUD_MAX_INCLUDE, default=DEFAULT_CLOUD_MAX_INCLUDE): NumberSelector(
-                    NumberSelectorConfig(min=20, max=100, step=1)
-                ),
-                vol.Required(CONF_KT_THRESHOLD, default=DEFAULT_KT_THRESHOLD): NumberSelector(
-                    NumberSelectorConfig(min=0.5, max=1.0, step=0.05)
-                ),
-                vol.Required(CONF_CLIPPING_THRESHOLD, default=DEFAULT_CLIPPING_THRESHOLD): NumberSelector(
-                    NumberSelectorConfig(min=0.5, max=1.0, step=0.01)
-                ),
-                vol.Required(CONF_EXPORT_LIMIT_KW, default=DEFAULT_EXPORT_LIMIT_KW): NumberSelector(
-                    NumberSelectorConfig(min=0.0, max=100.0, step=0.1)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="tuning", data_schema=schema)
+        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(self._data))
 
     def _show_sites_form(
         self,
@@ -597,7 +688,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_sites(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 6 — Per-site sensor mapping (multi-site). Skipped if ≤1 site."""
         if self._is_single_site():
-            return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
+            return self._finish()
         discovered = self._discovered or []
         default_ac = self._data.get(CONF_PV_ACTUAL_SENSOR)
 
@@ -614,7 +705,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data[CONF_SITE_GROUPS] = _derive_groups(assignments, mode=submitted_mode)
             self._data[CONF_SITE_TOPOLOGY] = submitted_mode
             _clear_flat_mppt(self._data)
-            return self.async_create_entry(title="Solcast Solar Enhanced", data=self._data)
+            return self._finish()
 
         existing = _groups_to_assignments(self._data.get(CONF_SITE_GROUPS))
         existing = _seed_flat_mppt(discovered, existing, self._data)
@@ -666,39 +757,20 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_weather()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_DB_ENABLED, default=current.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED)
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_DB_RETENTION_DAYS,
-                    default=current.get(CONF_DB_RETENTION_DAYS, DEFAULT_DB_RETENTION_DAYS),
-                ): NumberSelector(NumberSelectorConfig(min=0, max=3650, step=1)),
-            }
-        )
-        return self.async_show_form(step_id="database", data_schema=schema)
+        return self.async_show_form(step_id="database", data_schema=_build_database_schema(current))
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
-        """Step 3 — Weather & Irradiance (options flow)."""
+        """Step 3 — Weather & Irradiance (options flow). Tests an enabled OWM key."""
+        current = {**self.config_entry.data, **self.config_entry.options, **self._opts}
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._opts.update(user_input)
-            return await self.async_step_battery()
+            errors = await _validate_weather(self.hass, {**current, **user_input})
+            if not errors:
+                self._opts.update(user_input)
+                return await self.async_step_battery()
+            current = {**current, **user_input}
 
-        current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_OPENMETEO_ENABLED,
-                    default=current.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED),
-                ): BooleanSelector(),
-                vol.Required(CONF_OWM_ENABLED, default=current.get(CONF_OWM_ENABLED, False)): BooleanSelector(),
-                vol.Optional(CONF_OWM_API_KEY, default=current.get(CONF_OWM_API_KEY, "")): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                ),
-            }
-        )
-        return self.async_show_form(step_id="weather", data_schema=schema)
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (options flow)."""
@@ -707,21 +779,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_tuning()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_BATTERY_ENABLED, default=current.get(CONF_BATTERY_ENABLED, False)): BooleanSelector(),
-                vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, "net")): SelectSelector(
-                    SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
-                ),
-                vol.Optional(
-                    CONF_BATTERY_NET_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_NET_SENSOR)}
-                ): _entity_selector(),
-                vol.Optional(
-                    CONF_BATTERY_CHARGE_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_CHARGE_SENSOR)}
-                ): _entity_selector(),
-            }
-        )
-        return self.async_show_form(step_id="battery", data_schema=schema)
+        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(current))
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening (options flow)."""
@@ -730,35 +788,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_sites()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_AUTO_TUNING, default=current.get(CONF_AUTO_TUNING, DEFAULT_AUTO_TUNING)
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_AUTO_DAMPENING, default=current.get(CONF_AUTO_DAMPENING, DEFAULT_AUTO_DAMPENING)
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_DAMPENING_GATE, default=current.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_CLOUD_THRESHOLD, default=current.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)
-                ): NumberSelector(NumberSelectorConfig(min=10, max=50, step=1)),
-                vol.Required(
-                    CONF_CLOUD_MAX_INCLUDE, default=current.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE)
-                ): NumberSelector(NumberSelectorConfig(min=20, max=100, step=1)),
-                vol.Required(
-                    CONF_KT_THRESHOLD, default=current.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)
-                ): NumberSelector(NumberSelectorConfig(min=0.5, max=1.0, step=0.05)),
-                vol.Required(
-                    CONF_CLIPPING_THRESHOLD, default=current.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)
-                ): NumberSelector(NumberSelectorConfig(min=0.5, max=1.0, step=0.01)),
-                vol.Required(
-                    CONF_EXPORT_LIMIT_KW, default=current.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW)
-                ): NumberSelector(NumberSelectorConfig(min=0.0, max=100.0, step=0.1)),
-            }
-        )
-        return self.async_show_form(step_id="tuning", data_schema=schema)
+        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(current))
 
     def _show_sites_form(
         self,
