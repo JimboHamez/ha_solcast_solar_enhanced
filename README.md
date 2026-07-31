@@ -35,7 +35,16 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0
+## 🆕 What's new in v1.10.1
+
+**Patch: the inverter-clipping filter never fired.** If your inverter clips at midday — very common on a DC-oversized array — those saturated records were staying in the dataset with both measured output and forecast pinned at the ceiling, which pulls the shading ratio toward 1.0 in the most valuable hours of the day. Exactly what the filter exists to prevent.
+
+Three things were wrong, all one root cause. The **System capacity** field was labelled *"kW DC"* while its only job is an **AC** threshold, so following the label set the ceiling 10–35% out of reach. Solcast's own site data settles it — `capacity` is the inverter nameplate (AC) rating, `capacity_dc` the panel rating — so capacity is now **read from Solcast automatically**, with the field relabelled and kept as a fallback. And per-array dampening was clipping at the *whole property's* capacity, which killed the filter per-array even on systems with no DC oversizing at all.
+
+If your stored value still looks like a DC figure, you'll get a repair notice naming both numbers. **Expect your dampening curve to change around midday** — that's the filter working for the first time. ([#59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59))
+
+<details>
+<summary><b>What landed in v1.10.0</b></summary>
 
 **The big one is dampening accuracy: two separate bugs were quietly throwing away the shading this integration had correctly measured.** Both are fixed, and both were confirmed against live generation data rather than argued from theory. If you have an array with real shading, this release is the one where the correction starts landing at its true size.
 
@@ -48,8 +57,10 @@ This integration brings that back, on your own hardware. It records your actual-
 
 **Upgrading from 1.9.x?** Drop-in. Your existing entities keep their IDs. One caveat: the undampened forecast can't be backfilled (the base integration only keeps ~28 days of it), so your existing history keeps using the old comparison and ages out over a fortnight.
 
+</details>
+
 <details>
-<summary><b>Also in this release — quality-scale housekeeping (Gold)</b></summary>
+<summary><b>Also in the 1.10.0 line — quality-scale housekeeping (Gold)</b></summary>
 
 Nothing here changes how your forecast gets corrected. This brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist), clearing every applicable **Bronze, Silver and Gold** rule.
 
