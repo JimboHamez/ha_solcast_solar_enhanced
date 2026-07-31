@@ -22,6 +22,7 @@ from .const import (
     APPORTION_AZIMUTH_TOL,
     BASE_DOMAIN,
     BASE_GRANULAR_ALL_KEY,
+    CAPACITY_DC_SUSPECT_RATIO,
     CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
@@ -81,6 +82,7 @@ from .const import (
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
+    ISSUE_CAPACITY_LOOKS_DC,
     ISSUE_DAMPENING_GATED_LEGACY,
     ISSUE_GRANULAR_CONFLICT,
     ISSUE_ORIENTATION_DIVERGED,
@@ -360,6 +362,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # Retire the pre-1.10.0b8 'dampening gated' issue if one is still open.
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_DAMPENING_GATED_LEGACY)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
 
     # ------------------------------------------------------------------
     # Main update
@@ -888,6 +891,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     async def _run_dampening(self, opts: dict[str, Any], now_epoch: int, lat: float, lon: float) -> None:
+        # Cheap config sanity check on the same 6-hourly cadence as the granular
+        # conflict check, and for the same reason: the failure is otherwise silent.
+        self._check_capacity_is_ac(opts)
+
         # Aggregate table (drives the dampening sensors) — property-wide '_total' rows.
         self._dampening_table = await self._compute_dampening_slots(opts, now_epoch, lat, lon, DEFAULT_SITE_ID)
 
@@ -1826,6 +1833,53 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             pass
         return False
+
+    def _check_capacity_is_ac(self, opts: dict[str, Any]) -> None:
+        """Flag a stored capacity that looks like a DC (module) rating.
+
+        Before 1.10.1 the field was labelled "System capacity (kW DC)" while its only
+        consumer compares it against AC power on both sides, so anyone who entered the
+        figure the label asked for has had an inert clipping filter (issue #59).
+        ``_capacity_kw`` now prefers Solcast's discovered AC ``capacity``, which repairs
+        the behaviour silently — but the stored number stays wrong and would take over
+        again if discovery ever lapsed, so say so rather than fixing it invisibly.
+
+        Only raised on evidence: it needs a discovered AC rating to compare against.
+        Discovery comes from the base integration's rooftop sensors, and the manifest
+        hard-depends on that integration, so in practice it is almost always present.
+        """
+        configured = opts.get(CONF_CAPACITY_KW)
+        discovered = self._discovered_capacity()
+        if configured is None or discovered is None or discovered <= 0:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+            return
+        try:
+            entered = float(configured)
+        except (TypeError, ValueError):
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+            return
+        if entered <= discovered * CAPACITY_DC_SUSPECT_RATIO:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+            return
+        _LOGGER.warning(
+            "Configured system capacity %.2f kW is above the inverter AC rating Solcast "
+            "reports (%.2f kW) — it looks like a DC (panel) figure. Solcast's AC value is "
+            "being used for clipping detection; update the option so the two agree.",
+            entered,
+            discovered,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_CAPACITY_LOOKS_DC,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_CAPACITY_LOOKS_DC,
+            translation_placeholders={
+                "configured": f"{entered:.2f}",
+                "discovered": f"{discovered:.2f}",
+            },
+        )
 
     def _raise_granular_issue(self) -> None:
         """Surface a base granular-dampening conflict as a repair issue."""

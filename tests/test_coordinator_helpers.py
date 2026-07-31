@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -40,6 +41,7 @@ from custom_components.solcast_solar_enhanced.const import (
     DEFAULT_CAPACITY_KW,
     DEFAULT_SITE_ID,
     DOMAIN,
+    ISSUE_CAPACITY_LOOKS_DC,
     UPDATE_INTERVAL_MINUTES,
 )
 
@@ -1269,3 +1271,59 @@ async def test_dampening_slots_clip_at_the_targets_own_capacity(hass, coordinato
 
     assert per_site == [pytest.approx(4.0)], "site-a must clip at its own 4 kW"
     assert property_wide == [pytest.approx(10.0)], "the _total curve clips at the sum"
+
+
+# ---------------------------------------------------------------------------
+# _check_capacity_is_ac — the repair issue for a stored DC figure (issue #59)
+# ---------------------------------------------------------------------------
+
+def _issue(hass):
+    return ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+
+
+async def test_capacity_issue_raised_when_stored_value_looks_dc(hass, coordinator):
+    coordinator._sites = list(_SITES)  # 10.0 kW AC discovered
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 13.2})  # a 1.32 DC/AC ratio
+    issue = _issue(hass)
+    assert issue is not None
+    # The numbers must reach the user — "check your capacity" without them is
+    # unactionable, since the whole point is that the two disagree.
+    assert issue.translation_placeholders == {"configured": "13.20", "discovered": "10.00"}
+
+
+async def test_capacity_issue_not_raised_when_value_matches_ac(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 10.0})
+    assert _issue(hass) is None
+
+
+async def test_capacity_issue_tolerates_rounding(hass, coordinator):
+    """A slightly-high value is rounding or a genuinely oversized inverter, not DC."""
+    coordinator._sites = list(_SITES)
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 10.4})  # within the 1.05 band
+    assert _issue(hass) is None
+
+
+async def test_capacity_issue_cleared_once_corrected(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 13.2})
+    assert _issue(hass) is not None
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 10.0})
+    assert _issue(hass) is None
+
+
+async def test_capacity_issue_needs_discovery_evidence(hass, coordinator):
+    """Without a discovered AC rating there is nothing to compare against.
+
+    Guessing from the bare number would fire on every legitimately large system,
+    so stay silent rather than cry wolf.
+    """
+    coordinator._sites = []
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: 13.2})
+    assert _issue(hass) is None
+
+
+async def test_capacity_issue_survives_unparseable_option(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    coordinator._check_capacity_is_ac({CONF_CAPACITY_KW: "not a number"})
+    assert _issue(hass) is None

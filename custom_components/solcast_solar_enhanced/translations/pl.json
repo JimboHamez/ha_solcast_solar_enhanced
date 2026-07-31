@@ -285,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "Moc systemu wygląda na wartość DC (paneli)",
+      "description": "Moc systemu zapisana w opcjach tej integracji to {configured} kW, ale Solcast podaje moc znamionową AC falownika jako {discovered} kW. Ta różnica jest typowa dla wartości paneli (DC): pole było opisane jako „kW DC” do wersji 1.10.1, choć wartość służy wyłącznie jako próg AC.\n\nJej jedynym zadaniem jest wykrywanie ograniczenia falownika — odczyty równe lub wyższe od mocy × próg ograniczenia są traktowane jako ograniczenie i wykluczane ze strojenia oraz zacienienia. Ustawiona zbyt wysoko sprawia, że filtr nigdy nie działa, a nasycone odczyty południowe rozmywają rzeczywiście zmierzone zacienienie.\n\nZamiast tego używana jest wartość AC z Solcast, więc wykrywanie działa. Zaktualizuj **Moc systemu** w opcjach do mocy znamionowej AC falownika; to powiadomienie zniknie w kolejnym cyklu."
     }
   },
   "exceptions": {

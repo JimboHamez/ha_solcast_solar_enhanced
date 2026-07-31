@@ -285,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "Výkon systému vyzerá ako hodnota DC (panely)",
+      "description": "Výkon systému uložený v možnostiach tejto integrácie je {configured} kW, ale Solcast uvádza menovitý striedavý (AC) výkon meniča {discovered} kW. Tento rozdiel je typický pre hodnotu panelov (DC): pole bolo až do verzie 1.10.1 označené ako „kW DC“, hoci sa hodnota používa výhradne ako AC prah.\n\nJej jedinou úlohou je zisťovanie orezania meniča — merania na úrovni alebo nad výkon × prah orezania sa považujú za orezanie a vylučujú sa z ladenia a tienenia. Ak je príliš vysoká, filter sa nikdy nespustí a nasýtené poludňajšie merania rozriedia skutočne namerané tienenie.\n\nNamiesto toho sa používa hodnota AC zo Solcast, takže zisťovanie funguje. Aktualizujte **Výkon systému** v možnostiach na menovitý AC výkon vášho meniča; toto upozornenie zmizne pri ďalšom cykle."
     }
   },
   "exceptions": {

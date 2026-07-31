@@ -43,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — or simply letting discovery supply it — will change your dampening curve, most visibly
   around midday.
 
+### Added
+- **A repair issue when the stored capacity looks like a DC figure.** Discovery now overrides
+  the option, which fixes the behaviour silently — but the stored number stays wrong and would
+  take over again if discovery ever lapsed, so a dampening curve that changed shape would have
+  no visible cause. When the entered value exceeds the inverter AC rating Solcast reports by
+  more than 5% (real DC/AC ratios run 1.10–1.35), a warning issue names **both numbers** and
+  says which one is in use. It clears itself on the next dampening cycle once the option is
+  corrected, and is raised **only on evidence** — with no discovered AC rating to compare
+  against there is nothing to distinguish a DC figure from a legitimately large system, so it
+  stays silent rather than guessing.
+
 ## [1.10.0] - 2026-07-31
 
 > Stable. Promotes the ten-beta 1.10.0 line unchanged — the code is `1.10.0b10` with the
