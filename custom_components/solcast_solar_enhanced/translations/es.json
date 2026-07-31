@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Latitud",
           "longitude": "Longitud",
-          "capacity_kw": "Capacidad del sistema (kW CC)",
+          "capacity_kw": "Capacidad del sistema (kW CA — potencia nominal del inversor)",
           "tilt": "Inclinación del panel (°)",
           "azimuth": "Azimut del panel (°)",
           "pv_actual_sensor": "Sensor de potencia / generación FV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Se prefiere un contador de energía de exportación acumulada (Wh/kWh); de lo contrario, un ayudante mean_linear móvil (kW).",
           "pv_actual_input_mode": "La detección automática elige entre contador de energía y potencia promediada según la unidad (Wh/kWh frente a W/kW).",
           "pv_export_input_mode": "Detección automática por unidad. Se recomienda un contador de energía.",
-          "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío. Se muestra solo en sistemas de un único conjunto: en sistemas con varios conjuntos, la tensión/corriente de cada conjunto se asigna en el paso por sitio."
+          "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío. Se muestra solo en sistemas de un único conjunto: en sistemas con varios conjuntos, la tensión/corriente de cada conjunto se asigna en el paso por sitio.",
+          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Latitud",
           "longitude": "Longitud",
-          "capacity_kw": "Capacidad del sistema (kW CC)",
+          "capacity_kw": "Capacidad del sistema (kW CA — potencia nominal del inversor)",
           "tilt": "Inclinación del panel (°)",
           "azimuth": "Azimut del panel (°)",
           "pv_actual_sensor": "Sensor de potencia / generación FV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Se prefiere un contador de energía de exportación acumulada (Wh/kWh); de lo contrario, un ayudante mean_linear móvil (kW).",
           "pv_actual_input_mode": "La detección automática elige entre contador de energía y potencia promediada según la unidad (Wh/kWh frente a W/kW).",
           "pv_export_input_mode": "Detección automática por unidad. Se recomienda un contador de energía.",
-          "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío."
+          "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío.",
+          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo."
         }
       },
       "database": {
@@ -283,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "La capacidad del sistema parece una cifra CC (paneles)",
+      "description": "La capacidad guardada en las opciones de esta integración es {configured} kW, pero Solcast indica una potencia nominal CA del inversor de {discovered} kW. Esa diferencia es la firma de una cifra de paneles (CC): el campo estuvo etiquetado como «kW CC» hasta la versión 1.10.1, mientras que el valor solo se usa como umbral CA.\n\nSu única función es detectar el recorte del inversor: las lecturas iguales o superiores a capacidad × umbral de recorte se consideran recorte y se excluyen del ajuste y del sombreado. Si es demasiado alta, ese filtro nunca actúa y las lecturas saturadas del mediodía diluyen el sombreado realmente medido.\n\nEn su lugar se usa el valor CA de Solcast, así que la detección funciona. Actualice **Capacidad del sistema** en las opciones con la potencia nominal CA de su inversor; este aviso desaparecerá en el siguiente ciclo."
     }
   },
   "exceptions": {

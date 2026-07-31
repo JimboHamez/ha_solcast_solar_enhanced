@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Breedtegraad",
           "longitude": "Lengtegraad",
-          "capacity_kw": "Systeemvermogen (kW DC)",
+          "capacity_kw": "Systeemvermogen (kW AC — omvormervermogen)",
           "tilt": "Hellingshoek panelen (°)",
           "azimuth": "Azimut panelen (°)",
           "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Bij voorkeur een cumulatieve teruglever-energiemeter (Wh/kWh); anders een voortschrijdende mean_linear-helper (kW).",
           "pv_actual_input_mode": "Automatische detectie kiest op basis van de eenheid tussen energiemeter en gemiddeld vermogen (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische detectie op basis van de eenheid. Energiemeter aanbevolen.",
-          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg. Alleen getoond voor systemen met één veld — bij meerdere velden stelt u spanning/stroom per veld in de stap per locatie in."
+          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg. Alleen getoond voor systemen met één veld — bij meerdere velden stelt u spanning/stroom per veld in de stap per locatie in.",
+          "capacity_kw": "Het AC-nominale vermogen van je omvormer — niet het paneeltotaal (DC). Metingen op of boven deze waarde maal de begrenzingsdrempel gelden als omvormerbegrenzing en worden uitgesloten van afstemming en beschaduwing. Wordt automatisch uit Solcast gelezen als je locaties dit melden; deze waarde is de terugval."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Breedtegraad",
           "longitude": "Lengtegraad",
-          "capacity_kw": "Systeemvermogen (kW DC)",
+          "capacity_kw": "Systeemvermogen (kW AC — omvormervermogen)",
           "tilt": "Hellingshoek panelen (°)",
           "azimuth": "Azimut panelen (°)",
           "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Bij voorkeur een cumulatieve teruglever-energiemeter (Wh/kWh); anders een voortschrijdende mean_linear-helper (kW).",
           "pv_actual_input_mode": "Automatische detectie kiest op basis van de eenheid tussen energiemeter en gemiddeld vermogen (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische detectie op basis van de eenheid. Energiemeter aanbevolen.",
-          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg."
+          "mppt1_voltage_sensor": "Optionele DC-stringsensoren per MPPT (bijv. van Fronius). Wijs de ruwe spanning-/stroomentiteiten per string aan — de integratie neemt de maximale spanning en minimale stroom over elk blok van 30 minuten uit de geschiedenis, dus een statistiek-helper is niet nodig. Een spanning die naar de nullastspanning stijgt terwijl de stroom inzakt, is de off-MPP-vingerafdruk van exportbegrenzing. MPPT 2 is optioneel; omvormers met één tracker laten dit leeg.",
+          "capacity_kw": "Het AC-nominale vermogen van je omvormer — niet het paneeltotaal (DC). Metingen op of boven deze waarde maal de begrenzingsdrempel gelden als omvormerbegrenzing en worden uitgesloten van afstemming en beschaduwing. Wordt automatisch uit Solcast gelezen als je locaties dit melden; deze waarde is de terugval."
         }
       },
       "database": {
@@ -283,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "Systeemvermogen lijkt een DC-waarde (panelen)",
+      "description": "Het systeemvermogen in de opties van deze integratie is {configured} kW, maar Solcast meldt een AC-nominaal omvormervermogen van {discovered} kW. Dat verschil is kenmerkend voor een paneelwaarde (DC): het veld heette tot versie 1.10.1 \"kW DC\", terwijl de waarde uitsluitend als AC-drempel wordt gebruikt.\n\nDe enige taak is het herkennen van omvormerbegrenzing — metingen op of boven vermogen × de begrenzingsdrempel gelden als begrenzing en worden uitgesloten van afstemming en beschaduwing. Te hoog ingesteld werkt dat filter nooit en verdunnen verzadigde middagmetingen de beschaduwing die je echt hebt gemeten.\n\nIn plaats daarvan wordt de AC-waarde van Solcast gebruikt, dus de detectie werkt. Werk **Systeemvermogen** in de opties bij naar het AC-nominale vermogen van je omvormer; deze melding verdwijnt bij de volgende cyclus."
     }
   },
   "exceptions": {

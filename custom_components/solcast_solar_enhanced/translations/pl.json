@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Szerokość geograficzna",
           "longitude": "Długość geograficzna",
-          "capacity_kw": "Moc systemu (kW DC)",
+          "capacity_kw": "Moc systemu (kW AC — moc znamionowa falownika)",
           "tilt": "Kąt nachylenia paneli (°)",
           "azimuth": "Azymut paneli (°)",
           "pv_actual_sensor": "Czujnik mocy / produkcji PV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
           "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
           "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii.",
-          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym. Wyświetlane tylko dla systemów z jednym łańcuchem — przy wielu łańcuchach napięcie/prąd każdego łańcucha ustawia się w kroku dla poszczególnych lokalizacji."
+          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym. Wyświetlane tylko dla systemów z jednym łańcuchem — przy wielu łańcuchach napięcie/prąd każdego łańcucha ustawia się w kroku dla poszczególnych lokalizacji.",
+          "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Szerokość geograficzna",
           "longitude": "Długość geograficzna",
-          "capacity_kw": "Moc systemu (kW DC)",
+          "capacity_kw": "Moc systemu (kW AC — moc znamionowa falownika)",
           "tilt": "Kąt nachylenia paneli (°)",
           "azimuth": "Azymut paneli (°)",
           "pv_actual_sensor": "Czujnik mocy / produkcji PV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
           "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
           "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii.",
-          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym."
+          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym.",
+          "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową."
         }
       },
       "database": {
@@ -283,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "Moc systemu wygląda na wartość DC (paneli)",
+      "description": "Moc systemu zapisana w opcjach tej integracji to {configured} kW, ale Solcast podaje moc znamionową AC falownika jako {discovered} kW. Ta różnica jest typowa dla wartości paneli (DC): pole było opisane jako „kW DC” do wersji 1.10.1, choć wartość służy wyłącznie jako próg AC.\n\nJej jedynym zadaniem jest wykrywanie ograniczenia falownika — odczyty równe lub wyższe od mocy × próg ograniczenia są traktowane jako ograniczenie i wykluczane ze strojenia oraz zacienienia. Ustawiona zbyt wysoko sprawia, że filtr nigdy nie działa, a nasycone odczyty południowe rozmywają rzeczywiście zmierzone zacienienie.\n\nZamiast tego używana jest wartość AC z Solcast, więc wykrywanie działa. Zaktualizuj **Moc systemu** w opcjach do mocy znamionowej AC falownika; to powiadomienie zniknie w kolejnym cyklu."
     }
   },
   "exceptions": {

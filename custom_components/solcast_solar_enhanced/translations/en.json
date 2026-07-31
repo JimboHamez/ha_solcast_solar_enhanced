@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "System capacity (kW DC)",
+          "capacity_kw": "System capacity (kW AC — inverter rating)",
           "tilt": "Panel tilt (°)",
           "azimuth": "Panel azimuth (°)",
           "pv_actual_sensor": "PV Power / Generation sensor",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
           "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
-          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank. Shown only for single-array systems — multi-array systems map each array's MPPT voltage/current in the per-site step instead."
+          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank. Shown only for single-array systems — multi-array systems map each array's MPPT voltage/current in the per-site step instead.",
+          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "System capacity (kW DC)",
+          "capacity_kw": "System capacity (kW AC — inverter rating)",
           "tilt": "Panel tilt (°)",
           "azimuth": "Panel azimuth (°)",
           "pv_actual_sensor": "PV Power / Generation sensor",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Cumulative export energy counter (Wh/kWh) preferred; otherwise a rolling mean_linear helper (kW).",
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
           "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
-          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank."
+          "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank.",
+          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback."
         }
       },
       "database": {
@@ -283,6 +285,10 @@
     "granular_dampening_conflict": {
       "title": "Solcast granular dampening conflicts with per-site dampening",
       "description": "The Solcast PV Forecast integration stores per-site dampening in a granular dampening file, and its current contents stop this integration's per-site factors from working.\n\nEither the file contains an 'all' entry — which the base integration applies in preference to every per-site entry, so the factors pushed for your individual arrays are ignored — or its sites do not all use the same number of factors, which makes the base discard the whole file and disable dampening for every site. In the second case this integration stops pushing rather than trigger that. Check Home Assistant's log for which one applies.\n\nTo fix: edit solcast-dampening.json in your Home Assistant config directory so that it contains one entry per Solcast site, each with the same number of factors, and no 'all' entry. An 'all' entry is created by calling the Solcast 'set_dampening' action with 48 factors and no site. Clearing 'granular dampening' in the Solcast PV Forecast options deletes the file entirely, after which this integration rebuilds it on its next dampening run."
+    },
+    "capacity_looks_dc": {
+      "title": "System capacity looks like a DC (panel) figure",
+      "description": "The system capacity stored in this integration's options is {configured} kW, but Solcast reports your inverter AC rating as {discovered} kW. That gap is the signature of a panel (DC) figure: the field was labelled \"kW DC\" until version 1.10.1, while its value is only ever used as an AC threshold.\n\nIts only job is inverter-clipping detection — readings at or above capacity × the clipping threshold are treated as clipping and excluded from tuning and shading. Set too high, that filter never fires, and saturated midday records dilute the shading you actually measured.\n\nSolcast's AC value is being used instead, so clipping detection is working. Update **System capacity** in this integration's options to your inverter's AC nameplate rating so the stored value agrees, and this notice will clear on the next dampening cycle."
     }
   },
   "exceptions": {

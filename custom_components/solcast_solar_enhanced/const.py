@@ -184,6 +184,15 @@ ISSUE_GRANULAR_CONFLICT = "granular_dampening_conflict"
 # Legacy repair-issue id, deleted on unload so a pre-1.10.0b8 "dampening gated"
 # issue does not linger in the UI after the gate became advisory.
 ISSUE_DAMPENING_GATED_LEGACY = "dampening_gated"
+# Raised when the manually entered capacity sits materially above the inverter AC
+# rating Solcast reports, which is the signature of a DC (module) figure — what the
+# field's label wrongly asked for before 1.10.1 (issue #59). Discovery overrides the
+# value so the clipping filter still works, but the stored number stays wrong and
+# would take over if discovery ever lapsed.
+ISSUE_CAPACITY_LOOKS_DC = "capacity_looks_dc"
+# Real DC/AC ratios run 1.1-1.35; 1.05 catches them while tolerating rounding and
+# the odd genuinely oversized-inverter install.
+CAPACITY_DC_SUSPECT_RATIO = 1.05
 DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the advisory may fire
 DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that raises the advisory
 DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that raises the advisory
