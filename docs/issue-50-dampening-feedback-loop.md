@@ -119,10 +119,35 @@ user may have set manual factors.
 - **Backfill.** Not possible for historical rows — the base retains only ~28 days of
   undampened data. The corrected denominator applies forward only.
 
-## 7. Related
+## 7. Post-fix verification (2026-07-31, issue closed)
+
+Fix shipped in `1.10.0b6`. Re-measured on the same install after a fortnight of clean rows
+(22 Jun – 31 Jul, 1860 rows/site).
+
+- **Coverage.** `pv_estimate_undampened` populates from 2026-07-17 and covers **every
+  daylight slot, every day** from 18 Jul (20/20). 92% of the ±14-day dampening window.
+- **The applied factor, measured in-DB** as `pv_estimate ÷ pv_estimate_undampened` — §2's
+  file-division test, now recorded per row. Never above 1.0 on any row, as the `[0, 1]`
+  clamp requires; Ground Floor median **0.9433** (min 0.8986), `_total` 0.9672, 1st Floor
+  0.9941. The per-local-hour shape matches our own pushed `solcast-dampening.json`, so the
+  contamination was provably *our* factors.
+- **Bias.** Aggregate `Σactual/Σestimate` both ways: Ground Floor **0.6862 true vs 0.7360
+  contaminated (+7.25%)**, `_total` 0.8429 vs 0.8766 (+4.00%), 1st Floor 0.9996 vs 1.0090
+  (+0.94%). Bias scales with shading depth, as `R/f` predicts.
+- **Effect on pushed factors.** Replaying the pipeline both ways at today's α ≈ 0.29 moves
+  Ground Floor's hour-12 factor by **0.0185** and lifts avg daytime shading 3.8% → 4.6%.
+  Projected at α = 0.9 the contaminated loop parks the most-shaded hour at 0.622 against a
+  correct 0.425 — **19.7 points of shading never applied**, confirming §3.
+- **§7 open item resolved.** `_total` clear-sky midday now reads **0.915** dampened /
+  **0.913** undampened — no amplification, no factors above 1.0. The earlier 1.8–2.0 was an
+  artifact of the `pv_actual` sensor-mode problem fixed separately, not an aggregation fault.
+- **Not shown.** Two weeks is too short for the *dynamic* signature (the contaminated ratio
+  drifting up as factors deepen). Week-on-week both denominators rise together — late-July
+  weather — and the applied factor is flat at ~0.96. The static A/B above is the sound test.
+
+Replay script: `analysis/b9_followup/issue50_ab.py` (not shipped in the component).
+
+## 8. Related
 
 - Record starvation keeping α ≈ 0.23 and masking this: winter α / shading suppression.
 - Clear-sky reference quality (GHI-based Kt admitting beam-poor slots): discussion #47.
-- Open: the `_total` aggregate previously showed clear-sky midday `pv_actual/pv_estimate` of
-  1.8–2.0 and factors above 1.0 (amplifying). Per-site factors on the 2026-07-17 DB look
-  sane; `_total` not yet re-checked.

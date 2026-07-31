@@ -2,9 +2,9 @@
 
 Everything in b10 is quality-scale housekeeping: **no change to tuning, dampening or storage**. A forecast corrected by b10 is corrected identically to b9. What *did* change is how the integration is wired into Home Assistant — and those are exactly the parts a test suite has to mock, so they need confirming on a real instance.
 
-The automated suite (553 tests, `mypy --strict`, ruff, 96% coverage with the config flow at 100%) has been run and is green. It was run against **Home Assistant 2026.2.3** in the dev venv, while the manifest requires **2026.5.4** — so passing tests are weaker evidence than usual here.
+The automated suite (568 tests, `mypy --strict`, ruff, 96% coverage with the config flow at 100%) has been run and is green. It was run against **Home Assistant 2026.2.3** in the dev venv, while the manifest requires **2026.5.4** — so passing tests are weaker evidence than usual here.
 
-Six changes carry real risk on a live box:
+Nine changes carry real risk on a live box:
 
 | Change | If it's wrong, you'd see |
 |---|---|
@@ -14,20 +14,23 @@ Six changes carry real risk on a live box:
 | Icons moved to `icons.json` | Blank or generic icons |
 | Weather / MPPT sensors made conditionally unavailable | A sensor reading `unavailable` that should be showing a number |
 | `fetch_weather` rewritten to cover Open-Meteo | The action erroring, or no longer updating Cloud Cover |
+| **New diagnostics download** | The download failing, or a secret surviving redaction |
+| **New reconfigure flow** | Settings not prefilled, or changes not taking effect |
+| **Stale per-array device cleanup runs at every setup** | A device you still use quietly disappearing |
+
+The last three landed after this checklist was first written; they are the newest and least exercised code in the release.
 
 ---
 
 ## Install
 
-No tag yet, so HACS won't offer this — copy it in manually:
+b10 is now tagged as a **pre-release**, so HACS will offer it directly — no manual copying:
 
-```
-https://github.com/JimboHamez/ha_solcast_solar_enhanced/archive/refs/heads/release/1.10.0b10.zip
-```
+1. HACS → **Solcast Solar Enhanced** → ⋮ → **Redownload**
+2. Enable **Show beta versions**
+3. Pick **v1.10.0b10**, then restart Home Assistant
 
-Replace the whole of `config/custom_components/solcast_solar_enhanced/` with the copy from the zip, then restart Home Assistant.
-
-> **Replace the directory, don't merge into it.** b10 adds two new files (`entity.py`, `icons.json`). Copying files over the top of a b9 tree leaves a half-old mix that won't import.
+> **If you install manually instead, replace the whole directory rather than merging into it.** b10 adds three new files (`entity.py`, `icons.json`, `diagnostics.py`). Copying over the top of a b9 tree leaves a half-old mix that won't import.
 
 **Rollback:** reinstall b9 via HACS. Your database (`solcast_solar_enhanced.db`) and all entity IDs are untouched by this release — no schema change, no unique-ID change — so a rollback loses nothing.
 
@@ -128,6 +131,49 @@ The restore path moved into `entity.py`. The move shouldn't have changed it, whi
 
 (Battery Charge 30min Average uses the same path, but there's no home battery here to test it with.)
 
+## 8. The diagnostics download (new)
+
+Brand new in this release, and the one item where a bug leaks data rather than just breaking a feature.
+
+Settings → Devices & Services → **Solcast Solar Enhanced** → ⋮ → **Download diagnostics**.
+
+- [ ] The file downloads without an error
+- [ ] Open it and search for your **OpenWeatherMap API key** (if you have ever entered one) — it must appear as `**REDACTED**`, never in the clear
+- [ ] Search for your **latitude/longitude** — both must read `**REDACTED**`
+- [ ] `dampening.slots` holds **48** entries, not 24 — the half-hour grid, not the hourly one
+- [ ] `coordinator.configured_sites` lists **both** your arrays, with the names you gave them
+- [ ] `storage.record_count` roughly matches the **Database Records** sensor
+
+The redaction is asserted in the test suite against the whole serialised payload, so a leak here would mean something reached the file by a path the tests don't model. Worth two minutes of searching.
+
+## 9. The reconfigure flow (new)
+
+⋮ on the integration entry — there should now be a **Reconfigure** item alongside Configure.
+
+- [ ] **Reconfigure** appears in the menu
+- [ ] Step 1 opens **prefilled with your current settings** — tilt, capacity, your generation/export sensors — not blank defaults
+- [ ] Click through every step without changing anything and finish
+- [ ] The entry reloads and your entities still carry their values
+- [ ] Entity IDs are unchanged (see below)
+
+Then confirm a change actually lands, which is the part with a real trap behind it:
+
+- [ ] Reconfigure again, change **Panel Tilt** to something obviously different
+- [ ] Finish the wizard, then check Developer Tools → States that the change took effect
+- [ ] **Reconfigure once more and set it back**
+
+If the tilt reverts to the old value, that's the shadowing bug the flow was written to avoid — settings live in both `data` and `options`, and a stale `options` value winning would make the whole flow a silent no-op. It's covered by a test, but this is the live confirmation.
+
+## 10. Nothing disappeared
+
+The stale-device cleanup now runs on **every** setup. On your install it should do nothing at all — both arrays are configured, so both are "live".
+
+- [ ] Both array devices are still present after all the reloads and restarts above
+- [ ] Neither array's entities have gone missing
+- [ ] Logs show no `Removing stale array device` line
+
+That log line appearing would mean the cleanup misjudged a live array — the one way this change can bite. Don't test it by deleting an array from your config; there's nothing to gain and it would cost you the array's history in the entity registry.
+
 ---
 
 ## While you're in there
@@ -157,6 +203,9 @@ The error text usually identifies which of the changes caused it:
 | Icons blank or generic | `icons.json` malformed or not copied |
 | A weather/MPPT sensor stuck on `unavailable` | The new `available` overrides reading the coordinator payload wrongly |
 | `fetch_weather` raising "No weather source is enabled" | The action's source check, when Open-Meteo *is* on |
+| Diagnostics download failing | `diagnostics_snapshot()` hitting state the tests don't produce |
+| A reconfigured value reverting | A stale `options` entry shadowing `data` |
+| `Removing stale array device` for a live array | The device cleanup misreading the configured site list |
 
 ---
 

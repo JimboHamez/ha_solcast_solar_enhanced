@@ -5,7 +5,81 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.0b10] - 2026-07-25
+## [1.10.0] - 2026-07-31
+
+> Stable. Promotes the ten-beta 1.10.0 line unchanged — the code is `1.10.0b10` with the
+> version string bumped. Two dampening-accuracy fixes, per-array visibility, an honest
+> tuner, and Gold on the quality scale.
+
+Everything below already shipped across `1.10.0b1` … `1.10.0b10`; the per-beta entries are
+kept intact underneath. This entry is the summary for anyone upgrading from **1.9.2**.
+
+### Dampening accuracy — two fixes that change the numbers
+
+- **The shading ratio is measured against the base's *undampened* forecast**
+  ([issue #50](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/50), b6). The
+  denominator used to be the forecast the base had *already* multiplied by the factors this
+  integration pushed, closing a feedback loop that settles — stably, so it looks converged —
+  on `√R` instead of the true ratio `R`. Confirmed on live data 2026-07-31: the contaminated
+  denominator biased the measured ratio by **+7.25%** on a genuinely shaded array, and would
+  have left ~20 percentage points of real shading permanently unapplied at mature confidence.
+- **The ratio is an energy-weighted aggregate, not a mean of per-record ratios**
+  ([issue #52](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/52), b7). One
+  bad Solcast poll — the base polls ~9×/day, and a poll can re-issue a clear afternoon as
+  cloudy — used to enter the average at 4–5, lift the hour above 1.0, and get clamped to *no
+  dampening at all*, discarding the shading every honest record had measured.
+- **Clear-sky records are graded by measured irradiance** (b1). The quality weight now uses
+  the clearness index `Kt = GHI / clear-sky GHI` from Open-Meteo rather than the model cloud
+  field, which is biased high and false-overcasts exactly the clear days a shading ratio
+  needs. Surfaced as a `clear_sky_basis` attribute. Falls back to the cloud bands when
+  Open-Meteo is off.
+- **Per-site dampening actually engages** (b1, b3). Where the base exposes no per-site
+  forecast detail, the property forecast is apportioned by capacity share across arrays that
+  share an orientation; where it does, the real per-site forecast is read — including across
+  differently-oriented arrays, which a key-matching bug had prevented.
+
+### Tuning — it now declines to answer when it cannot
+
+- **Tilt is only reported when the data supports it** (b9). Tilt is nearly degenerate with
+  the fitted capacity scale (~1–2% shape residual across the plausible range), so on real
+  arrays the "best" tilt is frequently set by noise — one live install wandered 7.8°–30°
+  across ten days against a configured 24.75°. Two checks (*railed*, *fit too loose*) now
+  gate the result; both tuned-tilt sensors read *unknown* when it fails, keeping the rejected
+  value and the reason as attributes.
+- **The orientation-divergence check is advisory only** (b8). It used to force that target's
+  factors to a neutral 1.0 — gating a well-determined measurement on a poorly-determined one.
+  It now warns and still pushes the measured curve.
+
+### Visibility
+
+- **Each array is its own Home Assistant device** (b2, b4), carrying PV Power, Shading, Tuned
+  Tilt, Azimuth, Tuning RMSE and Current Hour Dampening. The property-wide tilt/azimuth/RMSE
+  sensors are hidden by default on multi-site main cards, where the aggregate blends
+  differently-oriented arrays and means little.
+- **Current Hour Dampening** (b8) — property-wide and per array, the exact factor in effect
+  for the current local hour, as a sensor state so it gets recorder history.
+- **PV Forecast Confidence** (b1) — a 0–100 load-scheduling decision aid from recent
+  measured-vs-forecast bias. Advisory; never pushed back to the base.
+- **Diagnostics download** (b10) — configuration, last readings, the raw 48-slot dampening
+  curve, the tuning fit and store coverage in one redacted file.
+
+### Compatibility and quality
+
+- **Non-English installs get their forecast data** ([issue #41](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/41), b5).
+  The base's forecast entity is localized; the hard-coded English lookup found nothing and
+  zeroed every forecast column. It is now located by its untranslated `detailedForecast`
+  attribute.
+- **Gold on the Home Assistant quality scale** (b10, self-assessed) — a reconfigure flow,
+  stale-device cleanup, `entry.runtime_data`, actions registered at component setup with real
+  error reporting, translated entity names and icons in `icons.json`, `PARALLEL_UPDATES`, and
+  README examples/troubleshooting/limitations/removal sections. 568 tests, 96% coverage,
+  `mypy --strict`.
+
+**Upgrading from 1.9.x?** Drop-in. Existing entities keep their IDs. The database schema
+gains columns additively on first run. The undampened denominator is **not** backfillable
+(the base keeps only ~28 days), so older rows keep using the dampened figure and age out.
+
+## [1.10.0b10] - 2026-07-27
 
 > Beta. Housekeeping only — no change to tuning, dampening or storage behaviour.
 
