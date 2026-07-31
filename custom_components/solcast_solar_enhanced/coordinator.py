@@ -63,6 +63,7 @@ from .const import (
     DAMPENING_INTERVAL_HOURS,
     DB_RETENTION_MIN_RECOMMENDED_DAYS,
     DEFAULT_ALBEDO,
+    DEFAULT_CAPACITY_KW,
     DEFAULT_CLIPPING_THRESHOLD,
     DEFAULT_CLOUD_MAX_INCLUDE,
     DEFAULT_CLOUD_THRESHOLD,
@@ -713,7 +714,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         result = await self.hass.async_add_executor_job(
             run_tuning,
             records,
-            float(opts.get(CONF_CAPACITY_KW, 5.0)),
+            # Inverter AC rating (Solcast's discovered `capacity`, summed across
+            # sites) — the clipping ceiling is compared against AC on both sides.
+            self._capacity_kw(opts),
             self._tuning_cloud_threshold(opts),
             float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD)),
             export_limit,
@@ -752,7 +755,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             if not records:
                 continue
             site = by_id.get(site_id, {})
-            capacity = site.get("capacity") or float(opts.get(CONF_CAPACITY_KW, 5.0))
+            capacity = self._capacity_kw(opts, site)
             # Azimuth fixed at this site's configured orientation (not tuned).
             fixed_az = self._site_azimuth_seed(site, opts)
             albedo = float(opts.get(CONF_ALBEDO, DEFAULT_ALBEDO))
@@ -1034,7 +1037,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         ``solar_position``. Building the array on UTC instead would shift the whole
         dampening curve by the site's UTC offset for non-UTC users.
         """
-        capacity_kw = float(opts.get(CONF_CAPACITY_KW, 5.0))
+        # Clipping ceiling for *this* target. A per-site curve must be clipped at
+        # that array's own inverter AC rating: passing the property-wide total puts
+        # the threshold at roughly the sum of every array, which no single array can
+        # reach, so the filter is dead for per-site dampening regardless of whether
+        # the value is AC or DC (issue #59).
+        site_meta = next((s for s in self._sites if s.get("resource_id") == site), None)
+        capacity_kw = self._capacity_kw(opts, site_meta)
         cloud_threshold = int(opts.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD))
         cloud_max_include = int(opts.get(CONF_CLOUD_MAX_INCLUDE, DEFAULT_CLOUD_MAX_INCLUDE))
         clipping_threshold = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
@@ -1887,6 +1896,38 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             pass
         return None
+
+    def _discovered_capacity(self, site: dict[str, Any] | None = None) -> float | None:
+        """Inverter AC capacity in kW from Solcast's discovered sites, or None.
+
+        Solcast's rooftop payload distinguishes two capacities: ``capacity`` is the
+        total **inverter nameplate (AC)** rating — the system's highest potential
+        output before any export limit — while ``capacity_dc`` is the module (DC)
+        rating, normally the larger of the two. The clipping filter compares
+        ``capacity × clipping_threshold`` against measured AC output and Solcast's
+        AC forecast on both sides, so ``capacity`` is the field it needs; feeding it
+        a DC figure on a DC-oversized array puts the threshold above anything the
+        inverter can physically emit and the filter never fires (issue #59).
+
+        Pass ``site`` for one array's rating, or omit it for the property-wide sum.
+        Returns None when nothing usable was discovered, so the manually entered
+        option can take over.
+        """
+        try:
+            if site is not None:
+                capacity = float(site.get("capacity") or 0.0)
+                return capacity if capacity > 0 else None
+            total = sum(float(s.get("capacity") or 0.0) for s in self._sites)
+            return total if total > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    def _capacity_kw(self, opts: dict[str, Any], site: dict[str, Any] | None = None) -> float:
+        """Resolve the AC capacity used as the clipping ceiling, discovery first."""
+        discovered = self._discovered_capacity(site)
+        if discovered is not None:
+            return discovered
+        return float(opts.get(CONF_CAPACITY_KW, DEFAULT_CAPACITY_KW))
 
     def _safe_read_sensor(self, entity_id: str) -> float:
         if not entity_id:

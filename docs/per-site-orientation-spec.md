@@ -107,9 +107,12 @@ site, tilt?, azimuth?, capacity?, mppts?}`).
   an override; users rarely touch it.
 - `_total` capacity = the page-1 total (not a sum), so the headline stays stable; per-array
   tuning uses the per-array value (override → discovery → total).
-- *Sub-decision (§11.5):* reconcile the AC vs DC capacity meaning — Step-1 label says "kW DC",
-  the per-site tuner consumes `capacity` (AC), discovery has both. Pick one definition and
-  document it.
+- *Sub-decision (§11.5) — **resolved** (issue #59).* The definition is **AC**. Solcast's
+  rooftop payload defines `capacity` as the total inverter nameplate rating and `capacity_dc`
+  as the module rating, and the clipping filter compares its ceiling against measured AC
+  output and Solcast's AC forecast on both sides. So the per-site tuner consuming `capacity`
+  was right and the "kW DC" label was wrong; the label now reads AC, and every path resolves
+  discovery-first (`_capacity_kw`) with the manual field as fallback.
 
 ## 7. Orientation/capacity precedence resolver
 

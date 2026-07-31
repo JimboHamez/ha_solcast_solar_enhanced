@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "Puissance du système (kW CC)",
+          "capacity_kw": "Puissance du système (kW CA — puissance nominale de l'onduleur)",
           "tilt": "Inclinaison des panneaux (°)",
           "azimuth": "Azimut des panneaux (°)",
           "pv_actual_sensor": "Capteur de puissance / production PV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
           "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
           "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé.",
-          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide. Affiché uniquement pour les systèmes à un seul champ — pour plusieurs champs, la tension/le courant de chaque champ se règle à l'étape par site."
+          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide. Affiché uniquement pour les systèmes à un seul champ — pour plusieurs champs, la tension/le courant de chaque champ se règle à l'étape par site.",
+          "capacity_kw": "La puissance nominale CA de votre onduleur — et non le total des panneaux (CC). Les relevés atteignant ou dépassant cette valeur multipliée par le seuil d'écrêtage sont considérés comme de l'écrêtage onduleur et exclus du calibrage et de l'ombrage. Lu automatiquement depuis Solcast lorsque vos sites le fournissent ; cette valeur sert de repli."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "Puissance du système (kW CC)",
+          "capacity_kw": "Puissance du système (kW CA — puissance nominale de l'onduleur)",
           "tilt": "Inclinaison des panneaux (°)",
           "azimuth": "Azimut des panneaux (°)",
           "pv_actual_sensor": "Capteur de puissance / production PV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Un compteur d'énergie d'injection cumulée (Wh/kWh) est préférable ; sinon, un assistant mean_linear glissant (kW).",
           "pv_actual_input_mode": "La détection automatique choisit entre compteur d'énergie et puissance moyennée selon l'unité (Wh/kWh ou W/kW).",
           "pv_export_input_mode": "Détection automatique selon l'unité. Compteur d'énergie recommandé.",
-          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide."
+          "mppt1_voltage_sensor": "Capteurs de chaîne CC facultatifs par MPPT (p. ex. Fronius). Pointez vers les entités brutes de tension/courant par chaîne : l'intégration retient la tension maximale et le courant minimal sur chaque créneau de 30 minutes à partir de l'historique, aucun assistant de statistiques n'est donc nécessaire. Une tension qui monte vers le circuit ouvert tandis que le courant s'effondre est la signature hors-MPP de l'écrêtage d'injection. Le MPPT 2 est facultatif ; les onduleurs à un seul tracker le laissent vide.",
+          "capacity_kw": "La puissance nominale CA de votre onduleur — et non le total des panneaux (CC). Les relevés atteignant ou dépassant cette valeur multipliée par le seuil d'écrêtage sont considérés comme de l'écrêtage onduleur et exclus du calibrage et de l'ombrage. Lu automatiquement depuis Solcast lorsque vos sites le fournissent ; cette valeur sert de repli."
         }
       },
       "database": {

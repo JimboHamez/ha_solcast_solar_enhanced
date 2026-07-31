@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Breitengrad",
           "longitude": "Längengrad",
-          "capacity_kw": "Anlagenleistung (kW DC)",
+          "capacity_kw": "Anlagenleistung (kW AC — Wechselrichter-Nennleistung)",
           "tilt": "Modulneigung (°)",
           "azimuth": "Modulazimut (°)",
           "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Bevorzugt ein kumulativer Einspeise-Energiezähler (Wh/kWh); andernfalls ein gleitender mean_linear-Helfer (kW).",
           "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen.",
-          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer. Wird nur für Anlagen mit einem einzelnen Strang angezeigt — bei mehreren Strängen werden Spannung/Strom je Strang stattdessen im Schritt je Standort zugeordnet."
+          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer. Wird nur für Anlagen mit einem einzelnen Strang angezeigt — bei mehreren Strängen werden Spannung/Strom je Strang stattdessen im Schritt je Standort zugeordnet.",
+          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Breitengrad",
           "longitude": "Längengrad",
-          "capacity_kw": "Anlagenleistung (kW DC)",
+          "capacity_kw": "Anlagenleistung (kW AC — Wechselrichter-Nennleistung)",
           "tilt": "Modulneigung (°)",
           "azimuth": "Modulazimut (°)",
           "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Bevorzugt ein kumulativer Einspeise-Energiezähler (Wh/kWh); andernfalls ein gleitender mean_linear-Helfer (kW).",
           "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen.",
-          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer."
+          "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer.",
+          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert."
         }
       },
       "database": {

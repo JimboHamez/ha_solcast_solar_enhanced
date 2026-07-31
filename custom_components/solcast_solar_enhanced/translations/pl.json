@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Szerokość geograficzna",
           "longitude": "Długość geograficzna",
-          "capacity_kw": "Moc systemu (kW DC)",
+          "capacity_kw": "Moc systemu (kW AC — moc znamionowa falownika)",
           "tilt": "Kąt nachylenia paneli (°)",
           "azimuth": "Azymut paneli (°)",
           "pv_actual_sensor": "Czujnik mocy / produkcji PV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
           "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
           "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii.",
-          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym. Wyświetlane tylko dla systemów z jednym łańcuchem — przy wielu łańcuchach napięcie/prąd każdego łańcucha ustawia się w kroku dla poszczególnych lokalizacji."
+          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym. Wyświetlane tylko dla systemów z jednym łańcuchem — przy wielu łańcuchach napięcie/prąd każdego łańcucha ustawia się w kroku dla poszczególnych lokalizacji.",
+          "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Szerokość geograficzna",
           "longitude": "Długość geograficzna",
-          "capacity_kw": "Moc systemu (kW DC)",
+          "capacity_kw": "Moc systemu (kW AC — moc znamionowa falownika)",
           "tilt": "Kąt nachylenia paneli (°)",
           "azimuth": "Azymut paneli (°)",
           "pv_actual_sensor": "Czujnik mocy / produkcji PV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Preferowany skumulowany licznik energii oddanej (Wh/kWh); w przeciwnym razie kroczący pomocnik mean_linear (kW).",
           "pv_actual_input_mode": "Automatyczne wykrywanie wybiera między licznikiem energii a uśrednioną mocą na podstawie jednostki (Wh/kWh lub W/kW).",
           "pv_export_input_mode": "Automatyczne wykrywanie według jednostki. Zalecany licznik energii.",
-          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym."
+          "mppt1_voltage_sensor": "Opcjonalne czujniki łańcucha DC dla każdego MPPT (np. Fronius). Wskaż surowe encje napięcia/prądu dla każdego łańcucha — integracja pobiera maksymalne napięcie i minimalny prąd w każdym 30-minutowym przedziale z historii, więc pomocnik statystyk nie jest potrzebny. Napięcie rosnące w stronę obwodu otwartego przy zapadającym się prądzie to ślad pracy poza MPP wynikający z ograniczania eksportu. MPPT 2 jest opcjonalny; falowniki z jednym trackerem pozostawiają go pustym.",
+          "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową."
         }
       },
       "database": {

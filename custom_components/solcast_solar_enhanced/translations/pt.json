@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "Capacidade do sistema (kW CC)",
+          "capacity_kw": "Capacidade do sistema (kW CA — potência nominal do inversor)",
           "tilt": "Inclinação dos painéis (°)",
           "azimuth": "Azimute dos painéis (°)",
           "pv_actual_sensor": "Sensor de potência / geração FV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
           "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
           "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado.",
-          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco. Apresentado apenas em sistemas de um único conjunto — em sistemas com vários conjuntos, a tensão/corrente de cada conjunto define-se no passo por local."
+          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco. Apresentado apenas em sistemas de um único conjunto — em sistemas com vários conjuntos, a tensão/corrente de cada conjunto define-se no passo por local.",
+          "capacity_kw": "A potência nominal CA do seu inversor, não o total dos painéis (CC). Leituras iguais ou superiores a este valor multiplicado pelo limiar de corte são tratadas como corte do inversor e excluídas do ajuste e do sombreamento. Lido automaticamente do Solcast quando os seus locais o reportam; este valor é a alternativa."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
-          "capacity_kw": "Capacidade do sistema (kW CC)",
+          "capacity_kw": "Capacidade do sistema (kW CA — potência nominal do inversor)",
           "tilt": "Inclinação dos painéis (°)",
           "azimuth": "Azimute dos painéis (°)",
           "pv_actual_sensor": "Sensor de potência / geração FV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Preferencialmente um contador de energia exportada acumulada (Wh/kWh); caso contrário, um auxiliar mean_linear móvel (kW).",
           "pv_actual_input_mode": "A detecção automática escolhe entre contador de energia e potência média com base na unidade (Wh/kWh ou W/kW).",
           "pv_export_input_mode": "Detecção automática pela unidade. Contador de energia recomendado.",
-          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco."
+          "mppt1_voltage_sensor": "Sensores de string CC opcionais por MPPT (por exemplo, da Fronius). Aponte para as entidades de tensão/corrente brutas por string — a integração usa a tensão máxima e a corrente mínima em cada intervalo de 30 minutos do histórico, pelo que não é necessário um auxiliar de estatísticas. Uma tensão a subir em direção ao circuito aberto enquanto a corrente colapsa é a assinatura fora do MPP da limitação de exportação. O MPPT 2 é opcional; inversores de seguidor único deixam-no em branco.",
+          "capacity_kw": "A potência nominal CA do seu inversor, não o total dos painéis (CC). Leituras iguais ou superiores a este valor multiplicado pelo limiar de corte são tratadas como corte do inversor e excluídas do ajuste e do sombreamento. Lido automaticamente do Solcast quando os seus locais o reportam; este valor é a alternativa."
         }
       },
       "database": {

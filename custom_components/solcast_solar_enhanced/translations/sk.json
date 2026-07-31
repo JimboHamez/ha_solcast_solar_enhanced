@@ -6,7 +6,7 @@
         "data": {
           "latitude": "Zemepisná šírka",
           "longitude": "Zemepisná dĺžka",
-          "capacity_kw": "Výkon systému (kW DC)",
+          "capacity_kw": "Výkon systému (kW AC — menovitý výkon meniča)",
           "tilt": "Sklon panelov (°)",
           "azimuth": "Azimut panelov (°)",
           "pv_actual_sensor": "Senzor výkonu / výroby FV",
@@ -24,7 +24,8 @@
           "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
           "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
-          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny. Zobrazuje sa len pre systémy s jedným poľom — pri viacerých poliach sa napätie/prúd každého poľa nastavuje v kroku pre jednotlivé lokality."
+          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny. Zobrazuje sa len pre systémy s jedným poľom — pri viacerých poliach sa napätie/prúd každého poľa nastavuje v kroku pre jednotlivé lokality.",
+          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná."
         }
       },
       "database": {
@@ -98,7 +99,7 @@
         "data": {
           "latitude": "Zemepisná šírka",
           "longitude": "Zemepisná dĺžka",
-          "capacity_kw": "Výkon systému (kW DC)",
+          "capacity_kw": "Výkon systému (kW AC — menovitý výkon meniča)",
           "tilt": "Sklon panelov (°)",
           "azimuth": "Azimut panelov (°)",
           "pv_actual_sensor": "Senzor výkonu / výroby FV",
@@ -116,7 +117,8 @@
           "pv_export_sensor": "Uprednostňuje sa kumulatívne počítadlo dodanej energie (Wh/kWh); inak kĺzavý pomocník mean_linear (kW).",
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
           "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
-          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny."
+          "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny.",
+          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná."
         }
       },
       "database": {

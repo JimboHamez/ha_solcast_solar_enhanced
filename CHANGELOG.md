@@ -5,6 +5,44 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The inverter-clipping filter now actually fires**
+  ([issue #59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59)). Three
+  defects, one root cause — the capacity used as the clipping ceiling was the wrong quantity.
+
+  `capacity × clipping_threshold` is compared against measured generation and Solcast's
+  forecast, and **both of those are AC**, so the value has to be the inverter's AC nameplate
+  rating. The config field was labelled **"System capacity (kW DC)"** in English and all 11
+  translations. Entering the DC figure the label asked for sets the ceiling 10–35% above
+  anything the inverter can physically emit on a DC-oversized array, so `total_pv >= clip_kw`
+  never becomes true and saturated midday records stay in the dataset. In the dampening
+  estimator those are pairs with both sides pinned at the ceiling, which pulls the ratio
+  toward 1.0 and dilutes genuine shading in the most valuable hours of the day — precisely
+  what the filter exists to prevent. Tuning is biased the same way.
+
+  Solcast's rooftop payload settles the ambiguity: `capacity` is the total **inverter
+  nameplate (AC)** rating, `capacity_dc` the module rating. So the per-site tuning path,
+  which already preferred the discovered `capacity`, was right all along; the property-wide
+  path relying on the hand-entered field was the outlier.
+
+  - The field is relabelled **System capacity (kW AC — inverter rating)** with a
+    `data_description` stating what it does, across `strings.json` and all 11 translations.
+    The config key is unchanged, so existing entries are untouched.
+  - A new `_capacity_kw()` resolves the ceiling **discovery-first** — Solcast's `capacity`
+    (per array, or summed for the property) with the manual field as fallback — and every
+    consumer now goes through it, so per-site and property-wide agree.
+  - **Per-site dampening was clipping at the property-wide total.** `_compute_dampening_slots`
+    takes a `site` argument but read the property-wide capacity for every target, so a 4 kW
+    array was given a ceiling near the sum of every array on the property. That killed the
+    filter for per-site dampening *regardless* of the AC/DC mix-up, and on systems with no DC
+    oversizing at all. Each array is now clipped at its own rating.
+
+  **If you followed the old label**, your clipping filter has been inert. Correcting the value
+  — or simply letting discovery supply it — will change your dampening curve, most visibly
+  around midday.
+
 ## [1.10.0] - 2026-07-31
 
 > Stable. Promotes the ten-beta 1.10.0 line unchanged — the code is `1.10.0b10` with the

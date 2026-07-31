@@ -37,6 +37,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_SITE_GROUPS,
     CONF_TILT,
     DAMPENING_GATE_MIN_RECORDS,
+    DEFAULT_CAPACITY_KW,
     DEFAULT_SITE_ID,
     DOMAIN,
     UPDATE_INTERVAL_MINUTES,
@@ -1187,3 +1188,84 @@ async def test_do_update_undampened_absent_stores_zero(hass, mock_base_coordinat
     await coord._do_update()
 
     assert coord._db.records[0]["pv_estimate_undampened"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Capacity resolution — Solcast's AC `capacity` drives the clipping ceiling
+# (issue #59). Both operands of the clip comparison are AC (measured output and
+# Solcast's forecast), so a DC figure puts the threshold out of reach.
+# ---------------------------------------------------------------------------
+
+# Deliberately asymmetric: the two arrays differ from each other, both differ
+# from their DC ratings, and none equals the manual option. A implementation
+# that grabbed capacity_dc, the property total, or the manual value is
+# distinguishable from the right one by the number alone.
+_SITES = [
+    {"resource_id": "site-a", "capacity": 4.0, "capacity_dc": 5.4},
+    {"resource_id": "site-b", "capacity": 6.0, "capacity_dc": 7.8},
+]
+_MANUAL = {CONF_CAPACITY_KW: 9.9}
+
+
+async def test_discovered_capacity_sums_ac_not_dc(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    # 4 + 6, not 5.4 + 7.8 — capacity_dc is the module rating and would sit above
+    # anything the inverters can emit.
+    assert coordinator._discovered_capacity() == pytest.approx(10.0)
+
+
+async def test_discovered_capacity_per_site(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    assert coordinator._discovered_capacity(_SITES[1]) == pytest.approx(6.0)
+
+
+async def test_discovered_capacity_none_when_absent(hass, coordinator):
+    coordinator._sites = [{"resource_id": "site-a", "capacity": 0.0}]
+    assert coordinator._discovered_capacity() is None
+    assert coordinator._discovered_capacity({"resource_id": "x"}) is None
+
+
+async def test_capacity_kw_prefers_discovery(hass, coordinator):
+    coordinator._sites = list(_SITES)
+    assert coordinator._capacity_kw(_MANUAL) == pytest.approx(10.0)
+    assert coordinator._capacity_kw(_MANUAL, _SITES[0]) == pytest.approx(4.0)
+
+
+async def test_capacity_kw_falls_back_to_manual_option(hass, coordinator):
+    coordinator._sites = []
+    assert coordinator._capacity_kw(_MANUAL) == pytest.approx(9.9)
+    assert coordinator._capacity_kw({}) == pytest.approx(DEFAULT_CAPACITY_KW)
+
+
+async def test_dampening_slots_clip_at_the_targets_own_capacity(hass, coordinator):
+    """A per-site curve must be clipped at that array's rating, not the property total.
+
+    Passing the property-wide sum sets the ceiling at roughly every array added
+    together, which no single array can reach — so the clipping filter is dead for
+    per-site dampening even on a system with no DC oversizing at all.
+    """
+    coordinator._sites = list(_SITES)
+    seen: list[float] = []
+
+    def _capture(**kwargs):
+        seen.append(kwargs["capacity_kw"])
+        return {
+            "factor": 1.0, "alpha": 0.0, "source": "no_data", "clear_sky_basis": "kt",
+            "quality_records": 0.0, "avg_quality": 0.0, "clipped_excluded": 0,
+            "forecast_clipped": 0, "undampened_records": 0,
+        }
+
+    # Midday midsummer in Melbourne so the grid has daytime slots to compute.
+    noon = int(datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc).timestamp())
+    with patch(
+        "custom_components.solcast_solar_enhanced.coordinator.compute_dampening",
+        side_effect=_capture,
+    ):
+        await coordinator._compute_dampening_slots(_MANUAL, noon, -37.9, 145.04, "site-a")
+        per_site = sorted(set(seen))
+        seen.clear()
+        await coordinator._compute_dampening_slots(_MANUAL, noon, -37.9, 145.04, DEFAULT_SITE_ID)
+        property_wide = sorted(set(seen))
+
+    assert per_site == [pytest.approx(4.0)], "site-a must clip at its own 4 kW"
+    assert property_wide == [pytest.approx(10.0)], "the _total curve clips at the sum"
