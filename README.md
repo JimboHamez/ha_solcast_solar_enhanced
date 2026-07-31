@@ -35,9 +35,23 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.0b10 (beta)
+## 🆕 What's new in v1.10.0
 
-**A housekeeping release — nothing about how your forecast gets corrected has changed.** No change to tuning, dampening or storage. This beta brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist), clearing every applicable **Bronze, Silver and Gold** rule.
+**The big one is dampening accuracy: two separate bugs were quietly throwing away the shading this integration had correctly measured.** Both are fixed, and both were confirmed against live generation data rather than argued from theory. If you have an array with real shading, this release is the one where the correction starts landing at its true size.
+
+- **Shading was being measured against the integration's own corrections** ([issue #50](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/50)). The forecast it compared your output against had already been dampened by the factors it pushed last cycle — so each round it marked its own homework and drifted toward "no shading here". The maths settles on the **square root** of the true ratio: an array genuinely making 50% of forecast parks at a 0.71 factor instead of 0.50, while looking perfectly converged. Measured on a live dual-array install on 31 July, the contaminated comparison overstated the shaded array's performance by **7.25%**, and would have left roughly **20 percentage points of real shading permanently unapplied** once confidence matured. The ratio is now anchored to the base integration's pre-dampening forecast.
+- **One bad Solcast poll could cancel a whole hour of shading** ([issue #52](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/52)). Your base integration polls Solcast about nine times a day, and now and then a poll re-forecasts a clear afternoon as cloudy — forecast drops to ~1 kW while your array cheerfully makes 3–4 kW. That single record entered the average as a ratio of 4.0 and dragged the hour above 1.0; since dampening can only *reduce* a forecast, the result was clamped to **zero dampening**, discarding what every honest record had measured.
+- **Clear-sky days are now identified by measured irradiance**, not the weather model's cloud field — which runs biased high and false-overcasts precisely the clear days a shading measurement depends on.
+- **The tuner now says "I don't know" instead of guessing.** Roof tilt turns out to be nearly indistinguishable from a change in fitted capacity, so on real arrays the "best" tilt is often decided by noise — one live install wandered between 7.8° and 30° across ten days against a configured 24.75°. **Tuned Tilt** now reports no value when the fit can't support one, with the reason in its attributes.
+- **Every array is its own device**, with its own card carrying PV Power, Shading, Tuned Tilt, Azimuth, Tuning RMSE and a **Current Hour Dampening** sensor showing the exact factor in effect right now.
+- **Non-English Home Assistant installs get their forecast data at all** ([issue #41](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/41)) — the English-only lookup used to find nothing and zero every forecast column.
+
+**Upgrading from 1.9.x?** Drop-in. Your existing entities keep their IDs. One caveat: the undampened forecast can't be backfilled (the base integration only keeps ~28 days of it), so your existing history keeps using the old comparison and ages out over a fortnight.
+
+<details>
+<summary><b>Also in this release — quality-scale housekeeping (Gold)</b></summary>
+
+Nothing here changes how your forecast gets corrected. This brings the integration in line with Home Assistant's [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist), clearing every applicable **Bronze, Silver and Gold** rule.
 
 Ten things you'll actually notice:
 
@@ -53,9 +67,12 @@ Ten things you'll actually notice:
 - **Sensors that have lost their data source now read *unavailable* rather than sitting blank.** *Weather Temperature* and *Cloud Cover* when no weather source is enabled or a fetch comes back empty; *MPPT DC Voltage* when no per-string DC sensors are configured. A blank value can't be told apart from a genuine zero at a glance — *unavailable* can. See [the note in the quality-scale section](#where-entities-read-unavailable-vs-unknown) for where this deliberately does *not* apply.
 - **The README documents how to remove the integration** — including the two things deliberately left behind, and why: your history database (so reinstalling resumes instead of restarting the multi-week data build) and any dampening factors already pushed to Solcast.
 
-**Upgrading?** Drop-in. Your existing entities keep their IDs — those live in Home Assistant's entity registry and aren't regenerated.
+> **One caveat, if you run Home Assistant in a language other than English.** Translated entity names mean Home Assistant builds entity IDs from the *translated* name. That only applies to entities being registered for the first time, so upgrading changes nothing — but a **fresh** install in a non-English language will get localized entity IDs rather than the English ones listed in the Sensors table below. Check the IDs in the UI before writing automations against them. This is the same mechanism behind the issue #41 fix, and it's inherent to naming entities the way Home Assistant asks.
 
-> **One caveat, if you run Home Assistant in a language other than English.** Translated entity names mean Home Assistant builds entity IDs from the *translated* name. That only applies to entities being registered for the first time, so upgrading changes nothing — but a **fresh** install in a non-English language will get localized entity IDs rather than the English ones listed in the Sensors table below. Check the IDs in the UI before writing automations against them. This is the same mechanism behind the b5 fix ([issue #41](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/41)), and it's inherent to naming entities the way Home Assistant asks.
+</details>
+
+<details>
+<summary><b>How the 1.10.0 line got here — the ten betas, newest first</b></summary>
 
 > **v1.10.0b9 — PV tuning now says "I don't know" instead of guessing your roof tilt.** The tuner searches for the tilt that best explains your clear-sky generation, but on many real roofs that search has no meaningful answer and it was reporting one anyway. Changing tilt turns out to be almost the same as changing the fitted capacity scale (only ~1–2% different across the whole plausible range), which the fit cancels out — so once your data is noisier than that, and real winter arrays are by a long way, the "best" tilt is decided by whichever records happened to arrive rather than by your roof. On one real install the tuned tilt wandered between 7.8° and 30° across ten days against a configured 24.75°, then drifted down to 2°. Not one of those numbers meant anything.
 
@@ -96,6 +113,8 @@ So you can see ground vs upper output, shading and tuning side by side, per arra
 **Upgrading?** Drop-in. On reload, your existing `… Shading` entities keep their IDs but **move** onto each array's new device, and the PV Power / Tuned Tilt sensors appear alongside them. No config change or migration.
 
 > Also in this beta line (**v1.10.0b1**): adaptive dampening now finds clear-sky periods from **measured irradiance** (clearness index `Kt = GHI / clear-sky GHI`, Open-Meteo, on by default) instead of the biased model cloud field — governed by the existing **Clearness index threshold** option, with a new `clear_sky_basis` attribute; the **PV Forecast Confidence** load-scheduling sensor (0–100, high/medium/low — a decision aid, never a forecast); **per-site shading dampening now actually engages** (the property forecast is split across same-orientation arrays by capacity share when no per-site forecast exists); and Open-Meteo irradiance is recorded as a true **half-hour mean**. Earlier (v1.9.x): config-wizard screenshots, the topology selector, and microinverter setups not needing a whole-system sensor.
+
+</details>
 
 Full history in the [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases).
 
