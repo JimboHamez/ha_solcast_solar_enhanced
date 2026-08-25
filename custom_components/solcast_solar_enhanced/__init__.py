@@ -161,8 +161,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: SolcastEnhancedConfigEntry) -> bool:
     """Set up Solcast Solar Enhanced from a config entry."""
-    # Verify base integration is loaded
-    if BASE_DOMAIN not in hass.data and not hass.config_entries.async_entries(BASE_DOMAIN):
+    # Verify the base integration is configured. Deliberately looser than
+    # ``base_integration_available()``: a base entry that is merely mid-retry should
+    # not stop local data collection, and the status sensor reports the live state.
+    # (``hass.data`` is only consulted for pre-4.6.0 bases, which is all it means now.)
+    if not hass.config_entries.async_entries(BASE_DOMAIN) and hass.data.get(BASE_DOMAIN) is None:
         raise ConfigEntryNotReady(
             f"Base integration '{BASE_DOMAIN}' is not loaded. Ensure solcast_solar is configured and running."
         )

@@ -70,7 +70,7 @@ solcast_solar_enhanced coordinator
         └── push dampening     → base set_dampening service (per-site)
 ```
 
-All forecast data is read from `hass.data["solcast_solar"]` (with a sensor-attribute fallback), so the external HTTP calls added are the keyless **Open-Meteo** irradiance fetch (default-on) and the optional **OpenWeatherMap** weather fetch. The codebase is linted against HA 2026.5.4 (flake8/pyflakes clean), follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
+All forecast data is read in-process from the base integration — its `detailedForecast` sensor attributes, plus a legacy `hass.data["solcast_solar"]` dict on pre-4.6.0 bases — so the external HTTP calls added are the keyless **Open-Meteo** irradiance fetch (default-on) and the optional **OpenWeatherMap** weather fetch. The codebase is linted against HA 2026.5.4 (flake8/pyflakes clean), follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
 
 ---
 
@@ -638,7 +638,7 @@ There is deliberately **no scipy** — it has no ARM/Pi wheel and its from-sourc
 
 As a companion, this integration reaches into the base at points that are currently internal. Two open asks to the base maintainer (BJReplay) would make that coupling sturdier:
 
-1. **A supported read interface for forecast data.** The companion reads `hass.data["solcast_solar"].data` and the per-site `detailedForecast-<resource_id>` sensor attribute (with sensor-state fallbacks). These are internal and can shift between base releases. A documented, stable read surface for the forecast and per-site detail would let a companion depend on it safely.
+1. **A supported read interface for forecast data.** The companion reads the per-site `detailedForecast-<resource_id>` sensor attribute (with sensor-state fallbacks), and a legacy `hass.data["solcast_solar"].data` dict when one exists. These are internal and do shift between base releases: 4.6.0 removed `hass.data[DOMAIN]` outright in favour of `entry.runtime_data`, which is what made the Base Integration Status sensor report `not_detected` on healthy 4.6 installs (issue #64). A documented, stable read surface for the forecast, per-site detail, and mere *presence* would let a companion depend on it safely.
 2. **`set_dampening` while the base's automatic dampening is on.** The base rejects manual `set_dampening` while its own auto-dampening is enabled, so the companion detects this and skips the push — users have to turn the base feature off to benefit. A trusted-source / manual-override path would let a companion supply factors without the user disabling the base feature.
 
 A separate enhancement (within this integration, no base change needed): the clear-sky cloud signal currently requires a direct OWM key, but could instead be read from an existing HA `weather.*` entity (met.no, openweathermap) to spare users a second account. Tracked as possible future work.

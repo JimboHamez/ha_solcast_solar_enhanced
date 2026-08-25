@@ -9,6 +9,7 @@ from collections import Counter, deque
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
@@ -126,6 +127,24 @@ def _azimuth_spread(azimuths: list[float]) -> float:
             d = abs(azimuths[i] - azimuths[j]) % 360.0
             spread = max(spread, min(d, 360.0 - d))
     return spread
+
+
+def base_integration_available(hass: HomeAssistant) -> bool:
+    """True when the base Solcast integration is present and running.
+
+    Base 4.6.0 dropped ``hass.data[BASE_DOMAIN]`` entirely in favour of
+    ``entry.runtime_data``, so probing ``hass.data`` alone reports a perfectly
+    healthy install as missing (issue #64). A loaded config entry is the reliable
+    signal, with the ``hass.data`` probe kept as the fallback for older bases.
+
+    Deliberately *not* used here: ``hass.services.has_service(BASE_DOMAIN, ...)``.
+    The base registers stub actions in ``async_setup`` that only raise "integration
+    not loaded", so its services exist even when nothing is running.
+    """
+    for entry in hass.config_entries.async_entries(BASE_DOMAIN):
+        if entry.state is ConfigEntryState.LOADED or getattr(entry, "runtime_data", None) is not None:
+            return True
+    return hass.data.get(BASE_DOMAIN) is not None
 
 
 def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -384,9 +403,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # delta timing and the tuning/dampening interval timers.
         period_epoch = self._snap_to_half_hour(now_epoch)
 
-        # Detect base integration
+        # Detect base integration. Note the two distinct probes: availability is a
+        # config-entry question (see ``base_integration_available``), while the
+        # legacy in-memory forecast dict only ever lived in ``hass.data``.
         base_coord = self._get_base_coordinator()
-        new_status = "connected" if base_coord is not None else "not_detected"
+        new_status = "connected" if self._base_integration_available() else "not_detected"
         if new_status != self._base_status:
             _LOGGER.debug("Base integration status: %s -> %s", self._base_status, new_status)
         self._base_status = new_status
@@ -1223,7 +1244,22 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 }
 
     def _get_base_coordinator(self) -> Any | None:
+        """The base's legacy in-memory forecast holder, or ``None``.
+
+        Only older base versions published a ``forecast_now``/``forecast_today`` dict
+        under ``hass.data[BASE_DOMAIN]``; 4.6.0 removed ``hass.data`` altogether and
+        its ``entry.runtime_data`` coordinator carries a differently shaped ``.data``
+        (``siteinfo``/``forecasts``). Returning that here would hand
+        ``_read_forecast_from_base`` a truthy dict with none of the keys it wants and
+        zero out the sensors, so this stays a legacy-only lookup and modern bases
+        take the documented ``detailedForecast`` fallback. Use
+        ``_base_integration_available`` to ask whether the base is *there*.
+        """
         return self.hass.data.get(BASE_DOMAIN)
+
+    def _base_integration_available(self) -> bool:
+        """True when the base Solcast integration is present and running."""
+        return base_integration_available(self.hass)
 
     @staticmethod
     def _snap_to_half_hour(epoch: int) -> int:
