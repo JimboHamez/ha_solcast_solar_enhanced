@@ -33,15 +33,20 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_DB_RETENTION_DAYS,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_OPENMETEO_ENABLED,
     CONF_PV_ACTUAL_SENSOR,
     CONF_PV_EXPORT_SENSOR,
     CONF_SITE_GROUPS,
     CONF_TILT,
     DAMPENING_GATE_MIN_RECORDS,
     DEFAULT_CAPACITY_KW,
+    DEFAULT_CLOUD_THRESHOLD,
+    DEFAULT_KT_THRESHOLD,
     DEFAULT_SITE_ID,
     DOMAIN,
     ISSUE_CAPACITY_LOOKS_DC,
+    KT_GHI_CS_FLOOR,
+    KT_ZENITH_MAX,
     UPDATE_INTERVAL_MINUTES,
 )
 
@@ -880,9 +885,14 @@ class _TuningStore(_FakeStore):
     def __init__(self, records_by_site):
         super().__init__()
         self._by_site = records_by_site
+        self.tuning_gates: list[tuple[str, dict]] = []
 
     async def async_get_records_for_tuning(self, site, **kwargs):
         # Accepts either gate: cloud_max (OWM) or kt_threshold (clearness index).
+        # Recorded, not just swallowed — which gate the coordinator asks for is the
+        # whole point of the Kt work, and a fake that ignores kwargs would pass
+        # just as happily if tuning silently reverted to the cloud gate.
+        self.tuning_gates.append((site, kwargs))
         return self._by_site.get(site, [])
 
 
@@ -919,6 +929,57 @@ async def test_run_tuning_sets_aggregate_and_per_site(hass):
     assert rid in coord._site_tuning_results
     assert coord._site_tuning_results[rid]["name"] == "Home"
     assert coord._site_tuning_results[rid]["resource_id"] == rid
+
+
+async def test_tuning_uses_kt_gate_by_default_aggregate_and_per_site(hass):
+    """Tuning selects its clear-sky rows by the measured Kt, not the model cloud %.
+
+    Open-Meteo is on by default, so both the aggregate `_total` query and every
+    per-site query must carry the clearness-index gate — and must NOT also carry
+    `cloud_max`, whose 20% ceiling would be applied to the sentinel 100 the cloud
+    column holds when OWM is absent.
+    """
+    rid = "abcd-1234"
+    coord = _orch_coordinator(hass, {CONF_SITE_GROUPS: [{"ac_sensor": "sensor.inv_ac", "site": rid}]})
+    coord._sites = [{"resource_id": rid, "name": "Home", "capacity": 8, "tilt": 24.75, "azimuth": 7}]
+    recs = [{"row": 1}]
+    coord._db = _TuningStore({DEFAULT_SITE_ID: recs, rid: recs})
+
+    opts = {**coord._entry.data, **coord._entry.options}
+    with patch("custom_components.solcast_solar_enhanced.coordinator.run_tuning", MagicMock(return_value=None)):
+        await coord._run_tuning(opts)
+
+    assert [site for site, _ in coord._db.tuning_gates] == [DEFAULT_SITE_ID, rid]
+    for site, kwargs in coord._db.tuning_gates:
+        assert kwargs["kt_threshold"] == DEFAULT_KT_THRESHOLD, site
+        assert kwargs["kt_zenith_max"] == KT_ZENITH_MAX
+        assert kwargs["kt_ghi_cs_floor"] == KT_GHI_CS_FLOOR
+        assert "cloud_max" not in kwargs, site
+
+
+async def test_tuning_falls_back_to_cloud_gate_without_openmeteo(hass):
+    """With Open-Meteo off there is no measured GHI, so the OWM cloud gate is all there is."""
+    coord = _orch_coordinator(hass, {CONF_OPENMETEO_ENABLED: False})
+    coord._db = _TuningStore({DEFAULT_SITE_ID: [{"row": 1}]})
+
+    opts = {**coord._entry.data, **coord._entry.options}
+    with patch("custom_components.solcast_solar_enhanced.coordinator.run_tuning", MagicMock(return_value=None)):
+        await coord._run_tuning(opts)
+
+    _, kwargs = coord._db.tuning_gates[0]
+    assert kwargs == {"cloud_max": DEFAULT_CLOUD_THRESHOLD}
+
+
+async def test_tuning_disables_in_tuning_cloud_refilter_under_kt_gate(hass):
+    """The SQL Kt gate already picked the rows; run_tuning's own cloud filter must not re-drop them.
+
+    `clouds` is the 100% sentinel when OWM is absent, so any threshold ≤ 100 would
+    discard every Kt-selected row inside run_tuning. Above 100 disables it.
+    """
+    coord = _orch_coordinator(hass)
+    opts = {**coord._entry.data, **coord._entry.options}
+    assert coord._tuning_cloud_threshold(opts) > 100
+    assert coord._tuning_cloud_threshold({**opts, CONF_OPENMETEO_ENABLED: False}) == DEFAULT_CLOUD_THRESHOLD
 
 
 async def test_run_site_tuning_no_site_ids_noop(hass, coordinator):
