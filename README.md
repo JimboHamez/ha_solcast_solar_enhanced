@@ -35,13 +35,24 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.1
+## 🆕 What's new in v1.10.2
+
+**Patch: *Base Integration Status* read `not_detected` on Solcast PV Forecast 4.6.0 and 4.6.1.** The base integration stopped publishing itself to the place we looked, so a perfectly healthy install was reported as missing. ([#64](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/64) — thanks to **@frankie-boy-hgv** for the report and **@chess-m** for tracking down the cause and testing a fix.)
+
+**The sensor was the only thing affected** — history collection, tuning and dampening all read the base integration by other paths and kept working throughout, which is why the database kept growing while the sensor said otherwise.
+
+We now detect the base by its config entry rather than by an internal dictionary it no longer uses, so the check survives that kind of change. It's also honest in the other direction: if the base integration is installed but its entry has genuinely failed to load, the sensor says `not_detected` instead of being fooled by the placeholder actions the base leaves registered when it isn't running.
+
+<details>
+<summary><b>What landed in v1.10.1</b></summary>
 
 **Patch: the inverter-clipping filter never fired.** If your inverter clips at midday — very common on a DC-oversized array — those saturated records were staying in the dataset with both measured output and forecast pinned at the ceiling, which pulls the shading ratio toward 1.0 in the most valuable hours of the day. Exactly what the filter exists to prevent.
 
 Three things were wrong, all one root cause. The **System capacity** field was labelled *"kW DC"* while its only job is an **AC** threshold, so following the label set the ceiling 10–35% out of reach. Solcast's own site data settles it — `capacity` is the inverter nameplate (AC) rating, `capacity_dc` the panel rating — so capacity is now **read from Solcast automatically**, with the field relabelled and kept as a fallback. And per-array dampening was clipping at the *whole property's* capacity, which killed the filter per-array even on systems with no DC oversizing at all.
 
 If your stored value still looks like a DC figure, you'll get a repair notice naming both numbers. **Expect your dampening curve to change around midday** — that's the filter working for the first time. ([#59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59))
+
+</details>
 
 <details>
 <summary><b>What landed in v1.10.0</b></summary>
@@ -502,6 +513,7 @@ logger:
 | **Per-site sensors read 0 or *unknown*** | The base integration is not exposing per-site forecast detail, and the arrays' azimuths differ by more than 10°, so we will not invent a capacity split | Confirm the base's `detailedForecast-<resource_id>` attribute exists. With divergent orientations, per-site dampening needs real per-site detail |
 | **Midday shading looks diluted on a clipping inverter** | The clipping filter is not firing, so saturated midday records stay in the dataset and pull the ratio toward 1.0 in the highest-value hours | Check *System capacity* is your inverter's **AC** rating, not the panel DC total. Before 1.10.1 the field was mislabelled "kW DC"; entering the DC figure on a DC-oversized array puts the ceiling out of reach ([#59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59)). It is now read from Solcast automatically where available, and a repair issue is raised if your stored value still looks like a DC figure |
 | **Database Records is not growing** | Storage disabled, or the base integration is not loaded | Check *Base Integration Status* reads `connected`, and that Storage is enabled in the options |
+| **Base Integration Status reads `not_detected` although the base works** | Before 1.10.2 we looked for the base in a place Solcast PV Forecast 4.6.0 stopped using | Update to 1.10.2 ([#64](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/64)). The sensor was cosmetic — collection, tuning and dampening were unaffected. If it still reads `not_detected` on 1.10.2+, the base's own config entry really has failed to load; check its status in **Settings → Devices & services** |
 | **Weather Temperature / Cloud Cover unavailable** | No weather source is enabled, or the last fetch came back empty | Enable Open-Meteo (keyless) in the Weather step. *Unavailable* here means "no source", not "zero" |
 | **MPPT DC Voltage unavailable** | No per-string DC sensors are configured | Optional feature — map them in the sites step if your inverter exposes per-tracker voltage and current |
 | **Entity IDs don't match the docs** | On a fresh non-English install, Home Assistant derives entity IDs from the *translated* names | Look the real IDs up in **Developer tools → States** |

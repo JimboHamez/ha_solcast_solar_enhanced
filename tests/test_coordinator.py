@@ -7,11 +7,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
 from custom_components.solcast_solar_enhanced.const import (
+    BASE_DOMAIN,
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
@@ -273,6 +275,59 @@ async def test_get_base_coordinator_present(hass, coordinator, mock_base_coordin
 
 async def test_get_base_coordinator_absent(hass, coordinator):
     assert coordinator._get_base_coordinator() is None
+
+
+def _add_base_entry(hass, state: ConfigEntryState | None = None, runtime_data: object | None = None):
+    """Add a solcast_solar config entry in a given load state (issue #64 fixtures)."""
+    entry = MockConfigEntry(domain=BASE_DOMAIN, data={}, entry_id=f"base_{state}_{runtime_data}")
+    entry.add_to_hass(hass)
+    if state is not None:
+        entry.mock_state(hass, state)
+    if runtime_data is not None:
+        entry.runtime_data = runtime_data
+    return entry
+
+
+async def test_base_available_via_loaded_entry_without_hass_data(hass, coordinator):
+    """Base 4.6.0+ keeps nothing in hass.data — a loaded entry still counts (issue #64)."""
+    _add_base_entry(hass, ConfigEntryState.LOADED)
+    assert BASE_DOMAIN not in hass.data
+    assert coordinator._base_integration_available() is True
+
+
+async def test_base_available_via_runtime_data(hass, coordinator):
+    """runtime_data on the entry is proof the base set itself up."""
+    _add_base_entry(hass, ConfigEntryState.SETUP_IN_PROGRESS, runtime_data=object())
+    assert coordinator._base_integration_available() is True
+
+
+async def test_base_available_legacy_hass_data(hass, coordinator, mock_base_coordinator):
+    """Pre-4.6.0 bases published to hass.data and had no loaded entry here."""
+    assert coordinator._base_integration_available() is True
+
+
+async def test_base_not_available_when_entry_not_loaded(hass, coordinator):
+    """A configured but failed/unloaded base is honestly reported as absent.
+
+    The base registers stub actions in async_setup even when nothing is running, so
+    a `has_service` probe would wrongly say "connected" here.
+    """
+    _add_base_entry(hass, ConfigEntryState.SETUP_RETRY)
+    hass.services.async_register(BASE_DOMAIN, "query_forecast_data", lambda call: None)
+    assert coordinator._base_integration_available() is False
+
+
+async def test_base_not_available_when_absent(hass, coordinator):
+    assert coordinator._base_integration_available() is False
+
+
+async def test_do_update_reports_connected_without_hass_data(hass, mock_config_entry):
+    """The status sensor follows availability, not the removed hass.data key (issue #64)."""
+    mock_config_entry.add_to_hass(hass)
+    _add_base_entry(hass, ConfigEntryState.LOADED)
+    coord = SolcastEnhancedCoordinator(hass, mock_config_entry)
+    result = await coord._do_update()
+    assert result["base_status"] == "connected"
 
 
 # ---------------------------------------------------------------------------

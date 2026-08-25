@@ -5,6 +5,44 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2] - 2026-08-25
+
+> Patch. *Base Integration Status* reported a healthy Solcast PV Forecast 4.6.x install
+> as `not_detected`. Cosmetic — nothing else read the base by that path.
+
+### Fixed
+- **Base Integration Status no longer reads `not_detected` on base 4.6.0+**
+  ([issue #64](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/64)).
+
+  Presence was decided by a single probe, `hass.data.get("solcast_solar") is not None`.
+  Base **4.6.0 removed `hass.data[DOMAIN]` entirely**, moving its coordinator to
+  `entry.runtime_data`, so the probe returned `None` on every 4.6.x install and the
+  sensor sat at `not_detected` while the integration worked normally around it.
+
+  Only the sensor was affected. Site discovery reads rooftop sensor attributes, the
+  forecast comes from `detailedForecast`, and the dampening push, the base's
+  auto-dampening gate, the granular-conflict check and the export limit all go through
+  `hass.config_entries` / `entry.runtime_data` — none of which 4.6.0 changed.
+
+  - New module-level `coordinator.base_integration_available(hass)`: a base config
+    entry that is `ConfigEntryState.LOADED` or already carries `runtime_data`, with the
+    old `hass.data` lookup kept as the pre-4.6.0 fallback.
+  - **`hass.services.has_service()` is deliberately not part of that test.** The base
+    registers *stub* actions in `async_setup` that exist purely to raise "integration
+    not loaded", so a service probe reports a base that failed to start as connected —
+    trading a false negative for a false positive.
+  - `_get_base_coordinator` stays a legacy-only lookup and keeps its own name. Pointing
+    it at `entry.runtime_data.coordinator` would look like the natural fix and would
+    break the forecast sensors: that coordinator's `.data` is the base's raw
+    `siteinfo`/`forecasts` payload, so `_read_forecast_from_base` would take its
+    "found it" branch, find none of the keys it wants, and return zeros instead of
+    falling through to the `detailedForecast` path that actually works on 4.6.x.
+  - The `async_setup_entry` guard is unchanged in behaviour, and stays looser on
+    purpose: a base entry that is merely mid-retry should not stop local collection.
+
+  Reported by **@frankie-boy-hgv**; root cause found and a fix tested on a live install
+  by **@chess-m**.
+
 ## [1.10.1] - 2026-07-31
 
 > Patch. The inverter-clipping filter never fired, so saturated midday records were
