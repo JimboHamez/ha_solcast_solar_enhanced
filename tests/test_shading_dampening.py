@@ -487,3 +487,53 @@ def test_average_slot_pairs_preserves_hour_identity():
         slots += [hour - 0.25, hour + 0.25]
     hourly = average_slot_pairs(slots)
     assert hourly == pytest.approx([float(h) for h in range(24)])
+
+
+# ---------------------------------------------------------------------------
+# avg_quality — sky clarity, not geometric spread
+# ---------------------------------------------------------------------------
+
+_ON_TARGET = {"pv_actual": 4.0, "pv_export": 0.0, "battery_charge": 0.0,
+              "pv_estimate": 5.0, "clouds": 5, "zenith": 45.0, "azimuth": 180.0}
+# Same clear sky, but ~90° away in solar azimuth: a different time of day, so its
+# geometry weight is ~4e-5. It still passes every filter and lands in n_records.
+_FAR_OFF = {**_ON_TARGET, "azimuth": 270.0}
+
+
+def test_avg_quality_reports_sky_clarity_not_geometric_spread():
+    """``avg_quality`` must say how clear the contributing skies were, independent
+    of how many geometrically irrelevant records the history window happened to hold.
+
+    Note the geometry: every record here is cloudless, so the answer is ~1.0 whether
+    the window holds 20 records or 220. Tests that place all records at the exact
+    target zenith/azimuth cannot see this — with ``gw`` pinned to 1.0 the old
+    ``total_weight / n_records`` and the current ``Σ(gw·cw)/Σ(gw)`` agree exactly.
+    """
+    focused = compute_dampening([_ON_TARGET] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    diluted = compute_dampening([_ON_TARGET] * 20 + [_FAR_OFF] * 200, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert focused["avg_quality"] == pytest.approx(1.0, abs=0.01)
+    assert diluted["avg_quality"] == pytest.approx(focused["avg_quality"], abs=0.01)
+
+
+def test_collecting_more_history_cannot_lower_confidence():
+    """Adding records must never *reduce* α.
+
+    Regression: ``avg_quality`` was ``total_weight / n_records``, so a record hours
+    away in solar position contributed ~0 to the numerator but a full 1 to the
+    denominator. That pushed ``avg_quality`` down, which raised
+    ``midpoint = BASE_MIDPOINT / avg_quality``, so collecting more history *raised*
+    the confidence bar. On a live 67-day store it held avg_quality near 0.2, inflated
+    the midpoint from 30 to ~140, and capped α at 0.13 — dampening stayed within 2%
+    of neutral while the measured shading ratio sat at 0.38.
+    """
+    focused = compute_dampening([_ON_TARGET] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    diluted = compute_dampening([_ON_TARGET] * 20 + [_FAR_OFF] * 200, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert diluted["alpha"] >= focused["alpha"] - 1e-9
+
+
+def test_avg_quality_still_falls_for_hazier_skies():
+    """The metric must still grade sky clarity — it is not simply pinned to 1.0."""
+    hazy = {**_ON_TARGET, "clouds": 25}  # mid cloud band → weight 0.6
+    clear_result = compute_dampening([_ON_TARGET] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    hazy_result = compute_dampening([hazy] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
+    assert hazy_result["avg_quality"] < clear_result["avg_quality"]

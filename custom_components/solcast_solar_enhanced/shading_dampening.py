@@ -114,6 +114,11 @@ def compute_dampening(
     the dampened ``pv_estimate`` (rows predating 1.10.0b6) biases the ratio toward
     1.0, since that forecast already carries our own correction (issue #50).
 
+    ``avg_quality`` is the geometry-weighted mean clear-sky weight of the records
+    informing the slot, ``Sigma(gw*cw)/Sigma(gw)`` — "how clear were the skies that
+    matter here", independent of how many irrelevant records the history window
+    happened to contain.
+
     Returns dict with: factor, alpha, source, clear_sky_basis, quality_records,
     avg_quality, clipped_excluded, forecast_clipped, undampened_records
     """
@@ -121,6 +126,7 @@ def compute_dampening(
     basis = "kt" if kt_threshold is not None else "cloud"
 
     total_weight = 0.0
+    geometry_weight_sum = 0.0
     weighted_actual_sum = 0.0
     weighted_est_sum = 0.0
     clipped_excluded = 0
@@ -218,6 +224,7 @@ def compute_dampening(
         weighted_actual_sum += combined * total_pv
         weighted_est_sum += combined * effective_est
         total_weight += combined
+        geometry_weight_sum += gw
         n_records += 1
         # Counted only once the record survives every filter, so the diagnostic
         # reflects the records actually weighted into the factor.
@@ -242,9 +249,18 @@ def compute_dampening(
         }
 
     db_factor = weighted_actual_sum / weighted_est_sum
-    avg_quality = total_weight / n_records
+    # Average *sky* quality among the records that actually inform this slot — the
+    # geometry-weighted mean of the clear-sky weight, Sigma(gw*cw)/Sigma(gw).
+    # Dividing the combined weight by a plain record count instead conflates "how
+    # clear was the sky" with "how close in solar geometry", because a record hours
+    # away in sun position contributes ~0 to the numerator but a full 1 to the
+    # denominator. That made avg_quality fall as the history window grew (more
+    # far-off records), which via the midpoint below *raised* the confidence bar the
+    # more data was collected.
+    avg_quality = total_weight / geometry_weight_sum if geometry_weight_sum > 1e-9 else 0.0
 
-    # α sigmoid: x² / (x² + midpoint²), midpoint scaled by quality
+    # α sigmoid: x² / (x² + midpoint²), midpoint scaled by sky quality — a clearer
+    # history reaches confidence sooner.
     midpoint = BASE_MIDPOINT / max(avg_quality, 0.1)
     x = total_weight
     alpha = (x * x) / (x * x + midpoint * midpoint)
