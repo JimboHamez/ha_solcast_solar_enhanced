@@ -37,13 +37,31 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.2
+## 🆕 What's new in v1.10.3
+
+**Patch: adaptive dampening was measuring your shading correctly, then throwing almost all of it away.** If your shading sensor showed a real, consistent morning or evening loss but the factors pushed to Solcast sat within a couple of percent of "no correction at all", this is why.
+
+The correction is blended toward a neutral 1.0 by a confidence weight, α, that grows as usable history accumulates. Two separate defects were holding α down:
+
+- **Confidence fell as history grew.** The "average quality" term that sets the confidence bar divided by a plain record count, so every record far away in *solar position* — a different time of day entirely — dragged it down while contributing nothing. The more data you collected, the higher the bar climbed. It now measures what its name says: how clear the skies were in the records that actually inform each half-hour.
+- **The seasonal window was permanently half-empty.** It looked ±14 days either side of today, but "after today" can only be filled by *last* year — so on a first-year install half the window never existed. It now reaches 28 days back and 14 forward, putting the span where data can actually be.
+
+Also fixed, and not previously reported: **the seasonal window couldn't cross New Year.** It scored 29 December as 355 days away from a 5 January target instead of 7, so every install silently lost the immediately preceding week over the turn of the year.
+
+On a live two-array system with genuine morning shading, the shaded array's 08:00 factor moved from `0.974` to `0.644` — against a measured ratio of `0.52`. **The measured ratio did not change at all**; only how much of it reached Solcast. Expect your dampening curve to deepen, and to deepen sooner on a new install.
+
+The window width was chosen on measured accuracy rather than intuition: 28 days minimised the error of the pushed factor against the freshest available truth on both arrays, and the error changes sign by 45 days, so it is a real optimum rather than "more is better".
+
+<details>
+<summary><b>What landed in v1.10.2</b></summary>
 
 **Patch: *Base Integration Status* read `not_detected` on Solcast PV Forecast 4.6.0 and 4.6.1.** The base integration stopped publishing itself to the place we looked, so a perfectly healthy install was reported as missing. ([#64](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/64) — thanks to **@frankie-boy-hgv** for the report and **@chess-m** for tracking down the cause and testing a fix.)
 
 **The sensor was the only thing affected** — history collection, tuning and dampening all read the base integration by other paths and kept working throughout, which is why the database kept growing while the sensor said otherwise.
 
 We now detect the base by its config entry rather than by an internal dictionary it no longer uses, so the check survives that kind of change. It's also honest in the other direction: if the base integration is installed but its entry has genuinely failed to load, the sensor says `not_detected` instead of being fooled by the placeholder actions the base leaves registered when it isn't running.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.10.1</b></summary>
@@ -511,6 +529,7 @@ logger:
 | **Dampening seems to have no effect** | The base integration's *automatic dampening* is on — it rejects manual `set_dampening`, so we skip the push entirely | Turn automatic dampening off in the base integration's options |
 | **…still no effect, multi-site** | A pre-existing `all` key in the base's granular dampening file shadows every per-site key | Check the repair issues — we detect this and raise one. Clear the `all` entry (a global `set_dampening` call, or the base's own UI) and our next push will land |
 | **Dampening factors are all 1.0** | Not enough history yet. The blend ramps from a neutral 1.0 toward the measured ratio as quality-weighted records accumulate | Check `alpha` and `quality_records` in the *Dampening Hours with DB Data* attributes. In winter, or after a database reset, this legitimately takes weeks |
+| **Shading sensor shows a real loss but the pushed factors stay near 1.0** | Before 1.10.3, two defects held the confidence weight `alpha` low: the average-quality term fell as history grew, and the seasonal window was permanently half-empty on a first-year install | Update to 1.10.3. `alpha` should rise substantially and the curve should deepen — the *measured* ratio was always right, only the amount applied was wrong. Compare `alpha` in the *Dampening Hours with DB Data* attributes before and after |
 | **Tuned Tilt reads *unknown*** | By design — the fit could not actually determine a tilt, and reporting one you might apply to Solcast would make your forecast worse | Read `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes. `railed` means the best fit sat on a search bound; `fit_too_loose` means the residual was too large relative to output |
 | **Per-site sensors read 0 or *unknown*** | The base integration is not exposing per-site forecast detail, and the arrays' azimuths differ by more than 10°, so we will not invent a capacity split | Confirm the base's `detailedForecast-<resource_id>` attribute exists. With divergent orientations, per-site dampening needs real per-site detail |
 | **Midday shading looks diluted on a clipping inverter** | The clipping filter is not firing, so saturated midday records stay in the dataset and pull the ratio toward 1.0 in the highest-value hours | Check *System capacity* is your inverter's **AC** rating, not the panel DC total. Before 1.10.1 the field was mislabelled "kW DC"; entering the DC figure on a DC-oversized array puts the ceiling out of reach ([#59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59)). It is now read from Solcast automatically where available, and a repair issue is raised if your stored value still looks like a DC figure |

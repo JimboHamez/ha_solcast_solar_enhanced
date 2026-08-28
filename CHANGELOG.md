@@ -5,7 +5,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.3] - 2026-08-28
+
+> Patch. The adaptive dampening was measuring your shading correctly and then
+> discarding almost all of it before it reached Solcast. Two independent defects in
+> the confidence blend; a third, unreported, in the seasonal window.
 
 ### Fixed
 - **Dampening confidence (α) no longer falls as history is collected.** The blend
@@ -1266,7 +1270,11 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.6...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.3...HEAD
+[1.10.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.2...v1.10.3
+[1.10.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.1...v1.10.2
+[1.10.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.6...v1.10.0
 [1.6.6]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.5...v1.6.6
 [1.6.5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.6.3...v1.6.4
