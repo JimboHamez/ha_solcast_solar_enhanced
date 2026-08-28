@@ -278,7 +278,11 @@ combined_weight = quality_weight × zenith_weight × azimuth_weight   # quality_
 
 ### Seasonal window
 
-A `±14-day` day-of-year window is applied in the DB query across all years. Early on it gives natural extrapolation from seasonally-similar dates; as the DB grows, same-year matches dominate. The same clipping detection used in tuning excludes clipped records before they contribute (counted in `hour_XX_clipped_excluded`).
+A day-of-year window is applied in the DB query across all years: **28 days back, 14 days forward** (`DAMPENING_WINDOW_BACK_DAYS` / `DAMPENING_WINDOW_FORWARD_DAYS`). Early on it gives natural extrapolation from seasonally-similar dates; as the DB grows, same-year matches dominate. The same clipping detection used in tuning excludes clipped records before they contribute (counted in `hour_XX_clipped_excluded`).
+
+**Why it is asymmetric.** The live target day is always *today*, so the forward half of a centred window can only ever be filled from a **previous year** — on a first-year install it is empty, and the window is permanently half-populated. That truncates the quality-weighted record count `x`, and with it α. Measured on the 3 Aug 2026 store, same code and same DB, varying only how much of the window exists: a slot scored α `0.31` as "today" against `0.63` once later data had surrounded it. Reaching further back puts the extra span where data can actually exist. The forward half is retained so a second-year install matches the season on both sides, and to avoid a discontinuity — a window that only widened once a year of history existed would make dampening abruptly shallower on the anniversary.
+
+The day difference is **signed and wrapped onto the year**. The former `ABS(doy(record) − doy(target)) ≤ window` form could not cross the New Year boundary: for a 5 January target it scored 29 December as 355 days away rather than 7, silently excluding the immediately preceding week — the most seasonally relevant data available — for every install through the turn of the year.
 
 ### Confidence model (α blending)
 
@@ -290,9 +294,12 @@ final_factor(h) = (1 − α) × 1.0  +  α × db_factor(h)
 α        = x² / (x² + midpoint²)
 x        = quality_weighted_count (Σ combined_weight per record)
 midpoint = 30 / average_quality
+average_quality = Σ(combined_weight) / Σ(geometry_weight)   # geometry-weighted mean quality_weight
 ```
 
 So with little data the factor sits near a no-op `1.0` and ramps toward the measured ratio as confidence builds. Scaling the midpoint by average quality means a looser cloud threshold needs proportionally more records before the DB factor is trusted.
+
+**`average_quality` measures sky clarity, not geometric spread.** It is the *geometry-weighted* mean of `quality_weight` — the average clearness of the records that actually inform this slot. Dividing `Σ combined_weight` by a plain record count instead (the pre-1.10.3 form) conflated the two: a record hours away in solar position contributes ~0 to the numerator but a full 1 to the denominator, so `average_quality` fell as the history window grew, and via `midpoint = 30 / average_quality` **collecting more history raised the confidence bar**. On a live 67-day store it pinned `average_quality` near `0.2`, inflated the midpoint from 30 to ~140, and capped α at `0.13` — leaving the pushed factors within 2% of neutral while the measured shading ratio sat at `0.38`. Pinned by `test_collecting_more_history_cannot_lower_confidence`.
 
 **`db_factor` is an energy-weighted aggregate, not a mean of ratios.** It is
 
@@ -365,7 +372,7 @@ hour_14_factor:           0.847      # final blended value pushed
 hour_14_alpha:            0.72       # DB confidence (0 = neutral, 1 = pure DB)
 hour_14_source:           db_blended # db_history | db_blended | no_data | night
 hour_14_quality_records:  31.4       # quality-weighted record count
-hour_14_avg_quality:      0.81       # mean combined_weight of contributors
+hour_14_avg_quality:      0.81       # geometry-weighted mean clear-sky weight of contributors
 hour_14_clipped_excluded: 2          # shown if > 0
 overall_source:           db_blended
 ```
@@ -381,7 +388,7 @@ The idea was to nudge the next 1–6 hours of forecast from the recent `total_pv
 - The near-term deviation signal is cloud-driven and decays within an hour or two, so the nudge approaches a no-op by +3 — exactly where forecast error is largest.
 - It would second-guess Solcast's imagery-based near-term product with a cruder single-inverter ratio plus coarse OWM cloud.
 - A now-relative, decaying, per-horizon correction can't go through `set_dampening` (indexed by local time-of-day), so it would fork the forecast into separate "corrected" sensors, forcing users to rewire automations.
-- The durable, predictable part is already captured by the DB-driven dampening, whose ±14-day window also covers individual missing slots.
+- The durable, predictable part is already captured by the DB-driven dampening, whose seasonal day-of-year window also covers individual missing slots.
 
 Re-scoping it to a **decision aid that never publishes a rival forecast** (Feature 7) sidesteps these: it targets the +0–90 min window where local persistence skill is *highest*, emits a confidence score rather than a corrected kW number, and is purely advisory (no `set_dampening`, no forked forecast).
 

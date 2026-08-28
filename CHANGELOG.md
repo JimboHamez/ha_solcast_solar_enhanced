@@ -5,6 +5,78 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Dampening confidence (α) no longer falls as history is collected.** The blend
+  weight `α = x²/(x² + midpoint²)` scales its midpoint by `avg_quality`, which was
+  computed as `total_weight / n_records`. `total_weight` carries the geometry weight
+  but `n_records` counts every record that survived the filters — so a record hours
+  away in solar position contributed ~0 to the numerator and a full 1 to the
+  denominator. `avg_quality` therefore measured *geometric spread* as much as sky
+  clarity, and it dropped as the seasonal window took in more data. Because
+  `midpoint = 30 / avg_quality`, that **raised the confidence bar the more history was
+  collected**.
+
+  `avg_quality` is now `Σ(gw·cw) / Σ(gw)` — the geometry-weighted mean clear-sky
+  weight, i.e. how clear the skies of the records that actually inform this slot were.
+  Threshold-free, and unchanged when every record already sits on the target geometry.
+
+  Measured on a live 67-day two-array store (Melbourne, winter, one array with real
+  morning shading):
+
+  | | before | after |
+  |---|---|---|
+  | `avg_quality` | 0.13 – 0.22 | 0.74 – 0.85 |
+  | `midpoint` | 137 – 225 | ~30 – 40 |
+  | α (peak) | 0.13 | 0.70 |
+  | pushed morning factor, shaded array | 0.972 | 0.824 |
+  | measured `db_factor`, same slot | 0.52 | 0.52 |
+
+  The measured ratio was never in doubt — only how much of it reached the base
+  integration. A single clear day still moves α only to ~0.03, so the ramp remains
+  conservative; a cloudless day now scores `avg_quality = 1.00` where it previously
+  scored 0.25.
+
+  Three regression tests were added. The existing dampening tests could not catch
+  this: they place every record at the exact target zenith/azimuth, where `gw = 1.0`
+  makes the old and new formulas identical.
+
+- **Dampening's seasonal window no longer sits half-empty.** The day-of-year filter
+  was centred (`ABS(doy − target) ≤ 14`), but the live target day is always *today*,
+  so the forward half could only ever be filled from a previous year — on a
+  first-year install it is empty and the window is permanently half-populated. That
+  truncated the quality-weighted record count and, with it, α. Measured on the same
+  store with only the target day varied, a slot scored α `0.31` as "today" against
+  `0.63` once later data had surrounded it: α was not saturating, it was being cut off.
+
+  The window is now asymmetric — **28 days back, 14 forward**
+  (`DAMPENING_WINDOW_BACK_DAYS` / `DAMPENING_WINDOW_FORWARD_DAYS`) — putting the extra
+  span where data can actually exist. The forward half is retained so a second-year
+  install still matches the season on both sides, and so dampening does not turn
+  abruptly shallower on the anniversary of the install.
+
+- **The seasonal window can now cross New Year.** The day difference is computed
+  signed and wrapped onto the year instead of as an absolute difference. The old form
+  scored 29 December as 355 days from a 5 January target rather than 7, silently
+  excluding the immediately preceding week — the most seasonally relevant data there
+  is — for every install through the turn of the year. Nobody had reported this; it
+  surfaced while making the window asymmetric.
+
+  Combined effect of the three fixes above, on the live 67-day two-array store
+  (Ground Floor, the shaded array, hourly factors as pushed):
+
+  ```
+  before          1, 0.991, 0.974, 0.974, 0.981, 0.987, 0.991, 0.996, 0.999, 0.995, 0.985, 0.994
+  avg_quality fix 1, 0.870, 0.824, 0.839, 0.900, 0.928, 0.944, 0.972, 0.993, 0.966, 0.900, 0.917
+  + window fix    1, 0.752, 0.644, 0.730, 0.826, 0.876, 0.904, 0.935, 0.952, 0.913, 0.823, 0.841
+  ```
+
+  α at the 08:30 slot moves `0.13 → 0.52 → 0.76`; crossing 0.5 also releases the ±15%
+  early-stability clamp, which was the binding constraint after the first fix alone.
+  The measured `db_factor` is unchanged throughout — only how much of it reaches the
+  base integration.
+
 ## [1.10.2] - 2026-08-25
 
 > Patch. *Base Integration Status* reported a healthy Solcast PV Forecast 4.6.x install

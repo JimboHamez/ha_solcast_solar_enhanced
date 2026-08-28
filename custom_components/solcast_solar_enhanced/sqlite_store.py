@@ -17,6 +17,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+from .const import DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS
 from .pv_tuning import clearsky_ghi, solar_position
 
 if TYPE_CHECKING:
@@ -391,13 +392,32 @@ class SqliteStore:
     async def async_get_records_for_dampening(
         self,
         slot_doy: int,
-        window_days: int = 14,
+        back_days: int = DAMPENING_WINDOW_BACK_DAYS,
+        forward_days: int = DAMPENING_WINDOW_FORWARD_DAYS,
         site: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch records within ±window_days calendar day-of-year across all years."""
+        """Fetch records in a seasonal day-of-year window around ``slot_doy``, across all years.
+
+        The window spans ``back_days`` before the target day to ``forward_days`` after
+        it. It is asymmetric by default because the live target is always *today*: the
+        forward half can only be filled from a previous year, so a centred window is
+        permanently half-empty on a first-year install and truncates alpha. See
+        ``DAMPENING_WINDOW_BACK_DAYS`` in const.py.
+
+        The day difference is computed **signed and wrapped** onto the year, so a
+        window near New Year still reaches across the boundary. The former
+        ``ABS(doy - slot_doy)`` form could not: for a 5 January target it scored
+        29 December as 355 days away rather than 7, silently excluding the immediately
+        preceding week — the most seasonally relevant data there is.
+        """
         if self._conn is None:
             return []
         site_clause, site_params = self._site_filter(site)
+        # Signed day-of-year difference wrapped to [-182, 183]. The +548 bias keeps the
+        # dividend positive (doy is 1..366, so the raw difference is >= -365) because
+        # SQLite's % truncates toward zero and would otherwise return a negative
+        # remainder for dates before the target.
+        doy_delta = "((((CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) + 548) % 366) - 182)"
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, pv_estimate10, "
             "pv_estimate90, azimuth, zenith, clouds, ghi, "
@@ -407,10 +427,10 @@ class SqliteStore:
             "WHERE pv_actual > 0 AND pv_estimate > 0 "
             # strftime('%j', epoch, 'unixepoch') renders day-of-year in UTC,
             # matching the MySQL backend's UTC-pinned FROM_UNIXTIME/DAYOFYEAR.
-            "AND ABS(CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) <= ?"
+            f"AND {doy_delta} >= ? AND {doy_delta} <= ?"
             f"{site_clause}"
         )
-        params = (slot_doy, window_days, *site_params)
+        params = (slot_doy, -abs(back_days), slot_doy, abs(forward_days), *site_params)
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     async def async_get_records_for_tuning(

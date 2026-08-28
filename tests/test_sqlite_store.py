@@ -365,15 +365,48 @@ async def test_dampening_doy_window_includes_and_excludes(store):
     await store.async_insert_record(_record(JUNE1))
     await store.async_insert_record(_record(JUNE1 + 10 * 86400))
     await store.async_insert_record(_record(JUNE1 + 40 * 86400))
-    rows = await store.async_get_records_for_dampening(JUNE1_DOY, window_days=14)
+    rows = await store.async_get_records_for_dampening(JUNE1_DOY, back_days=14, forward_days=14)
     assert len(rows) == 2
+
+
+async def test_dampening_window_reaches_further_back_than_forward(store):
+    """The default window is asymmetric — 28 days back, 14 forward.
+
+    The live target day is always *today*, so the forward half can only be filled
+    from a previous year and is empty on a first-year install. A centred window is
+    therefore permanently half-populated and truncates the quality-weighted record
+    count that alpha is built from. Reaching further back puts the extra span where
+    data can actually exist.
+    """
+    await store.async_insert_record(_record(JUNE1 - 20 * 86400, pv_actual=1.0))  # 20 days before
+    await store.async_insert_record(_record(JUNE1 + 20 * 86400, pv_actual=2.0))  # 20 days after
+    rows = await store.async_get_records_for_dampening(JUNE1_DOY)
+    assert len(rows) == 1, "expected the backward record only"
+    assert rows[0]["pv_actual"] == 1.0, "kept the forward record instead of the backward one"
+
+
+async def test_dampening_window_wraps_across_new_year(store):
+    """A window near 1 January must reach back across the year boundary.
+
+    Regression: the predicate was ``ABS(doy(record) - slot_doy) <= window``, which
+    scored 29 December as 355 days from a 5 January target instead of 7 — silently
+    dropping the immediately preceding week, the most seasonally relevant data there
+    is, for every install through the new year.
+    """
+    jan5 = int(datetime(2025, 1, 5, 12, 0, tzinfo=timezone.utc).timestamp())
+    jan5_doy = 5
+    await store.async_insert_record(_record(jan5 - 7 * 86400, pv_actual=1.0))   # 29 Dec, doy 363
+    await store.async_insert_record(_record(jan5 - 40 * 86400, pv_actual=2.0))  # 26 Nov — out of range
+    rows = await store.async_get_records_for_dampening(jan5_doy)
+    assert len(rows) == 1, "the record 7 days before the target was excluded by the wrap"
+    assert rows[0]["pv_actual"] == 1.0
 
 
 async def test_dampening_excludes_zero_actual_or_estimate(store):
     await store.async_insert_record(_record(JUNE1, pv_actual=0.0))
     await store.async_insert_record(_record(JUNE1 + 1800, pv_estimate=0.0))
     await store.async_insert_record(_record(JUNE1 + 3600, pv_actual=2.0, pv_estimate=3.0))
-    rows = await store.async_get_records_for_dampening(JUNE1_DOY, window_days=14)
+    rows = await store.async_get_records_for_dampening(JUNE1_DOY, back_days=14, forward_days=14)
     assert len(rows) == 1
 
 
@@ -381,7 +414,7 @@ async def test_dampening_site_filter(store):
     await store.async_insert_record(_record(JUNE1, site="_total"))
     await store.async_insert_record(_record(JUNE1, site="siteB"))
     rows = await store.async_get_records_for_dampening(
-        JUNE1_DOY, window_days=14, site="siteB"
+        JUNE1_DOY, back_days=14, forward_days=14, site="siteB"
     )
     assert len(rows) == 1
 

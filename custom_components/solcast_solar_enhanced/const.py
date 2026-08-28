@@ -193,6 +193,18 @@ ISSUE_CAPACITY_LOOKS_DC = "capacity_looks_dc"
 # Real DC/AC ratios run 1.1-1.35; 1.05 catches them while tolerating rounding and
 # the odd genuinely oversized-inverter install.
 CAPACITY_DC_SUSPECT_RATIO = 1.05
+# Seasonal day-of-year window for the dampening query, as days either side of the
+# target day. Deliberately asymmetric: the target is always *today*, so the forward
+# half can only ever be filled from a previous year and is empty for a first-year
+# install. A centred window is therefore permanently half-populated live, which
+# truncates the quality-weighted record count and with it alpha (measured: the same
+# slot scored alpha 0.31 as "today" against 0.63 once later data had surrounded it).
+# Reaching further back puts the extra span where data can actually exist. The
+# forward half is kept so a second-year install still matches the season on both
+# sides, and because a window that grows on the anniversary would otherwise make
+# dampening abruptly shallower on that day.
+DAMPENING_WINDOW_BACK_DAYS = 28
+DAMPENING_WINDOW_FORWARD_DAYS = 14
 DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the advisory may fire
 DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that raises the advisory
 DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that raises the advisory
