@@ -6,6 +6,13 @@ on:
   pull_request:
   schedule:
     - cron: "0 0 * * *"
+  workflow_dispatch:
+
+# Least privilege: actions/checkout needs contents:read to clone. (The
+# upstream HACS template can use `permissions: {}` only because it has no
+# checkout step -- hacs/action clones via the API.)
+permissions:
+  contents: read
 
 jobs:
   hassfest:
@@ -23,7 +30,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Skip the brands check: this integration isn't (yet) registered in the
-          # home-assistant/brands repo. Required only for HACS-default-store
-          # inclusion, not for installing as a custom repository.
-          ignore: brands
