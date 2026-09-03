@@ -37,7 +37,18 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.10.3
+## 🆕 What's new in v1.11.0b1
+
+**Beta: an array's DC share can now be measured across several MPPTs.** On the multi-site step, the per-array **DC/MPPT sensor(s)** field is a multi-entity picker — if one Solcast site is wired across more than one tracker, select all of that array's trackers and they are summed before the shared inverter's AC output is split between arrays.
+
+This is for the common grouping where the number of MPPTs doesn't match the number of Solcast sites: four trackers at two pairs of similar angles, entered in Solcast as two sites. Previously each array's DC share accepted a single entity, so that layout needed a template sensor per array to sum the pair first. Reported from the community by a Sigenergy owner in exactly that position.
+
+Summing is **exact, not an approximation** — only the *ratio* between arrays is ever used, so the units and scale cancel.
+
+**Nothing to reconfigure.** Existing setups keep working untouched; re-saving the sites step migrates them to the new form.
+
+<details>
+<summary><b>What landed in v1.10.3</b></summary>
 
 **Patch: adaptive dampening was measuring your shading correctly, then throwing almost all of it away.** If your shading sensor showed a real, consistent morning or evening loss but the factors pushed to Solcast sat within a couple of percent of "no correction at all", this is why.
 
@@ -51,6 +62,8 @@ Also fixed, and not previously reported: **the seasonal window couldn't cross Ne
 On a live two-array system with genuine morning shading, the shaded array's 08:00 factor moved from `0.974` to `0.644` — against a measured ratio of `0.52`. **The measured ratio did not change at all**; only how much of it reached Solcast. Expect your dampening curve to deepen, and to deepen sooner on a new install.
 
 The window width was chosen on measured accuracy rather than intuition: 28 days minimised the error of the pushed factor against the freshest available truth on both arrays, and the error changes sign by 45 days, so it is a real optimum rather than "more is better".
+
+</details>
 
 <details>
 <summary><b>What landed in v1.10.2</b></summary>
@@ -338,7 +351,7 @@ Shown when more than one Solcast site is detected. Sites are auto-discovered fro
 This page appears only for multi-array systems — a single-array system relies on the system-wide sensors from Step 1 and never sees it. It opens by asking **how your arrays are measured**, then shows only the fields that topology needs:
 
 - **Each array has its own generation sensor** (microinverters, e.g. Enphase, or one inverter per array): map each array's own AC/generation sensor; there's no DC field. The per-site **generation sensor** is pre-filled with Step 1's system-wide PV Generation sensor — pick the array's own sensor when arrays are separately metered.
-- **One shared inverter, split by DC** (a single multi-string inverter, e.g. Fronius): put the *same* whole-system AC sensor on every array and give each its **DC/MPPT sensor**, so the shared AC is split between arrays by DC share. Leaving a DC sensor off an array, or using different AC sensors, is flagged with an error rather than silently dropped.
+- **One shared inverter, split by DC** (a single multi-string inverter, e.g. Fronius, Sigenergy): put the *same* whole-system AC sensor on every array and give each its **DC/MPPT sensor(s)**, so the shared AC is split between arrays by DC share. The DC field takes **more than one entity per array** — if an array is wired across several MPPTs (say 4 MPPTs grouped into 2 Solcast sites), select all of that array's trackers and they are summed before the share is taken. Only the ratio is used, so this is exact rather than an approximation. Leaving an array with no DC sensor, or using different AC sensors, is flagged with an error rather than silently dropped.
 - The per-site **MPPT voltage/current** fields are the per-array home for MPPT trackers (diagnostics). For multi-array systems they live *here only* — Step 1 hides its MPPT fields. If you're upgrading from an older version that had MPPT entities on Step 1, they're suggested on the first two arrays here for you to confirm (and cleared from Step 1 on save).
 
 See [Multi-site](#multi-site) for how shared inverters are split between arrays.

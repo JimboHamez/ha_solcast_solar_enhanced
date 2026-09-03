@@ -707,9 +707,9 @@ def test_configured_site_ids_dedup():
 
 def test_derive_groups_fronius_plus_enphase():
     assignments = {
-        "A": {"ac": "sensor.fronius_ac", "dc": "sensor.mppt1", "mode": "auto"},
-        "B": {"ac": "sensor.fronius_ac", "dc": "sensor.mppt2", "mode": "auto"},
-        "C": {"ac": "sensor.enphase_c", "dc": None, "mode": "power_w"},
+        "A": {"ac": "sensor.fronius_ac", "dc": ["sensor.mppt1"], "mode": "auto"},
+        "B": {"ac": "sensor.fronius_ac", "dc": ["sensor.mppt2"], "mode": "auto"},
+        "C": {"ac": "sensor.enphase_c", "dc": [], "mode": "power_w"},
     }
     groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
     # round-trips losslessly back to the assignments
@@ -720,11 +720,33 @@ def test_derive_groups_fronius_plus_enphase():
     assert enphase["site"] == "C" and enphase["ac_mode"] == "power_w"
 
 
+def test_derive_groups_multiple_dc_sensors_per_array():
+    """An array may map several MPPT sensors; all are carried and round-trip back."""
+    assignments = {
+        "A": {"ac": "sensor.shared", "dc": ["sensor.mppt1", "sensor.mppt2"], "mode": "auto"},
+        "B": {"ac": "sensor.shared", "dc": ["sensor.mppt3", "sensor.mppt4"], "mode": "auto"},
+    }
+    groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+    strings = groups[0]["strings"]
+    assert {"site": "A", "dc_sensors": ["sensor.mppt1", "sensor.mppt2"]} in strings
+    assert {"site": "B", "dc_sensors": ["sensor.mppt3", "sensor.mppt4"]} in strings
+    assert _groups_to_assignments(groups) == assignments
+
+
+def test_groups_to_assignments_reads_legacy_single_dc_sensor():
+    """An entry stored before multi-entity support prefills as a one-item list."""
+    groups = [{
+        "ac_sensor": "sensor.shared",
+        "strings": [{"site": "A", "dc_sensor": "sensor.mppt1"}],
+    }]
+    assert _groups_to_assignments(groups)["A"]["dc"] == ["sensor.mppt1"]
+
+
 def test_derive_groups_shared_ac_no_dc_omitted():
     """Two sites sharing an AC sensor with no DC sensors cannot be split → omitted."""
     assignments = {
-        "A": {"ac": "sensor.shared", "dc": None, "mode": "auto"},
-        "B": {"ac": "sensor.shared", "dc": None, "mode": "auto"},
+        "A": {"ac": "sensor.shared", "dc": [], "mode": "auto"},
+        "B": {"ac": "sensor.shared", "dc": [], "mode": "auto"},
     }
     assert _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT) == []
 
@@ -739,7 +761,7 @@ def test_derive_groups_single_site_carries_mppt_telemetry():
     assignments = {
         "A": {
             "ac": "sensor.inv_ac",
-            "dc": None,
+            "dc": [],
             "mode": "auto",
             "mppts": [
                 {"voltage_sensor": "sensor.a_v1", "current_sensor": "sensor.a_i1"},
@@ -767,22 +789,22 @@ def test_derive_groups_strings_carry_mppt_telemetry():
     assignments = {
         "A": {
             "ac": "sensor.shared_ac",
-            "dc": "sensor.mppt1",
+            "dc": ["sensor.mppt1"],
             "mode": "auto",
             "mppts": [
                 {"voltage_sensor": "sensor.mppt1_v", "current_sensor": None},
             ],
         },
-        "B": {"ac": "sensor.shared_ac", "dc": "sensor.mppt2", "mode": "auto"},
+        "B": {"ac": "sensor.shared_ac", "dc": ["sensor.mppt2"], "mode": "auto"},
     }
     groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
     strings = groups[0]["strings"]
     assert {
         "site": "A",
-        "dc_sensor": "sensor.mppt1",
+        "dc_sensors": ["sensor.mppt1"],
         "mppts": [{"voltage_sensor": "sensor.mppt1_v", "current_sensor": None}],
     } in strings
-    assert {"site": "B", "dc_sensor": "sensor.mppt2"} in strings  # no mppts leaked
+    assert {"site": "B", "dc_sensors": ["sensor.mppt2"]} in strings  # no mppts leaked
     assert _groups_to_assignments(groups) == assignments
 
 
@@ -828,8 +850,8 @@ def test_derive_groups_direct_each_site_standalone():
 def test_derive_groups_direct_keeps_shared_ac_separate():
     """Direct mode never coalesces a shared AC sensor into a split group."""
     assignments = {
-        "A": {"ac": "sensor.shared", "dc": None, "mode": "auto"},
-        "B": {"ac": "sensor.shared", "dc": None, "mode": "auto"},
+        "A": {"ac": "sensor.shared", "dc": [], "mode": "auto"},
+        "B": {"ac": "sensor.shared", "dc": [], "mode": "auto"},
     }
     groups = _derive_groups(assignments, mode=SITE_TOPOLOGY_DIRECT)
     assert all("strings" not in g for g in groups)
@@ -857,14 +879,14 @@ def test_validate_dc_split():
 
 
 def test_parse_sites_input_direct_drops_dc():
-    """In direct mode the DC value is forced to None even if present in the input."""
+    """In direct mode the DC value is dropped even if present in the input."""
     _, field_map = _build_sites_schema([{"resource_id": "A", "name": "East"}], {}, mode=SITE_TOPOLOGY_DC_SPLIT)
     keys = field_map["A"]
     user_input = {keys["ac"]: "sensor.east", keys["dc"]: "sensor.dc", keys["mode"]: "auto"}
     direct = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DIRECT)
-    assert direct["A"]["dc"] is None
+    assert direct["A"]["dc"] == []
     split = _parse_sites_input(user_input, field_map, mode=SITE_TOPOLOGY_DC_SPLIT)
-    assert split["A"]["dc"] == "sensor.dc"
+    assert split["A"]["dc"] == ["sensor.dc"]
 
 
 def test_build_sites_schema_omits_dc_in_direct_mode():

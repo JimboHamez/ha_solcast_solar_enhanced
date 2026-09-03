@@ -307,7 +307,9 @@ def _sites_submission(result, mode, ac_map, dc_map=None) -> dict:
         elif name.endswith("(for split)"):
             val = (dc_map or {}).get(_site_for(name))
             if val is not None:
-                sub[name] = val
+                # The DC field is a multi-entity picker; a bare string is a
+                # convenience for the one-sensor case.
+                sub[name] = val if isinstance(val, list) else [val]
     return sub
 
 
@@ -396,6 +398,33 @@ async def test_sites_step_dc_split_valid_derives_strings(hass):
     groups = data[CONF_SITE_GROUPS]
     assert len(groups) == 1
     assert {s["site"] for s in groups[0]["strings"]} == {"AAAA", "BBBB"}
+
+
+async def test_sites_step_dc_split_accepts_multiple_dc_sensors_per_array(hass):
+    """One array may map several MPPT sensors — e.g. 4 MPPTs grouped into 2 Solcast
+    sites — and all of them are stored for that array's DC share."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DC_SPLIT, {"A": "sensor.shared", "B": "sensor.shared"}),
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(
+            result,
+            SITE_TOPOLOGY_DC_SPLIT,
+            {"A": "sensor.shared", "B": "sensor.shared"},
+            {"A": ["sensor.mppt1", "sensor.mppt2"], "B": ["sensor.mppt3", "sensor.mppt4"]},
+        ),
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    strings = result["data"][CONF_SITE_GROUPS][0]["strings"]
+    by_site = {s["site"]: s["dc_sensors"] for s in strings}
+    assert by_site == {
+        "AAAA": ["sensor.mppt1", "sensor.mppt2"],
+        "BBBB": ["sensor.mppt3", "sensor.mppt4"],
+    }
 
 
 async def test_sites_step_dc_split_ac_mismatch_errors(hass):
