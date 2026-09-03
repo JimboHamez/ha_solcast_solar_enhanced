@@ -129,6 +129,19 @@ def _azimuth_spread(azimuths: list[float]) -> float:
     return spread
 
 
+def _as_entity_list(value: Any) -> list[str]:
+    """Normalise a stored entity field to a list of entity ids.
+
+    Accepts a list (the multi-entity form), a bare string (the single-entity form
+    kept by entries written before multi-entity support) or ``None``.
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [e for e in value if e]
+
+
 def base_integration_available(hass: HomeAssistant) -> bool:
     """True when the base Solcast integration is present and running.
 
@@ -1291,15 +1304,18 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
               "ac_mode": "auto",                 # optional power/energy mode
               "site": "<resource_id>",           # single-site group (no DC split)
               "strings": [                        # optional: DC-ratio apportionment
-                {"site": "<rid>", "dc_sensor": "sensor.mppt1", "dc_mode": "auto"},
-                {"site": "<rid>", "dc_sensor": "sensor.mppt2"},
+                {"site": "<rid>", "dc_sensors": ["sensor.mppt1"], "dc_mode": "auto"},
+                {"site": "<rid>", "dc_sensors": ["sensor.mppt2", "sensor.mppt3"]},
               ],
             }
 
         For an apportioned group the measured AC is split across its sites by each
-        string's share of total DC: ``ac_kw × dc_i / Σ dc``. Returns a mapping of
-        ``resource_id → (pv_actual_kw, interval_start_epoch)``; empty when no groups
-        are configured.
+        string's share of total DC: ``ac_kw × dc_i / Σ dc``. An array whose DC is
+        measured on several MPPTs lists them all and they are summed, which is exact
+        because only the ratio is used. ``dc_sensors`` supersedes the single
+        ``dc_sensor`` key, still read for entries written before multi-entity
+        support. Returns a mapping of ``resource_id → (pv_actual_kw,
+        interval_start_epoch)``; empty when no groups are configured.
         """
         out: dict[str, tuple[float, int | None]] = {}
         groups = opts.get(CONF_SITE_GROUPS) or []
@@ -1318,16 +1334,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 dc_vals: dict[str, float] = {}
                 for s in strings:
                     site = s.get("site")
-                    dc_sensor = s.get("dc_sensor")
-                    if not site or not dc_sensor:
+                    dc_sensors = _as_entity_list(s.get("dc_sensors") or s.get("dc_sensor"))
+                    if not site or not dc_sensors:
                         continue
-                    val, _ = self._read_pv_value(
-                        dc_sensor,
-                        s.get("dc_mode", DEFAULT_PV_INPUT_MODE),
-                        f"group{gi}:dc:{site}",
-                        now_epoch,
+                    # The first tracker keeps the unsuffixed baseline key so an
+                    # entry upgraded from the single-sensor form does not orphan
+                    # its stored energy baseline.
+                    dc_vals[site] = sum(
+                        self._read_pv_value(
+                            dc_sensor,
+                            s.get("dc_mode", DEFAULT_PV_INPUT_MODE),
+                            f"group{gi}:dc:{site}" if j == 0 else f"group{gi}:dc:{site}:{j}",
+                            now_epoch,
+                        )[0]
+                        for j, dc_sensor in enumerate(dc_sensors)
                     )
-                    dc_vals[site] = val
                 total_dc = sum(dc_vals.values())
                 for site, val in dc_vals.items():
                     frac = (val / total_dc) if total_dc > 0 else 0.0

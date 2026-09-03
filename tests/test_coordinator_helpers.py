@@ -730,6 +730,45 @@ async def test_read_site_actuals_dc_apportionment(hass, coordinator):
     assert out["r2"][0] == pytest.approx(5.0 * 0.25)
 
 
+async def test_read_site_actuals_dc_apportionment_multi_sensor(hass, coordinator):
+    """An array whose DC arrives on several MPPTs sums them before taking the share.
+
+    Deliberately lopsided (2 + 1 vs 1) so an implementation that read only the first
+    sensor of the list would produce a different, wrong split.
+    """
+    hass.states.async_set("sensor.inv_ac", "8.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt1", "2.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt2", "1.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.mppt3", "1.0", {"unit_of_measurement": "kW"})
+    opts = {CONF_SITE_GROUPS: [{
+        "ac_sensor": "sensor.inv_ac",
+        "strings": [
+            {"site": "r1", "dc_sensors": ["sensor.mppt1", "sensor.mppt2"]},
+            {"site": "r2", "dc_sensors": ["sensor.mppt3"]},
+        ],
+    }]}
+    out = coordinator._read_site_actuals(opts, 1000)
+    assert out["r1"][0] == pytest.approx(8.0 * 0.75)
+    assert out["r2"][0] == pytest.approx(8.0 * 0.25)
+
+
+async def test_read_site_actuals_dc_sensors_supersedes_legacy_key(hass, coordinator):
+    """``dc_sensors`` wins when a legacy ``dc_sensor`` is also present on the string."""
+    hass.states.async_set("sensor.inv_ac", "4.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.new", "3.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.old", "1.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.other", "1.0", {"unit_of_measurement": "kW"})
+    opts = {CONF_SITE_GROUPS: [{
+        "ac_sensor": "sensor.inv_ac",
+        "strings": [
+            {"site": "r1", "dc_sensors": ["sensor.new"], "dc_sensor": "sensor.old"},
+            {"site": "r2", "dc_sensors": ["sensor.other"]},
+        ],
+    }]}
+    out = coordinator._read_site_actuals(opts, 1000)
+    assert out["r1"][0] == pytest.approx(4.0 * 0.75)
+
+
 async def test_read_site_actuals_zero_dc_yields_zero(hass, coordinator):
     # Σ dc == 0 → guarded, each string gets 0 (no divide-by-zero).
     hass.states.async_set("sensor.inv_ac", "5.0", {"unit_of_measurement": "kW"})

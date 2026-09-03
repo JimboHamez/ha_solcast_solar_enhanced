@@ -71,7 +71,7 @@ export limit; then Database, Weather, Battery, Tuning. No topology step, no per-
    - **measurement**, by topology:
      - **direct / Enphase:** the array's **own AC generation sensor** (its microinverter sum)
        + sensor type. No DC fields.
-     - **dc_split:** the array's **DC/MPPT sensor** + **MPPT 1/2 V/I** telemetry. (The shared
+     - **dc_split:** the array's **DC/MPPT sensor(s)** (one or more, summed) + **MPPT 1/2 V/I** telemetry. (The shared
        AC is page 1's PV generation sensor — not re-entered per array.)
 
 | Field | Single-array | Multi-array |
@@ -95,7 +95,7 @@ twice:
   each array's own AC sensor.
 
 `_derive_groups` builds `CONF_SITE_GROUPS` from this: dc_split → one group whose `ac_sensor`
-is the page-1 sensor with a `strings` list (`{site, dc_sensor, tilt?, azimuth?, capacity?,
+is the page-1 sensor with a `strings` list (`{site, dc_sensors, tilt?, azimuth?, capacity?,
 mppts?}`); direct → one single-site group per array (`{ac_sensor = the array's own sensor,
 site, tilt?, azimuth?, capacity?, mppts?}`).
 

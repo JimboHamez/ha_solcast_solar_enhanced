@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0b1] - 2026-09-03
+
+> Beta. One new capability in the multi-site setup, no change to tuning,
+> dampening or storage behaviour.
+
+### Added
+- **An array's DC share can be measured across several MPPTs.** The per-array
+  **DC/MPPT sensor(s)** field on the multi-site step is now a multi-entity picker: an
+  array wired across more than one tracker selects all of them, and they are summed
+  before the shared AC output is apportioned. Reported from the field by a Sigenergy
+  owner running 4 MPPTs grouped into 2 Solcast sites, which previously needed a
+  template sensor per array to sum the pair. Only the DC *ratio* is used, so summing
+  is exact rather than an approximation.
+
+  Stored as `dc_sensors` (a list) on each string in `CONF_SITE_GROUPS`. Entries
+  written before this version keep their single `dc_sensor` key and are still read,
+  so nothing needs reconfiguring; re-saving the sites step migrates them. The first
+  tracker keeps its existing energy-baseline key, so an upgraded entry does not
+  orphan a stored baseline.
+
 ## [1.10.3] - 2026-08-28
 
 > Patch. The adaptive dampening was measuring your shading correctly and then

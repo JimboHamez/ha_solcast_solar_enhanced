@@ -203,9 +203,26 @@ async def _validate_weather(hass: HomeAssistant, collected: dict[str, Any]) -> d
     return {}
 
 
-def _entity_selector(domain: str = "sensor") -> EntitySelector:
-    """Entity picker for one domain (``sensor`` unless told otherwise)."""
-    return EntitySelector(EntitySelectorConfig(domain=domain))
+def _entity_selector(domain: str = "sensor", *, multiple: bool = False) -> EntitySelector:
+    """Entity picker for one domain (``sensor`` unless told otherwise).
+
+    ``multiple`` renders a multi-entity picker, whose value is a list.
+    """
+    return EntitySelector(EntitySelectorConfig(domain=domain, multiple=multiple))
+
+
+def _dc_list(value: Any) -> list[str]:
+    """Normalise a DC-apportionment field to a list of entity ids.
+
+    Accepts the multi-entity form (a list), the legacy single-entity form (a bare
+    string, as stored by entries written before multi-entity support) and ``None``,
+    so both stored configs and both form shapes read the same way.
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [e for e in value if e]
 
 
 def _input_mode_selector() -> Any:
@@ -325,11 +342,13 @@ def _groups_to_assignments(groups: Any) -> dict[str, dict[str, Any]]:
         ac = group.get("ac_sensor")
         site = group.get("site")
         if site:
-            out[site] = _mppts(group, {"ac": ac, "dc": None, "mode": mode})
+            out[site] = _mppts(group, {"ac": ac, "dc": [], "mode": mode})
         for s in group.get("strings") or []:
             sid = s.get("site")
             if sid:
-                out[sid] = _mppts(s, {"ac": ac, "dc": s.get("dc_sensor"), "mode": mode})
+                out[sid] = _mppts(
+                    s, {"ac": ac, "dc": _dc_list(s.get("dc_sensors") or s.get("dc_sensor")), "mode": mode}
+                )
     return out
 
 
@@ -349,9 +368,10 @@ def _infer_topology(groups: Any) -> str:
 def _validate_dc_split(assignments: dict[str, dict[str, Any]]) -> str | None:
     """Validate DC-split assignments, returning an error key or ``None`` if valid.
 
-    Every mapped array must share one AC sensor and carry its own DC sensor, since
-    the shared AC output is apportioned by DC share. Catches the two pitfalls that
-    previously failed silently: a missing DC sensor and non-identical AC sensors.
+    Every mapped array must share one AC sensor and carry at least one DC sensor,
+    since the shared AC output is apportioned by DC share. Catches the two pitfalls
+    that previously failed silently: a missing DC sensor and non-identical AC
+    sensors. An array's DC field is a list, so "missing" is an empty one.
     """
     mapped = [a for a in assignments.values() if a.get("ac")]
     if not mapped:
@@ -370,8 +390,9 @@ def _derive_groups(
 
     In ``SITE_TOPOLOGY_DIRECT`` each mapped array becomes its own single-site group
     (no DC apportionment). In ``SITE_TOPOLOGY_DC_SPLIT`` the arrays sharing one AC
-    sensor become a single group whose ``strings`` carry each array's DC sensor, so
-    the shared AC output is split by DC share (callers validate first via
+    sensor become a single group whose ``strings`` carry each array's DC sensors, so
+    the shared AC output is split by DC share — an array whose DC arrives on several
+    MPPTs lists them all and they are summed (callers validate first via
     ``_validate_dc_split``).
     """
 
@@ -408,7 +429,7 @@ def _derive_groups(
         if len(members) == 1:
             groups.append(_with_mppts({"ac_sensor": ac, "ac_mode": ac_mode, "site": members[0][0]}, members[0][1]))
             continue
-        strings = [_with_mppts({"site": rid, "dc_sensor": a["dc"]}, a) for rid, a in members if a.get("dc")]
+        strings = [_with_mppts({"site": rid, "dc_sensors": _dc_list(a["dc"])}, a) for rid, a in members if a.get("dc")]
         if strings:
             groups.append({"ac_sensor": ac, "ac_mode": ac_mode, "strings": strings})
         else:
@@ -441,7 +462,7 @@ def _seed_flat_mppt(
     ]
     flat = [m for m in flat if m["voltage_sensor"]]
     for site, m in zip([s["resource_id"] for s in discovered], flat, strict=False):
-        a = assignments.setdefault(site, {"ac": None, "dc": None, "mode": DEFAULT_PV_INPUT_MODE})
+        a = assignments.setdefault(site, {"ac": None, "dc": [], "mode": DEFAULT_PV_INPUT_MODE})
         a["mppts"] = [m]
     return assignments
 
@@ -492,7 +513,7 @@ def _build_sites_schema(
         m1 = mppts[1] if len(mppts) > 1 else {}
         k_name = f"{name} — display name"
         k_ac = f"{name} — AC generation sensor (shared)" if dc_split else f"{name} — generation sensor"
-        k_dc = f"{name} — DC/MPPT sensor (for split)"
+        k_dc = f"{name} — DC/MPPT sensor(s) (for split)"
         k_mode = f"{name} — sensor type"
         k_v1 = f"{name} — MPPT 1 voltage (optional)"
         k_i1 = f"{name} — MPPT 1 current (optional)"
@@ -515,7 +536,9 @@ def _build_sites_schema(
         )
         schema_dict[vol.Optional(k_ac, description={"suggested_value": a.get("ac") or default_ac})] = _entity_selector()
         if dc_split:
-            schema_dict[vol.Optional(k_dc, description={"suggested_value": a.get("dc")})] = _entity_selector()
+            schema_dict[vol.Optional(k_dc, description={"suggested_value": _dc_list(a.get("dc"))})] = _entity_selector(
+                multiple=True
+            )
         schema_dict[vol.Required(k_mode, default=a.get("mode", DEFAULT_PV_INPUT_MODE))] = _input_mode_selector()
         schema_dict[vol.Optional(k_v1, description={"suggested_value": m0.get("voltage_sensor")})] = _entity_selector()
         schema_dict[vol.Optional(k_i1, description={"suggested_value": m0.get("current_sensor")})] = _entity_selector()
@@ -539,7 +562,8 @@ def _parse_sites_input(
     """Collect per-site assignments from submitted form values (AC sensor required).
 
     In ``SITE_TOPOLOGY_DIRECT`` the DC field is not rendered, so each site's ``dc``
-    is forced to ``None`` regardless of any stale submitted value.
+    is forced empty regardless of any stale submitted value. In ``dc_split`` it is a
+    list — one array's DC may be measured across several MPPT sensors.
     """
     dc_split = mode == SITE_TOPOLOGY_DC_SPLIT
     assignments: dict[str, dict[str, Any]] = {}
@@ -550,7 +574,7 @@ def _parse_sites_input(
         assignments[rid] = {
             "ac": ac,
             "name": (user_input.get(keys["name"]) or "").strip() or None,
-            "dc": (user_input.get(keys["dc"]) or None) if dc_split else None,
+            "dc": _dc_list(user_input.get(keys["dc"])) if dc_split else [],
             "mode": user_input.get(keys["mode"], DEFAULT_PV_INPUT_MODE),
             "mppts": _fields_to_mppts(
                 user_input.get(keys["v1"]),
