@@ -5,7 +5,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0b2] - 2026-09-04
+
+> Beta. Data collection only — two changes to the per-MPPT DC telemetry, both
+> forward-only. Nothing consumes the new data yet, and tuning, dampening and the
+> pushed factors are unchanged.
 
 ### Added
 - **Per-tracker median DC current (`dc_imed1`/`dc_imed2`).** The existing
@@ -1319,7 +1323,8 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b1...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b2...HEAD
+[1.11.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b1...v1.11.0b2
 [1.10.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.0...v1.10.1
