@@ -37,7 +37,20 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b1
+## 🆕 What's new in v1.11.0b2
+
+**Beta: the integration now records the DC current your trackers actually held, not just their worst instant.** This is a data-collection release. Nothing reads the new figures yet, and your tuning, dampening and the factors pushed to Solcast are unchanged.
+
+Each half hour, the per-MPPT capture already stored the *lowest* current seen in the slot — deliberately, because the lowest point is what reveals an inverter being throttled. That same number is useless for measuring shade: a single cloud crossing the sun for ten seconds drags the whole half hour down to near zero, and it does that worst at low sun, which is exactly when shading matters. On a live 74-day database it left **56 of 67 mornings with no usable 8am reading**.
+
+Alongside it there is now a **median** current — the value the tracker held for most of the slot — matching the median voltage already recorded. The pair is what tells the two kinds of shade apart: current down with the voltage steady is a shadow lying evenly across the panels, while a voltage that drops with it means the panel's bypass diodes have kicked in. That distinction decides whether shading can be modelled at all, so it is worth collecting properly.
+
+**This only accumulates going forward** — a lowest reading can't be turned back into a typical one after the event — so the sooner it is running, the more of this spring it captures.
+
+**Also fixed: the whole-property DC row was empty on multi-array systems.** If you have more than one array and mapped each one's trackers on the sites step, the property-wide DC figures had been recorded once at setup and then stayed at zero, while the per-array rows filled up normally. The **MPPT DC Voltage** sensor hid this — the headline number it shows was already drawn from the per-array trackers, so it looked fine. Its per-tracker attributes will go from zero to real values.
+
+<details>
+<summary><b>What landed in v1.11.0b1</b></summary>
 
 **Beta: an array's DC share can now be measured across several MPPTs.** On the multi-site step, the per-array **DC/MPPT sensor(s)** field is a multi-entity picker — if one Solcast site is wired across more than one tracker, select all of that array's trackers and they are summed before the shared inverter's AC output is split between arrays.
 
@@ -46,6 +59,8 @@ This is for the common grouping where the number of MPPTs doesn't match the numb
 Summing is **exact, not an approximation** — only the *ratio* between arrays is ever used, so the units and scale cancel.
 
 **Nothing to reconfigure.** Existing setups keep working untouched; re-saving the sites step migrates them to the new form.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.10.3</b></summary>

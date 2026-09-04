@@ -160,6 +160,8 @@ async def test_connect_adds_irradiance_columns_to_legacy_db(hass, tmp_path):
     ]
     # The dc_vmed columns (also post-dating this legacy schema) are added too.
     assert s._query(f"SELECT {_VMED_COLS} FROM solcast_data", ()) == [{"dc_vmed1": 0.0, "dc_vmed2": 0.0}]
+    # ...as are the dc_imed median-current columns.
+    assert s._query(f"SELECT {_IMED_COLS} FROM solcast_data", ()) == [{"dc_imed1": 0.0, "dc_imed2": 0.0}]
     # A new irradiance-bearing insert round-trips.
     await s.async_insert_record(_record(JUNE1 + 1800, ghi=500.0, dni=300.0, dhi=120.0))
     assert s._query(
@@ -627,3 +629,28 @@ async def test_connect_adds_undampened_column_to_legacy_db(hass, tmp_path):
         f"SELECT {_UNDAMP_COL} FROM solcast_data WHERE period_end_epoch = ?", (JUNE1 + 1800,)
     ) == [{"pv_estimate_undampened": 7.0}]
     await s.async_close()
+
+
+_IMED_COLS = "dc_imed1, dc_imed2"
+
+
+async def test_insert_and_read_imed(store):
+    await store.async_insert_record(_record(JUNE1, dc_imed1=6.25, dc_imed2=4.5))
+    rows = store._query(f"SELECT {_IMED_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    assert rows == [{"dc_imed1": 6.25, "dc_imed2": 4.5}]
+
+
+async def test_insert_imed_defaults_to_zero(store):
+    await store.async_insert_record(_record(JUNE1))
+    rows = store._query(f"SELECT {_IMED_COLS} FROM solcast_data", ())
+    assert rows == [{"dc_imed1": 0.0, "dc_imed2": 0.0}]
+
+
+async def test_imed_is_independent_of_the_min_reduced_current(store):
+    """``dc_current*`` (interval minimum, for curtailment) and ``dc_imed*`` (median,
+    for shading) are separate columns: a slot whose minimum collapsed to zero still
+    records a representative median."""
+    await store.async_insert_record(_record(JUNE1, dc_current1=0.0, dc_imed1=6.1))
+    assert store._query("SELECT dc_current1, dc_imed1 FROM solcast_data", ()) == [
+        {"dc_current1": 0.0, "dc_imed1": 6.1}
+    ]

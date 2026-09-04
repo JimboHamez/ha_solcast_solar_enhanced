@@ -641,3 +641,79 @@ async def test_push_dampening_clamps_factors_to_unit_range(hass, coordinator):
     values = [float(x) for x in captured["damp"].split(",")]
     assert values == [0.8, 1.0, 1.0, 0.0, 1.0]
     assert all(0.0 <= v <= 1.0 for v in values)
+
+
+# ---------------------------------------------------------------------------
+# Median operating current (dc_imed) and the _total tracker fallback
+# ---------------------------------------------------------------------------
+
+async def test_read_mppt_imed_is_the_median_not_the_interval_minimum(hass, coordinator):
+    """``dc_current*`` stores the interval MINIMUM so an off-MPP dip is caught for
+    curtailment detection. ``dc_imed*`` must store the MEDIAN instead: a single
+    cloud shadow inside the slot drives the minimum to ~0 while the median still
+    reports what the tracker did for most of the half hour."""
+    mppts = [
+        {"voltage_sensor": "sensor.v1", "current_sensor": "sensor.i1"},
+        {"voltage_sensor": "sensor.v2", "current_sensor": "sensor.i2"},
+    ]
+    # i1 dips to 0.02 mid-slot: min = 0.02, median = 6.1. i2 min = 3.9, median = 4.2.
+    hist = {
+        "sensor.i1": [6.0, 6.1, 0.02, 6.2, 6.4],
+        "sensor.i2": [4.2, 3.9, 4.5],
+    }
+    assert coordinator._read_mppt_imed(mppts, hist) == (6.1, 4.2)
+    # The min-reducer would have given (0.02, 3.9) — the whole point of the column.
+    assert coordinator._read_mppt_telemetry(mppts, hist)[1] == 0.02
+
+    hass.states.async_set("sensor.i3", "5.25")
+    # No history → instantaneous fallback; absent second tracker → 0.
+    assert coordinator._read_mppt_imed([{"current_sensor": "sensor.i3"}], {}) == (5.25, 0.0)
+    assert coordinator._read_mppt_imed([], {}) == (0.0, 0.0)
+
+
+async def test_property_mppt_list_falls_back_to_per_array_trackers(coordinator):
+    """A multi-array config clears the flat CONF_MPPT* keys, so the ``_total`` row's
+    DC columns would be permanently zero without this fallback."""
+    from custom_components.solcast_solar_enhanced.const import (
+        CONF_MPPT1_VOLTAGE_SENSOR,
+        CONF_SITE_GROUPS,
+    )
+
+    multi = {
+        CONF_MPPT1_VOLTAGE_SENSOR: None,  # cleared by the sites step
+        CONF_SITE_GROUPS: [
+            {
+                "ac_sensor": "sensor.ac",
+                "strings": [
+                    {"site": "a", "mppts": [{"voltage_sensor": "sensor.va", "current_sensor": "sensor.ia"}]},
+                    {"site": "b", "mppts": [{"voltage_sensor": "sensor.vb", "current_sensor": "sensor.ib"}]},
+                ],
+            }
+        ],
+    }
+    assert coordinator._property_mppt_list(multi) == [
+        {"voltage_sensor": "sensor.va", "current_sensor": "sensor.ia"},
+        {"voltage_sensor": "sensor.vb", "current_sensor": "sensor.ib"},
+    ]
+
+    # A single-array system still uses its flat keys, and they win over any groups.
+    flat = dict(multi, **{CONF_MPPT1_VOLTAGE_SENSOR: "sensor.flat_v"})
+    assert coordinator._property_mppt_list(flat)[0]["voltage_sensor"] == "sensor.flat_v"
+
+    # Nothing configured anywhere → empty, so _read_mppt_telemetry still returns None.
+    assert coordinator._property_mppt_list({}) == []
+    assert coordinator._read_mppt_telemetry(coordinator._property_mppt_list({}), {}) is None
+
+
+async def test_property_mppt_list_truncates_to_max_trackers(coordinator):
+    """More arrays than trackers keeps the first MAX_MPPT_TRACKERS rather than none."""
+    from custom_components.solcast_solar_enhanced.const import CONF_SITE_GROUPS, MAX_MPPT_TRACKERS
+
+    opts = {
+        CONF_SITE_GROUPS: [
+            {"site": s, "mppts": [{"current_sensor": f"sensor.i{s}"}]} for s in ("a", "b", "c")
+        ]
+    }
+    got = coordinator._property_mppt_list(opts)
+    assert len(got) == MAX_MPPT_TRACKERS
+    assert got[0]["current_sensor"] == "sensor.ia"
