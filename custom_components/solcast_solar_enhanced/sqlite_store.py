@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dhi              REAL NOT NULL DEFAULT 0,
   dc_vmed1         REAL NOT NULL DEFAULT 0,
   dc_vmed2         REAL NOT NULL DEFAULT 0,
+  dc_imed1         REAL NOT NULL DEFAULT 0,
+  dc_imed2         REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -88,6 +90,17 @@ _ADDED_COLUMNS = (
     # bypass/partial-shadow) and the Vmp-band calibrator; nothing consumes it yet.
     ("dc_vmed1", "REAL NOT NULL DEFAULT 0"),
     ("dc_vmed2", "REAL NOT NULL DEFAULT 0"),
+    # Per-tracker MEDIAN operating current over the slot, the companion to
+    # ``dc_vmed*``. ``dc_current*`` above is the interval MINIMUM, chosen to catch
+    # the most-throttled instant for off-MPP curtailment detection; that statistic
+    # is unusable as a shading measure because one passing cloud pins the slot near
+    # zero, and it degrades worst at low sun where a shading signal is needed most.
+    # The pair (vmed, imed) is the representative operating point: a shadow line
+    # across every module drops the current while the voltage holds at Vmp, whereas
+    # bypass-diode conduction collapses the voltage too. Forward-only, like
+    # ``dc_vmed*`` — the minimum cannot be turned back into a median after the fact.
+    ("dc_imed1", "REAL NOT NULL DEFAULT 0"),
+    ("dc_imed2", "REAL NOT NULL DEFAULT 0"),
     # The base integration's forecast for this slot *before* it applied our pushed
     # dampening factors. ``pv_estimate`` is read from the base's detailedForecast,
     # which is already dampened, so using it as the shading ratio's denominator
@@ -123,6 +136,8 @@ _INSERT_COLUMNS = (
     "dhi",
     "dc_vmed1",
     "dc_vmed2",
+    "dc_imed1",
+    "dc_imed2",
     "pv_estimate_undampened",
 )
 _INSERT_SQL = (
@@ -245,6 +260,8 @@ class SqliteStore:
             record.get("dhi", 0.0) or 0.0,
             record.get("dc_vmed1", 0.0) or 0.0,
             record.get("dc_vmed2", 0.0) or 0.0,
+            record.get("dc_imed1", 0.0) or 0.0,
+            record.get("dc_imed2", 0.0) or 0.0,
             record.get("pv_estimate_undampened", 0.0) or 0.0,
         )
 

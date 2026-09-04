@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Per-tracker median DC current (`dc_imed1`/`dc_imed2`).** The existing
+  `dc_current*` columns store the interval *minimum*, chosen to catch the most
+  off-MPP instant for curtailment detection. That statistic is unusable as a
+  shading measure: one passing cloud inside the half hour pins the slot near zero,
+  and the damage is worst at low sun, which is exactly where a shading signal
+  matters. On a live 74-day store, 56 of 67 mornings had no usable 08:00 reading
+  for this reason. The new columns record the *median* — the value the tracker held
+  for most of the slot — as the current companion to `dc_vmed*`. Together the pair
+  separates the shading mechanism: a shadow lying evenly across every module drops
+  the current while the voltage holds at Vmp, whereas bypass-diode conduction
+  collapses the voltage too.
+
+  Added to existing databases by the usual additive `ALTER TABLE`. **Forward-only** —
+  a minimum cannot be turned back into a median after the fact, so history starts
+  from upgrade. Nothing consumes the columns yet.
+
+### Fixed
+- **The `_total` row's DC telemetry was permanently empty on multi-array systems.**
+  The property-wide MPPT capture read only the flat single-inverter config keys, but
+  the multi-site step deliberately clears those when each array maps its own
+  trackers — so `dc_voltage*` / `dc_current*` / `dc_vmed*` on the aggregate row were
+  written once and then stayed at zero forever, while the per-site rows filled
+  normally. It now falls back to the configured arrays' own trackers. The fault was
+  invisible on the **MPPT DC** diagnostic sensor, whose `max_voltage` already spanned
+  the per-site trackers and so kept reporting a plausible number.
+
 ## [1.11.0b1] - 2026-09-03
 
 > Beta. One new capability in the multi-site setup, no change to tuning,
@@ -1290,7 +1319,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.3...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b1...HEAD
 [1.10.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.0...v1.10.1

@@ -498,11 +498,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             dc_entities = self._collect_dc_entities(opts)
             dc_hist = await self._interval_values(dc_entities, slot_start_epoch, period_epoch)
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
-            total_dc = self._read_mppt_telemetry(self._mppt_list_from_opts(opts), dc_hist) or (0.0, 0.0, 0.0, 0.0)
-            # Median operating voltage per tracker (reduction of the same per-sec
-            # series) — the shading-mechanism ingredient; forward-only, unconsumed.
-            total_vmed = self._read_mppt_vmed(self._mppt_list_from_opts(opts), dc_hist)
+            # The property-wide trackers: the flat config keys on a single-array
+            # system, the arrays' own trackers otherwise (see _property_mppt_list).
+            property_mppts = self._property_mppt_list(opts)
+            total_dc = self._read_mppt_telemetry(property_mppts, dc_hist) or (0.0, 0.0, 0.0, 0.0)
+            # Median operating voltage and current per tracker (reductions of the
+            # same per-sec series) — the shading-mechanism pair; forward-only.
+            total_vmed = self._read_mppt_vmed(property_mppts, dc_hist)
             site_vmed = self._read_site_vmed(opts, dc_hist)
+            total_imed = self._read_mppt_imed(property_mppts, dc_hist)
+            site_imed = self._read_site_imed(opts, dc_hist)
             # Surface the latest reading on the diagnostic sensor (None when no DC
             # sensors are configured, so the entity stays unavailable rather than
             # reporting a misleading 0).
@@ -551,6 +556,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "dc_current2": total_dc[3],
                 "dc_vmed1": total_vmed[0],
                 "dc_vmed2": total_vmed[1],
+                "dc_imed1": total_imed[0],
+                "dc_imed2": total_imed[1],
                 # The forecast before our own dampening — the shading ratio's real
                 # denominator (issue #50). 0 when the base can't supply it.
                 "pv_estimate_undampened": round(
@@ -579,6 +586,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 s_start = site_start if site_start else period_epoch - 1800
                 s_dc = site_dc.get(site_id, (0.0, 0.0, 0.0, 0.0))
                 s_vmed = site_vmed.get(site_id, (0.0, 0.0))
+                s_imed = site_imed.get(site_id, (0.0, 0.0))
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
@@ -605,6 +613,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "dc_current2": s_dc[3],
                         "dc_vmed1": s_vmed[0],
                         "dc_vmed2": s_vmed[1],
+                        "dc_imed1": s_imed[0],
+                        "dc_imed2": s_imed[1],
                         "pv_estimate_undampened": round(
                             await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
                         ),
@@ -1402,6 +1412,32 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             },
         ]
 
+    @staticmethod
+    def _property_mppt_list(opts: dict[str, Any]) -> list[dict[str, Any]]:
+        """MPPT pairs for the ``_total`` row, falling back to the per-array trackers.
+
+        The flat ``CONF_MPPT*`` keys only exist for a single-array system; the sites
+        step clears them when a multi-array config is saved, because each array then
+        maps its own trackers. Without a fallback the ``_total`` row's DC columns are
+        permanently zero on every multi-array install — the telemetry is collected
+        per site and simply never reaches the aggregate row.
+
+        So: use the flat keys when any is set, otherwise gather the configured
+        arrays' trackers in order. Truncated to ``MAX_MPPT_TRACKERS`` like every
+        other tracker list, which on a system with more arrays than trackers keeps
+        the first two rather than none.
+        """
+        flat = SolcastEnhancedCoordinator._mppt_list_from_opts(opts)
+        if any(m.get("voltage_sensor") or m.get("current_sensor") for m in flat):
+            return flat
+        collected: list[dict[str, Any]] = []
+        for group in opts.get(CONF_SITE_GROUPS) or []:
+            for cfg in (group, *(group.get("strings") or [])):
+                for m in cfg.get("mppts") or []:
+                    if m.get("voltage_sensor") or m.get("current_sensor"):
+                        collected.append(m)
+        return collected[:MAX_MPPT_TRACKERS]
+
     def _collect_dc_entities(self, opts: dict[str, Any]) -> set[str]:
         """Return every configured MPPT voltage/current entity.
 
@@ -1508,22 +1544,50 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         Forward-only groundwork for the shading-mechanism classifier; a tracker with
         no voltage sensor (or none configured) reads 0.0.
         """
+        return self._read_median_pair(mppts, hist, "voltage_sensor")
+
+    def _read_site_vmed(self, opts: dict[str, Any], hist: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+        """Per-site median operating voltage ``site → (vmed1, vmed2)``; sites with no DC V absent."""
+        return self._read_site_median(opts, hist, "voltage_sensor")
+
+    def _read_mppt_imed(self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]]) -> tuple[float, float]:
+        """Per-tracker median operating current ``(imed1, imed2)`` over the slot, zero-filled.
+
+        The companion to :meth:`_read_mppt_vmed`, and the representative counterpart
+        to ``dc_current*``'s interval *minimum*. The minimum exists to catch the
+        most-throttled instant for off-MPP curtailment detection; as a shading
+        measure it is unusable, because a single passing cloud pins the whole slot
+        near zero and the damage is worst at low sun. Together, a held voltage with
+        a fallen current is a shadow lying evenly across every module; a voltage
+        that falls too is bypass-diode conduction.
+        """
+        return self._read_median_pair(mppts, hist, "current_sensor")
+
+    def _read_site_imed(self, opts: dict[str, Any], hist: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+        """Per-site median operating current ``site → (imed1, imed2)``; sites with no DC I absent."""
+        return self._read_site_median(opts, hist, "current_sensor")
+
+    def _read_median_pair(
+        self, mppts: list[dict[str, Any]] | None, hist: dict[str, list[float]], key: str
+    ) -> tuple[float, float]:
+        """Median of one sensor role over the slot for each tracker, zero-filled."""
         pairs = list(mppts or [])[:MAX_MPPT_TRACKERS]
         out: list[float] = []
         for i in range(MAX_MPPT_TRACKERS):
             m = pairs[i] if i < len(pairs) else {}
-            v = self._interval_median(m.get("voltage_sensor"), hist)
-            out.append(round(v or 0.0, 3))
+            out.append(round(self._interval_median(m.get(key), hist) or 0.0, 3))
         return out[0], out[1]
 
-    def _read_site_vmed(self, opts: dict[str, Any], hist: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
-        """Per-site median operating voltage ``site → (vmed1, vmed2)``; sites with no DC V absent."""
+    def _read_site_median(
+        self, opts: dict[str, Any], hist: dict[str, list[float]], key: str
+    ) -> dict[str, tuple[float, float]]:
+        """Per-site median of one sensor role; sites with no such sensor are absent."""
         out: dict[str, tuple[float, float]] = {}
 
         def _capture(site: str | None, cfg: dict[str, Any]) -> None:
             if not site:
                 return
-            vm = self._read_mppt_vmed(cfg.get("mppts"), hist)
+            vm = self._read_median_pair(cfg.get("mppts"), hist, key)
             if any(vm):
                 out[site] = vm
 
