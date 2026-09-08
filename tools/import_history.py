@@ -102,6 +102,12 @@ COLUMNS = [
 DEFAULT_SITE = "_total"
 
 # Mirrors sqlite_store.CREATE_TABLE_SQL so a fresh destination is schema-complete.
+# COLUMNS above is deliberately shorter: a legacy export only carries those fields,
+# and the rest take their DEFAULT 0. The *table* must still be complete, because
+# nothing here runs sqlite_store._ensure_columns — a destination created with only
+# the legacy columns breaks tools/backfill_irradiance.py ("no such column: ghi")
+# until the integration next opens it. Keep this list in step with
+# sqlite_store.CREATE_TABLE_SQL, appending new columns last.
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS solcast_data (
   "index"          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,6 +126,18 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   clouds           INTEGER NOT NULL,
   description      TEXT NOT NULL,
   battery_charge   REAL NOT NULL DEFAULT 0,
+  dc_voltage1      REAL NOT NULL DEFAULT 0,
+  dc_current1      REAL NOT NULL DEFAULT 0,
+  dc_voltage2      REAL NOT NULL DEFAULT 0,
+  dc_current2      REAL NOT NULL DEFAULT 0,
+  ghi              REAL NOT NULL DEFAULT 0,
+  dni              REAL NOT NULL DEFAULT 0,
+  dhi              REAL NOT NULL DEFAULT 0,
+  dc_vmed1         REAL NOT NULL DEFAULT 0,
+  dc_vmed2         REAL NOT NULL DEFAULT 0,
+  dc_imed1         REAL NOT NULL DEFAULT 0,
+  dc_imed2         REAL NOT NULL DEFAULT 0,
+  pv_estimate_undampened REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """

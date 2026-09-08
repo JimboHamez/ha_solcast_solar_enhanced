@@ -7,6 +7,14 @@ fresh and complete (``has_site_col`` / ``has_battery_col`` are always true).
 Columns added in later versions are applied to existing databases in place via an
 additive ``ALTER TABLE`` (see ``_ADDED_COLUMNS`` / ``_ensure_columns``); one-time
 *data* repairs are gated separately on ``PRAGMA user_version`` (``async_migrate``).
+
+A new column must be added in **three** places or the schema silently drifts:
+``CREATE_TABLE_SQL`` (so a fresh database is complete without relying on the
+ALTER pass), ``_ADDED_COLUMNS`` (so an existing database gains it) and
+``_INSERT_COLUMNS`` + ``_row_values`` (so it is actually written). Appending it
+last in ``CREATE_TABLE_SQL``, in ``_ADDED_COLUMNS`` order, also keeps a fresh
+database's physical column order identical to an upgraded one's.
+``tests/test_sqlite_store.py`` pins all three against each other.
 """
 
 from __future__ import annotations
@@ -65,6 +73,7 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_vmed2         REAL NOT NULL DEFAULT 0,
   dc_imed1         REAL NOT NULL DEFAULT 0,
   dc_imed2         REAL NOT NULL DEFAULT 0,
+  pv_estimate_undampened REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
