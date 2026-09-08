@@ -2,9 +2,17 @@ name: Validate with hassfest
 
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: "0 0 * * *"
+
+# Only the checkout needs anything, and it only needs to read. Deliberately
+# not the empty `permissions: {}` that validate.yaml uses — that works there
+# because hacs/action clones via the API and the workflow has no checkout
+# step; hassfest needs the files on disk.
+permissions:
+  contents: read
 
 jobs:
   validate:
