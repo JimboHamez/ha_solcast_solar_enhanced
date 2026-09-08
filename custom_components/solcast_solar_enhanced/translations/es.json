@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Estado de la integración base"
+      },
+      "shading_advisory": {
+        "name": "Pérdida por sombreado (medida)"
+      },
+      "site_shading_advisory": {
+        "name": "Pérdida por sombreado (medida)"
       }
     }
   },

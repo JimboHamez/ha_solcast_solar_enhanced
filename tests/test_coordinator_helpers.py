@@ -591,6 +591,11 @@ class _FakeStore:
         self.prune_calls += 1
         return 0
 
+    async def async_get_records_for_shading(self, site=None, **kwargs):
+        # The shading advisory runs unconditionally (it is read-only and never
+        # reaches the push), so every orchestration test hits this.
+        return []
+
 
 _ORCH_CONFIG = {
     CONF_LATITUDE: -37.9,

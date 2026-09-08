@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from custom_components.solcast_solar_enhanced.sqlite_store import SqliteStore
+from custom_components.solcast_solar_enhanced.sqlite_store import (
+    _ADDED_COLUMNS,
+    _INSERT_COLUMNS,
+    _INSERT_SQL,
+    CREATE_TABLE_SQL,
+    SqliteStore,
+)
 
 # Reference database exported from a live Home Assistant install (Ormond, VIC,
 # winter). Trimmed to the property-wide '_total' rows (no site resource_ids) and
@@ -654,3 +661,163 @@ async def test_imed_is_independent_of_the_min_reduced_current(store):
     assert store._query("SELECT dc_current1, dc_imed1 FROM solcast_data", ()) == [
         {"dc_current1": 0.0, "dc_imed1": 6.1}
     ]
+
+
+# --- Schema completeness -------------------------------------------------------
+# A column has to be declared in three places (CREATE_TABLE_SQL, _ADDED_COLUMNS and
+# _INSERT_COLUMNS/_row_values) and has twice been added to only two of them. The
+# failure is silent: _ensure_columns ALTERs the column into a freshly CREATEd table
+# moments later, so the live integration works and every behavioural test passes
+# while CREATE_TABLE_SQL — the one statement that is supposed to define the schema —
+# is quietly incomplete. These tests compare the three lists directly.
+
+
+def _create_table_columns() -> list[str]:
+    """Column names a bare CREATE_TABLE_SQL produces, asked of SQLite itself."""
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(CREATE_TABLE_SQL)
+        return [row[1] for row in conn.execute("PRAGMA table_info(solcast_data)")]
+    finally:
+        conn.close()
+
+
+def test_create_table_declares_every_added_column():
+    """Every ALTER-added column is also in CREATE_TABLE_SQL.
+
+    Without this a *fresh* database is only completed by the upgrade path running
+    immediately after creation, so the two ways of arriving at a current schema
+    disagree and CREATE_TABLE_SQL stops being the source of truth.
+    """
+    created = set(_create_table_columns())
+    missing = [name for name, _ in _ADDED_COLUMNS if name not in created]
+    assert not missing, f"in _ADDED_COLUMNS but absent from CREATE_TABLE_SQL: {missing}"
+
+
+def test_create_table_declares_every_inserted_column():
+    """Every column an insert writes exists on a table built by CREATE_TABLE_SQL alone."""
+    created = set(_create_table_columns())
+    missing = [c for c in _INSERT_COLUMNS if c not in created]
+    assert not missing, f"in _INSERT_COLUMNS but absent from CREATE_TABLE_SQL: {missing}"
+
+
+def test_insert_columns_match_row_values_arity():
+    """``_row_values`` supplies exactly one value per ``_INSERT_COLUMNS`` entry."""
+    values = SqliteStore._row_values(_record(JUNE1))
+    assert len(values) == len(_INSERT_COLUMNS)
+
+
+def test_fresh_schema_accepts_a_full_insert_without_the_alter_pass():
+    """A table from CREATE_TABLE_SQL alone takes a complete row.
+
+    This is the check that would have caught the drift: it exercises the CREATE
+    statement *without* ``_ensure_columns``, which is what normally papers over a
+    missing column on a new database.
+    """
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(CREATE_TABLE_SQL)
+        conn.execute(_INSERT_SQL, SqliteStore._row_values(_record(JUNE1)))
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+async def test_created_and_upgraded_schemas_have_identical_column_order(hass, tmp_path):
+    """A database built by CREATE matches one an older database was ALTERed up to.
+
+    ALTER appends, so listing a new column anywhere but last in CREATE_TABLE_SQL
+    leaves new and upgraded installs with different physical layouts — which any
+    positional (``SELECT *``) reader, including the analysis tooling, would see.
+    """
+    legacy = """
+    CREATE TABLE solcast_data (
+      "index"          INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_end       TEXT NOT NULL,
+      period_end_epoch INTEGER NOT NULL,
+      period_start     TEXT NOT NULL,
+      site             TEXT NOT NULL DEFAULT '_total',
+      pv_actual        REAL NOT NULL,
+      pv_export        REAL NOT NULL DEFAULT 0,
+      pv_estimate      REAL NOT NULL,
+      pv_estimate10    REAL NOT NULL,
+      pv_estimate90    REAL NOT NULL,
+      azimuth          REAL NOT NULL,
+      zenith           REAL NOT NULL,
+      temp             REAL NOT NULL,
+      clouds           INTEGER NOT NULL,
+      description      TEXT NOT NULL,
+      battery_charge   REAL NOT NULL DEFAULT 0,
+      UNIQUE(period_end_epoch, site)
+    );
+    """
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(legacy)
+    conn.commit()
+    conn.close()
+
+    store = SqliteStore(hass, path)
+    assert await store.async_connect() is True
+    try:
+        upgraded = [row[1] for row in store._conn.execute("PRAGMA table_info(solcast_data)")]
+    finally:
+        await store.async_close()
+
+    assert upgraded == _create_table_columns()
+
+
+# ---------------------------------------------------------------------------
+# Shading advisory read path — the only query that returns the median DC columns
+# ---------------------------------------------------------------------------
+
+async def test_records_for_shading_returns_the_median_dc_columns(store):
+    """The median DC telemetry is write-only everywhere else; this query exposes it.
+
+    Without these four columns the mechanism classifier cannot tell a uniform
+    shadow line from a bypass-diode event, which is the whole reason they exist.
+    """
+    await store.async_insert_record(_record(
+        JUNE1, dc_vmed1=372.5, dc_vmed2=364.0, dc_imed1=6.25, dc_imed2=3.10,
+        ghi=680.0, dni=790.0, dhi=95.0, pv_estimate_undampened=4.6,
+    ))
+    rows = await store.async_get_records_for_shading()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["dc_vmed1"] == 372.5
+    assert row["dc_vmed2"] == 364.0
+    assert row["dc_imed1"] == 6.25
+    assert row["dc_imed2"] == 3.10
+    assert row["pv_estimate_undampened"] == 4.6
+    assert (row["ghi"], row["dni"], row["dhi"]) == (680.0, 790.0, 95.0)
+
+
+async def test_records_for_shading_keeps_overcast_records(store):
+    """Deliberately NOT clear-sky gated.
+
+    Overcast records carry no beam to block, so they are what establishes the
+    unshaded baseline. Gating them out is the mistake that hides shading from the
+    dampening path, so a gate appearing here would be a real regression.
+    """
+    await store.async_insert_record(_record(JUNE1, clouds=100, ghi=40.0))
+    await store.async_insert_record(_record(JUNE1 + 1800, clouds=0, ghi=800.0))
+    rows = await store.async_get_records_for_shading()
+    assert len(rows) == 2
+    assert {int(r["clouds"]) for r in rows} == {0, 100}
+
+
+async def test_records_for_shading_drops_night_and_filters_by_site(store):
+    await store.async_insert_record(_record(JUNE1, zenith=35.0))
+    await store.async_insert_record(_record(JUNE1 + 1800, zenith=95.0))
+    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=20.0))
+    assert len(await store.async_get_records_for_shading()) == 2
+    scoped = await store.async_get_records_for_shading(site="abc-123")
+    assert len(scoped) == 1
+    assert scoped[0]["zenith"] == 20.0
+
+
+async def test_records_for_shading_honours_the_limit(store):
+    for i in range(5):
+        await store.async_insert_record(_record(JUNE1 + i * 1800))
+    assert len(await store.async_get_records_for_shading(limit=3)) == 3

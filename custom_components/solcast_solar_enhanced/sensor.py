@@ -27,6 +27,8 @@ from .const import (
     SENSOR_PV_ACTUAL,
     SENSOR_PV_CONFIDENCE,
     SENSOR_PV_EXPORT,
+    SENSOR_SHADING_ADVISORY,
+    SENSOR_SITE_SHADING_ADVISORY,
     SENSOR_TUNING_AZIMUTH,
     SENSOR_TUNING_EXPORT_EXCLUDED,
     SENSOR_TUNING_RMSE,
@@ -90,6 +92,7 @@ async def async_setup_entry(
         PvExportSensor(coordinator, entry),
         BaseIntegrationSensor(coordinator, entry),
         PvForecastConfidenceSensor(coordinator, entry),
+        ShadingAdvisorySensor(coordinator, entry),
     ]
     # Per-site sensors per configured array (multi-site only), each grouped onto its own
     # per-array device: measured PV Power, shading/visibility, tuned tilt, azimuth, and
@@ -101,6 +104,7 @@ async def async_setup_entry(
         entities.append(SiteAzimuthSensor(coordinator, entry, site_id, name))
         entities.append(SiteTuningRmseSensor(coordinator, entry, site_id, name))
         entities.append(SiteCurrentDampeningSensor(coordinator, entry, site_id, name))
+        entities.append(SiteShadingAdvisorySensor(coordinator, entry, site_id, name))
     async_add_entities(entities)
 
 
@@ -345,6 +349,53 @@ class SiteShadingSensor(SolcastEnhancedSiteEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.coordinator.site_visibility_attributes(self._site_id)
+
+
+class ShadingAdvisorySensor(SolcastEnhancedEntity):
+    """Diagnostic: measured beam-attributable shading loss for the whole property.
+
+    State is the share of expected output that the fitted sky map attributes to a
+    blocked *sun*, energy-weighted across the stored history. It is an advisory
+    only — it is never pushed to the base integration, and it is not the dampening
+    factor. See ``shading_geometry`` for why the single-array fit is not accurate
+    enough below ~15 deg of solar elevation to divide a forecast by.
+    """
+
+    _attr_translation_key = "shading_advisory"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_SHADING_ADVISORY)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.shading_advisory
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.shading_advisory_attributes
+
+
+class SiteShadingAdvisorySensor(SolcastEnhancedSiteEntity):
+    """Diagnostic: measured beam-attributable shading loss for one array."""
+
+    _attr_translation_key = "site_shading_advisory"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: SolcastEnhancedCoordinator, entry: ConfigEntry, site_id: str, name: str) -> None:
+        super().__init__(coordinator, entry, site_id, name, SENSOR_SITE_SHADING_ADVISORY)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.site_shading_advisory(self._site_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.coordinator.site_shading_advisory_attributes(self._site_id)
 
 
 class SiteOutputSensor(SolcastEnhancedSiteEntity):

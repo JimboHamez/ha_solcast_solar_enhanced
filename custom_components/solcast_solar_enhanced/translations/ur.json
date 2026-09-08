@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "بنیادی انٹیگریشن کی حالت"
+      },
+      "shading_advisory": {
+        "name": "سایے سے نقصان (پیمائش شدہ)"
+      },
+      "site_shading_advisory": {
+        "name": "سایے سے نقصان (پیمائش شدہ)"
       }
     }
   },

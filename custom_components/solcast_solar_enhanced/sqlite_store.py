@@ -7,6 +7,14 @@ fresh and complete (``has_site_col`` / ``has_battery_col`` are always true).
 Columns added in later versions are applied to existing databases in place via an
 additive ``ALTER TABLE`` (see ``_ADDED_COLUMNS`` / ``_ensure_columns``); one-time
 *data* repairs are gated separately on ``PRAGMA user_version`` (``async_migrate``).
+
+A new column must be added in **three** places or the schema silently drifts:
+``CREATE_TABLE_SQL`` (so a fresh database is complete without relying on the
+ALTER pass), ``_ADDED_COLUMNS`` (so an existing database gains it) and
+``_INSERT_COLUMNS`` + ``_row_values`` (so it is actually written). Appending it
+last in ``CREATE_TABLE_SQL``, in ``_ADDED_COLUMNS`` order, also keeps a fresh
+database's physical column order identical to an upgraded one's.
+``tests/test_sqlite_store.py`` pins all three against each other.
 """
 
 from __future__ import annotations
@@ -17,7 +25,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from .const import DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS
+from .const import DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS, SHADING_ZENITH_MAX
 from .pv_tuning import clearsky_ghi, solar_position
 
 if TYPE_CHECKING:
@@ -65,6 +73,7 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_vmed2         REAL NOT NULL DEFAULT 0,
   dc_imed1         REAL NOT NULL DEFAULT 0,
   dc_imed2         REAL NOT NULL DEFAULT 0,
+  pv_estimate_undampened REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -503,6 +512,46 @@ class SqliteStore:
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )
         params = (*site_params, *gate_params, limit)
+        return await self._hass.async_add_executor_job(self._query, sql, params)
+
+    async def async_get_records_for_shading(
+        self,
+        site: str | None = None,
+        limit: int = 6000,
+        zenith_max: float = SHADING_ZENITH_MAX,
+    ) -> list[dict[str, Any]]:
+        """Fetch daylight records for the geometric shading advisory.
+
+        This is the **only** query that returns the per-tracker median DC telemetry
+        (``dc_vmed*`` / ``dc_imed*``). Those columns exist to answer one question the
+        AC-side ratio cannot: whether a low-sun loss is a *uniform* shadow line across
+        every module (current falls, the tracker stays at Vmp, the loss is linear in
+        unshaded area) or a *bypass-diode* event (voltage collapses, and no
+        multiplicative transmission factor can represent it). See
+        ``shading_geometry.classify_mechanism``.
+
+        Deliberately **not** clear-sky gated. The advisory needs the overcast records
+        too: they carry no beam to block, so they establish the unshaded baseline that
+        the beam-shaded records are measured against. Gating them out is precisely the
+        mistake that hides shading from the dampening path.
+
+        ``pv_estimate_undampened`` is returned alongside ``pv_estimate`` because the
+        advisory's expected output must be the forecast *before* our own pushed
+        factors; using the dampened figure would measure our own correction back.
+        """
+        if self._conn is None:
+            return []
+        site_clause, site_params = self._site_filter(site)
+        sql = (
+            "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
+            "COALESCE(pv_estimate_undampened, 0.0) AS pv_estimate_undampened, "
+            "azimuth, zenith, clouds, temp, ghi, dni, dhi, "
+            "dc_vmed1, dc_vmed2, dc_imed1, dc_imed2 "
+            "FROM solcast_data "
+            f"WHERE pv_actual > 0 AND zenith < ?{site_clause} "
+            "ORDER BY period_end_epoch DESC LIMIT ?"
+        )
+        params = (float(zenith_max), *site_params, limit)
         return await self._hass.async_add_executor_job(self._query, sql, params)
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:

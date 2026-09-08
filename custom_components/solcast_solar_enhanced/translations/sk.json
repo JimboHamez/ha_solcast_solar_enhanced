@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Stav základnej integrácie"
+      },
+      "shading_advisory": {
+        "name": "Straty tienením (namerané)"
+      },
+      "site_shading_advisory": {
+        "name": "Straty tienením (namerané)"
       }
     }
   },

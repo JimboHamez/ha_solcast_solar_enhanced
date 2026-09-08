@@ -6,8 +6,8 @@ import pytest
 
 from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
-    _cos_incidence,
-    _extraterrestrial_normal,
+    cos_incidence,
+    extraterrestrial_normal,
     _minimize_tilt,
     clearsky_ghi,
     normalize_epoch,
@@ -165,20 +165,20 @@ def test_solar_azimuth_morning_is_eastern_half():
 
 
 # ---------------------------------------------------------------------------
-# _cos_incidence
+# cos_incidence
 # ---------------------------------------------------------------------------
 
 def test_cos_incidence_panel_facing_sun():
     """Panel perfectly facing the sun returns cos_incidence ≈ 1."""
     # Horizontal panel (tilt=0) with sun directly overhead (zenith=0)
-    val = _cos_incidence(0.0, 0.0, 0.0, 0.0)
+    val = cos_incidence(0.0, 0.0, 0.0, 0.0)
     assert abs(val - 1.0) < 1e-6
 
 
 def test_cos_incidence_panel_facing_away():
     """Panel facing away from sun clamps to 0."""
     # Sun at zenith=0 (overhead), panel tilted 90° facing away
-    val = _cos_incidence(90.0, 180.0, 0.0, 0.0)
+    val = cos_incidence(90.0, 180.0, 0.0, 0.0)
     assert val >= 0.0  # clamped, never negative
 
 
@@ -389,7 +389,7 @@ def test_run_tuning_recovers_synthetic_tilt_hay_davies_default():
         dni, dhi = 850.0, 90.0
         ghi = dni * math.cos(math.radians(zen)) + dhi
         doy = datetime.fromtimestamp(normalize_epoch(ep), tz=timezone.utc).timetuple().tm_yday
-        obs = true_scale * hd_poa(true_tilt, zen, az, ghi, dni, dhi, _extraterrestrial_normal(doy))
+        obs = true_scale * hd_poa(true_tilt, zen, az, ghi, dni, dhi, extraterrestrial_normal(doy))
         records.append({
             "period_end_epoch": ep, "pv_actual": obs, "pv_export": 0.0,
             "pv_estimate": 0.0, "clouds": 0, "zenith": zen, "azimuth": az,
@@ -423,7 +423,7 @@ def test_sky_model_choice_materially_changes_tilt():
         dni, dhi = 850.0, 90.0
         ghi = dni * math.cos(math.radians(zen)) + dhi
         doy = datetime.fromtimestamp(normalize_epoch(ep), tz=timezone.utc).timetuple().tm_yday
-        i0 = _extraterrestrial_normal(doy)
+        i0 = extraterrestrial_normal(doy)
         tr, ar = math.radians(true_tilt), math.radians(fixed_az)
         z = math.radians(zen)
         caoi = max(0.0, math.cos(z) * math.cos(tr) + math.sin(z) * math.sin(tr) * math.cos(math.radians(az) - ar))

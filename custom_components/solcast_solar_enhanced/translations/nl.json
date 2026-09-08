@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Status van de basisintegratie"
+      },
+      "shading_advisory": {
+        "name": "Beschaduwingsverlies (gemeten)"
+      },
+      "site_shading_advisory": {
+        "name": "Beschaduwingsverlies (gemeten)"
       }
     }
   },

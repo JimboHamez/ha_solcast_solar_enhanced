@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Stan integracji bazowej"
+      },
+      "shading_advisory": {
+        "name": "Straty z zacienienia (zmierzone)"
+      },
+      "site_shading_advisory": {
+        "name": "Straty z zacienienia (zmierzone)"
       }
     }
   },

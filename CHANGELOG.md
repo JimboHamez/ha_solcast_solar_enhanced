@@ -5,6 +5,40 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Geometric shading advisory — a sky map of where each array loses sun.** The
+  adaptive dampening measures shading by clock hour and day-of-year, which scramble
+  solar elevation, and then discards the overcast records that establish the
+  unshaded baseline. This reads the same database in **sun-position space** instead:
+  the stored Open-Meteo irradiance is transposed to the panel plane, split into beam
+  and diffuse, and each beam-dominated record is inverted for the shadow
+  transmission that explains it, building a map on a 5°×15° elevation/azimuth grid.
+  Two new diagnostic sensors — **Shading Loss (Measured)** for the property and one
+  per configured array — report the beam-attributable loss with the worst compass
+  bearing and elevation. The full sky map goes to diagnostics.
+  **This is advisory only: it is never pushed to Solcast and does not change your
+  dampening factors.**
+- **The per-tracker median DC columns now do something.** `dc_vmed*`/`dc_imed*` have
+  been collected since 1.11.0b2 and read by nothing. `async_get_records_for_shading`
+  is the first query that returns them, and `classify_mechanism` is the first
+  consumer: steady voltage with collapsing current is a shadow lying evenly across
+  the panels (a loss that is linear in shaded area, so it can be modelled), while a
+  voltage that falls with it means bypass diodes have kicked in and no single factor
+  can represent it. The advisory reports which it found, and whether the model is
+  valid for your roof at all.
+
+### Changed
+- `pv_tuning.cos_incidence` and `extraterrestrial_normal` are now public, shared with
+  the new module rather than copied into it.
+
+### Notes
+- The single-array fit is **unreliable below ~15° of solar elevation** — an
+  obstruction that blocks the sun blocks part of the sky too, which the model does
+  not separate. Results down there set a `low_sun_uncertain` flag rather than hiding
+  it. Shading that affects *every* array equally is invisible to this method.
+
 ## [1.11.0b2] - 2026-09-04
 
 > Beta. Data collection only — two changes to the per-MPPT DC telemetry, both

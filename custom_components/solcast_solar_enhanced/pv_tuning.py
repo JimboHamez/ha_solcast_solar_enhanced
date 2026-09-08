@@ -50,7 +50,7 @@ def panel_azimuth_to_internal(solcast_az: float) -> float:
     The base integration (and the Solcast API) express panel azimuth as degrees
     from North with **West positive, East negative** (0=N, ±180=S, +90=W, −90=E,
     range −180..180). The internal solar frame used by ``solar_position`` and
-    ``_cos_incidence`` is **East positive** (0=N, 90=E, 270=W). The two mirror on
+    ``cos_incidence`` is **East positive** (0=N, 90=E, 270=W). The two mirror on
     the East-West axis, so the conversion is a sign flip wrapped to [−180, 180].
     """
     return ((-float(solcast_az) + 180.0) % 360.0) - 180.0
@@ -123,7 +123,7 @@ def clearsky_ghi(zenith_deg: float) -> float:
     return 1098.0 * cos_z * math.exp(-0.059 / cos_z)
 
 
-def _cos_incidence(tilt_deg: float, azimuth_deg: float, zenith_deg: float, sun_az_deg: float) -> float:
+def cos_incidence(tilt_deg: float, azimuth_deg: float, zenith_deg: float, sun_az_deg: float) -> float:
     """Cosine of angle of incidence of sunlight on a tilted panel."""
     tilt = math.radians(tilt_deg)
     panel_az = math.radians(azimuth_deg)
@@ -189,7 +189,7 @@ def _minimize_tilt(eval_tilt: Callable[[float], float], initial_tilt: float = 20
     return best_t, best_v
 
 
-def _extraterrestrial_normal(doy: int) -> float:
+def extraterrestrial_normal(doy: int) -> float:
     """Extraterrestrial normal irradiance for a day-of-year (W/m²)."""
     return _SOLAR_CONSTANT * (1.0 + 0.033 * math.cos(2.0 * math.pi * doy / 365.0))
 
@@ -267,7 +267,7 @@ def run_tuning(
         ghi.append(g)
         dni.append(float(r.get("dni", 0) or 0))
         dhi.append(float(r.get("dhi", 0) or 0))
-        i0.append(_extraterrestrial_normal(doy))
+        i0.append(extraterrestrial_normal(doy))
 
     n_filtered = len(obs)
     if n_filtered < 10:

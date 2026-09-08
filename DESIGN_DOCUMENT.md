@@ -97,7 +97,9 @@ Persists historical PV data alongside solar position, weather and battery state 
 
 ### Implementation
 
-`SqliteStore` runs every call via `async_add_executor_job` under a serialising lock, in WAL mode (`synchronous=NORMAL`). The core schema is created complete on first run (so the `site` and `battery_charge` columns are always present); writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`. Schema evolution is additive only: the per-MPPT `dc_*` columns (v1.6.8) and the `ghi`/`dni`/`dhi` irradiance columns are `ALTER TABLE`d into older DBs (`_ensure_columns`), backfilled to `0`.
+`SqliteStore` runs every call via `async_add_executor_job` under a serialising lock, in WAL mode (`synchronous=NORMAL`). The core schema is created complete on first run (so the `site` and `battery_charge` columns are always present); writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`. Schema evolution is additive only: the per-MPPT `dc_*` columns (v1.6.8), the `ghi`/`dni`/`dhi` irradiance columns, the `dc_vmed*`/`dc_imed*` operating-point medians and `pv_estimate_undampened` are `ALTER TABLE`d into older DBs (`_ensure_columns`), backfilled to `0`.
+
+A new column must be declared in **three** places — `CREATE_TABLE_SQL`, `_ADDED_COLUMNS` and `_INSERT_COLUMNS`/`_row_values` — and appended *last* in `CREATE_TABLE_SQL` so a fresh database's physical column order matches an upgraded one's. Missing the `CREATE` half is silent, because `_ensure_columns` runs immediately after `CREATE TABLE` on a new database and quietly repairs it; `tests/test_sqlite_store.py` pins the three lists against each other so the drift fails the build instead.
 
 One-time **data repairs** (not schema changes) are gated by `PRAGMA user_version`, so they run silently once and no-op thereafter. v1 recomputes the solar `azimuth` column for rows written before the hour-angle wrap fix — reconstructable in place from each row's `period_end_epoch` + site lat/lon, rewriting only rows whose value actually moved (to spare SD-card wear).
 
@@ -132,6 +134,7 @@ CREATE TABLE solcast_data (
   dc_vmed2         REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC voltage, slot median (operating point, V)
   dc_imed1         REAL NOT NULL DEFAULT 0,        -- MPPT 1 DC current, slot median (operating point, A)
   dc_imed2         REAL NOT NULL DEFAULT 0,        -- MPPT 2 DC current, slot median (operating point, A)
+  pv_estimate_undampened REAL NOT NULL DEFAULT 0,  -- base forecast before our pushed dampening (kW); 0 = unavailable
   UNIQUE(period_end_epoch, site)
 );
 ```
@@ -480,7 +483,7 @@ Per-site **tuning** (`_run_site_tuning`) fits each site against its own rows, se
 
 ---
 
-## Sensors (17 property-wide)
+## Sensors (18 property-wide)
 
 Names below are the English strings. As of **v1.10.0b10** every sensor names itself with `_attr_translation_key` (no raw `_attr_name` remains), so the displayed name — and, for newly registered entities, the slugified entity id — follows the user's Home Assistant language.
 
@@ -572,6 +575,103 @@ reads ~100 when output tracks the forecast and falls as they diverge (local clou
 
 ---
 
+## Feature 8 — Geometric shading advisory (sky map)
+
+> **Status: unreleased (advisory only).** Read-only. It does **not** feed `set_dampening`,
+> and it is deliberately separate from [Feature 3](#feature-3--adaptive-shading-dampening).
+
+Feature 3 measures shading in the wrong coordinates. Shading is a function of **sun
+position**, but `shading_dampening` buckets history by clock hour and day-of-year, which
+scramble solar elevation, and then applies a clear-sky gate that discards exactly the
+overcast records establishing the unshaded baseline. The consequence is structural, not a
+tuning problem: on the live reference store the measured morning ratio was 0.30–0.59 while
+the pushed factor was 0.97–1.00, and because the push is clamped to `[0, 1]` the error is
+entirely one-signed — it can only ever fail to dampen.
+
+This feature reads the same database in sun-position space instead.
+
+### Model
+
+For each record the stored Open-Meteo irradiance is transposed to the panel plane (the same
+Hay-Davies sky as PV tuning, via the shared `pv_tuning.cos_incidence` /
+`extraterrestrial_normal`), split into beam and diffuse, and the measured-to-forecast ratio
+is inverted for the shadow transmission that would explain it:
+
+```
+R = k · [ f(elev, azim) · b  +  s · (1 − b) ]
+
+b   beam fraction of plane-of-array irradiance (stored dni / dhi / ghi)
+f   shadow transmission — fitted surface, median per 5° × 15° sky cell
+k   intrinsic capacity ratio, fitted on high-sun beam-dominated records
+s   sky-view factor, fitted on high-sun overcast records
+```
+
+`f` is recovered **per record by closed-form inversion**, not by optimisation — no solver, no
+scipy, and (unlike PV tuning) no numpy either. `R`'s denominator is `pv_estimate_undampened`,
+so the advisory does not measure our own pushed correction back.
+
+### Three ways to get this wrong
+
+All three were hit or nearly hit during implementation, and all three are pinned by tests
+verified to fail against the wrong version:
+
+1. **`k` must be fitted separately.** Without it, an array's standing offset against Solcast
+   — loss factor, soiling, a mis-stated capacity — is booked as shading.
+2. **`s` must be fitted on *high-sun* overcast records only.** Diffuse-dominated records skew
+   hard towards low elevation, so pooling every elevation measures the beam shading a second
+   time and calls it sky view. Measured on the live store: the pooled fit gives **0.53**
+   against a high-sun fit of **0.85** on an unshaded array and **0.77** on its shaded
+   neighbour. This bug was live in the first implementation, and the first test fixture could
+   not see it either — it had no low-elevation overcast records, so pooling changed nothing.
+3. **The headline loss counts the beam term only.** Against a single array the diffuse
+   residual conflates a blocked sky dome with Solcast's own overcast bias, and they are not
+   separable without a co-oriented reference array. Only the beam mask is attributable to
+   shading, so only the beam mask is reported as shading.
+
+### Mechanism classification — what the median DC columns are for
+
+`classify_mechanism` is the **only consumer** of `dc_vmed*` / `dc_imed*`; everywhere else
+those columns are write-only. It compares low-sun against high-sun medians per tracker
+(current normalised by plane-of-array irradiance first, because current falls at low sun for
+the innocent reason that there is less light):
+
+| Voltage ratio | Meaning | `model_valid` |
+|---|---|---|
+| ≥ `SHADING_UNIFORM_VOLTAGE_MIN` (0.92) | Uniform shadow line across every module — loss is linear in unshaded area | yes |
+| ≤ `SHADING_BYPASS_VOLTAGE_MAX` (0.80) | Bypass diodes conducting — a non-linearity no multiplicative factor can represent | **no** |
+| between | Undetermined | unknown |
+
+The thresholds are looser than the 0.996 a *differential* measurement gives, because comparing
+one array's low sun against its own high sun carries an innocent Vmp drop (Vmp falls
+logarithmically with irradiance and rises as cells cool). Calibrated on a store where the
+differential had already proved the shadow uniform: that array reads **0.967** here, so a 0.97
+threshold would have misfiled a known-uniform shadow. The **worst** tracker drives the verdict —
+one shaded string is enough to invalidate a single factor for the array.
+
+### Why it stays advisory
+
+- The single-array fit is **unreliable below ~15° elevation**. Fitting the same array both
+  ways agrees to 0.03 above 30° and diverges to 0.39 below 15°, with cells inverting to
+  negative transmission. The cause is structural: `s` is held constant, but an obstruction
+  blocking the beam blocks part of the sky dome too, so `s` is too generous in exactly the
+  shaded directions. A worst cell in that band — or any cell driven onto the clamp floor —
+  sets `low_sun_uncertain`.
+- Shading common to **every** array on the property is absorbed into the forecast residual
+  and is invisible here.
+- `evaluate()` returns `None` for an unvisited sky cell: unfitted is unknown, not unshaded.
+
+### Surfacing
+
+Fitted every `SHADING_INTERVAL_HOURS` (24 h) in an executor, for the property and each
+configured array. `ShadingAdvisorySensor` / `SiteShadingAdvisorySensor` report the
+beam-attributable loss as a percentage, diagnostic category, with `worst_bearing`,
+`worst_elevation`, `mechanism`, `model_valid`, `sky_view`, `low_sun_uncertain` and
+`advisory_only: true` attributes. The **full sky map goes to diagnostics, not entity
+attributes** — up to 100 cells would otherwise be written to the recorder on every state
+change.
+
+---
+
 ## Roadmap
 
 ### Database retention (implemented)
@@ -581,6 +681,17 @@ reads ~100 when output tracks the forecast and falls as they diverge (local clou
 ### Indexed day-of-year column for the seasonal dampening scan
 
 The dampening query filters on a *computed* day-of-year expression (`strftime('%j', …)`), which no index can serve — so it is a full table scan that slows on multi-year DBs on SD-card I/O. (The 48× redundant re-scan was already removed.) **Option:** persist and index a UTC day-of-year column at insert time, turning the scan into an indexed range lookup (a schema add + one-time backfill, gated by the existing `PRAGMA user_version` mechanism). **Deferred** — the retention option above already bounds the row count; revisit if per-query cost matters when retention is left at *keep everything*.
+
+### Security hardening (open)
+
+Raised by the 2026-09-04 schema-completeness and security review. None is a defect — the review found **no vulnerabilities** — and each is a judgement call rather than a correction, so they are listed for the next update rather than applied.
+
+The baseline they sit on is deliberately strong and should be protected: `manifest.json` declares `"requirements": []`, so there is **no third-party runtime dependency to inherit a CVE from** (numpy is optional and comes from HA core; storage is stdlib `sqlite3`). Adding a first `requirements` entry is the single change that would create a CVE surface where none exists today.
+
+1. **Pin `aquasecurity/trivy-action@master` to a release SHA.** A mutable third-party ref in a workflow granted `security-events: write`; any push to that action's default branch runs in our CI. Blast radius is bounded (`contents: read`, no repo secrets beyond `GITHUB_TOKEN`), which is why this is hardening rather than urgent. `hacs/action@main` and `home-assistant/actions/hassfest@master` carry the same argument but are materially more defensible, being the HA/HACS ecosystem's own actions.
+2. **Narrow `_resolve_base_forecast_entity`'s attribute sweep.** It adopts *any* sensor exposing a `detailedForecast*` attribute as the base forecast source, so anything able to create an entity in HA (a template sensor, another integration, a blueprint) could steer the forecast the dampening push is computed from. Defence-in-depth only — the attacker is already inside the trust boundary. A cheap improvement is to prefer a candidate belonging to the base integration's config entry before falling back to the sweep. **Constraint:** the sweep exists because the base's entity ids are localised (issue #41), so an entry/platform check must be a *preference*, never a filter, or non-English installs regress.
+3. **Register the three actions with an explicit (empty) `vol.Schema`.** They take no schema today and ignore `call.data`, so a malformed call is silently accepted and discarded rather than rejected at the boundary. Harmless while they take no input; it stops being harmless the first time one grows a parameter.
+4. **Collapse the duplicate validation workflows.** `hassfest.yaml` and `validate.yaml` are fully subsumed by `validate.yml`, which runs both jobs with `actions/checkout@v4` and the `ignore: brands` HACS flag. All runs are green, so this is CI waste (two "Validate" runs plus one "Validate with hassfest" per push), not breakage. `hassfest.yaml` is still on the deprecated `actions/checkout@v3`.
 
 ### Curtailment-aware actual/forecast filtering (DC-telemetry off-MPP detection)
 

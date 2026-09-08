@@ -34,6 +34,9 @@
       "pv_forecast_confidence": {
         "default": "mdi:check-decagram"
       },
+      "shading_advisory": {
+        "default": "mdi:box-shadow"
+      },
       "site_azimuth": {
         "default": "mdi:compass"
       },
@@ -45,6 +48,9 @@
       },
       "site_shading": {
         "default": "mdi:home-roof"
+      },
+      "site_shading_advisory": {
+        "default": "mdi:box-shadow"
       },
       "site_tuned_tilt": {
         "default": "mdi:angle-acute"
