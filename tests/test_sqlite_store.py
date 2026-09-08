@@ -767,3 +767,57 @@ async def test_created_and_upgraded_schemas_have_identical_column_order(hass, tm
 
     assert upgraded == _create_table_columns()
 
+
+# ---------------------------------------------------------------------------
+# Shading advisory read path — the only query that returns the median DC columns
+# ---------------------------------------------------------------------------
+
+async def test_records_for_shading_returns_the_median_dc_columns(store):
+    """The median DC telemetry is write-only everywhere else; this query exposes it.
+
+    Without these four columns the mechanism classifier cannot tell a uniform
+    shadow line from a bypass-diode event, which is the whole reason they exist.
+    """
+    await store.async_insert_record(_record(
+        JUNE1, dc_vmed1=372.5, dc_vmed2=364.0, dc_imed1=6.25, dc_imed2=3.10,
+        ghi=680.0, dni=790.0, dhi=95.0, pv_estimate_undampened=4.6,
+    ))
+    rows = await store.async_get_records_for_shading()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["dc_vmed1"] == 372.5
+    assert row["dc_vmed2"] == 364.0
+    assert row["dc_imed1"] == 6.25
+    assert row["dc_imed2"] == 3.10
+    assert row["pv_estimate_undampened"] == 4.6
+    assert (row["ghi"], row["dni"], row["dhi"]) == (680.0, 790.0, 95.0)
+
+
+async def test_records_for_shading_keeps_overcast_records(store):
+    """Deliberately NOT clear-sky gated.
+
+    Overcast records carry no beam to block, so they are what establishes the
+    unshaded baseline. Gating them out is the mistake that hides shading from the
+    dampening path, so a gate appearing here would be a real regression.
+    """
+    await store.async_insert_record(_record(JUNE1, clouds=100, ghi=40.0))
+    await store.async_insert_record(_record(JUNE1 + 1800, clouds=0, ghi=800.0))
+    rows = await store.async_get_records_for_shading()
+    assert len(rows) == 2
+    assert {int(r["clouds"]) for r in rows} == {0, 100}
+
+
+async def test_records_for_shading_drops_night_and_filters_by_site(store):
+    await store.async_insert_record(_record(JUNE1, zenith=35.0))
+    await store.async_insert_record(_record(JUNE1 + 1800, zenith=95.0))
+    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=20.0))
+    assert len(await store.async_get_records_for_shading()) == 2
+    scoped = await store.async_get_records_for_shading(site="abc-123")
+    assert len(scoped) == 1
+    assert scoped[0]["zenith"] == 20.0
+
+
+async def test_records_for_shading_honours_the_limit(store):
+    for i in range(5):
+        await store.async_insert_record(_record(JUNE1 + i * 1800))
+    assert len(await store.async_get_records_for_shading(limit=3)) == 3

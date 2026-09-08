@@ -152,6 +152,46 @@ UPDATE_INTERVAL_MINUTES = 30
 HALF_HOUR_REFRESH_OFFSET_SECONDS = 30
 DAMPENING_INTERVAL_HOURS = 6
 TUNING_INTERVAL_HOURS = 24
+# Geometric shading advisory (read-only; never pushed to the base integration).
+SHADING_INTERVAL_HOURS = 24
+# Records above this solar zenith carry no usable beam and only add noise to the
+# sky map, so the advisory query drops them in SQL.
+SHADING_ZENITH_MAX = 90.0
+# Sky-map cell size. 5 deg of elevation by 15 deg of azimuth was the grid the
+# offline analysis fitted; finer cells fragment an already-thin low-sun sample.
+SHADING_ELEV_STEP = 5.0
+SHADING_AZIM_STEP = 15.0
+# A cell needs this many records before its median transmission is reported.
+SHADING_MIN_CELL_RECORDS = 5
+# Minimum records overall before the advisory reports anything at all.
+SHADING_MIN_RECORDS = 200
+# Beam fraction above which a record is "beam-dominated" (used to fit the shadow
+# mask) and below which it is "diffuse-dominated" (used to fit the sky-view
+# factor). Records between the two are used for neither.
+SHADING_BEAM_FRAC_HIGH = 0.6
+SHADING_BEAM_FRAC_LOW = 0.2
+# Elevation above which the array is assumed unshaded, used to fit the intrinsic
+# capacity ratio k against the undampened forecast.
+SHADING_CLEAN_ELEV_MIN = 35.0
+# Mechanism classification. A uniform shadow line leaves the tracker at Vmp, so
+# the median voltage ratio between low-sun and high-sun records stays high while
+# the irradiance-normalised current ratio falls. Below the bypass ceiling, diodes
+# are conducting and a multiplicative transmission factor is not a valid model.
+#
+# These are looser than the 0.996 a *differential* measurement gives (comparing two
+# co-oriented arrays at the same instant), because comparing a single array's low
+# sun against its own high sun carries an innocent Vmp drop: Vmp falls
+# logarithmically with irradiance and rises as the cells cool. Calibrated on a live
+# store where the differential had already proved the shadow uniform — that array
+# reads 0.967 here against a current ratio of 0.49, so 0.97 would have misfiled a
+# known-uniform shadow as undetermined. A real bypass event drops a whole cell
+# string, i.e. a third to a half of the array voltage, so 0.80 separates them with
+# room to spare.
+SHADING_UNIFORM_VOLTAGE_MIN = 0.92
+SHADING_BYPASS_VOLTAGE_MAX = 0.80
+# The current ratio must fall at least this far for there to be a loss worth
+# classifying at all.
+SHADING_MECHANISM_CURRENT_MAX = 0.85
 STORAGE_VERSION = 1
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
 # Open-Meteo endpoints (keyless). The forecast API serves recent/current data at
@@ -227,6 +267,8 @@ SENSOR_PV_EXPORT = "pv_export"
 SENSOR_BASE_STATUS = "base_status"
 SENSOR_MPPT_DC = "mppt_dc"
 SENSOR_PV_CONFIDENCE = "pv_forecast_confidence"
+SENSOR_SHADING_ADVISORY = "shading_advisory"
+SENSOR_SITE_SHADING_ADVISORY = "site_shading_advisory"
 
 # Services
 SERVICE_RUN_PV_TUNING = "run_pv_tuning"

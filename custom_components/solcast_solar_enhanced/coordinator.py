@@ -92,6 +92,7 @@ from .const import (
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
     PUSH_FACTOR_COUNT,
+    SHADING_INTERVAL_HOURS,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
@@ -99,6 +100,7 @@ from .const import (
 from .load_advisory import CONFIDENCE_HORIZON_HOURS, RECENT_BIAS_LOOKBACK_S, compute_confidence
 from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
 from .shading_dampening import average_slot_pairs, compute_dampening
+from .shading_geometry import analyse_shading
 from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SqliteStore
 
@@ -232,6 +234,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._weather: dict[str, Any] = {"temp": None, "clouds": None, "description": "unavailable"}
         self._tuning_result: dict[str, Any] | None = None
         self._site_tuning_results: dict[str, dict[str, Any]] = {}
+        # Geometric shading advisory (read-only — never pushed to the base).
+        self._shading_result: dict[str, Any] | None = None
+        self._site_shading_results: dict[str, dict[str, Any]] = {}
         self._dampening_table: list[dict[str, Any]] = []
         # Recent (epoch, pv_actual, pv_estimate) daylight slots driving the
         # short-horizon forecast-confidence advisory (item 3). Bounded; older than
@@ -250,6 +255,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         self._site_output: dict[str, dict[str, float]] = {}
         self._last_dampening_ts: float = 0.0
         self._last_tuning_ts: float = 0.0
+        self._last_shading_ts: float = 0.0
         self._last_prune_ts: float = 0.0
         self._db_record_count: int = 0
         # Freshness/coverage diagnostics surfaced on the Database Records sensor.
@@ -672,6 +678,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 await self._run_tuning(opts)
                 self._last_tuning_ts = float(now_epoch)
 
+        # Geometric shading advisory (daily). Read-only: it never feeds the push.
+        if now_epoch - self._last_shading_ts >= SHADING_INTERVAL_HOURS * 3600:
+            await self._run_shading_advisory(opts)
+            self._last_shading_ts = float(now_epoch)
+
         # Dampening (every 6 hours)
         if opts.get(CONF_AUTO_DAMPENING, True):
             elapsed_damp = now_epoch - self._last_dampening_ts
@@ -823,6 +834,53 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if results:
             self._site_tuning_results = results
             _LOGGER.debug("Per-site tuning results: %s", results)
+
+    async def _run_shading_advisory(self, opts: dict[str, Any]) -> None:
+        """Fit the geometric shading sky map for the property and each configured array.
+
+        Advisory only — the result is surfaced on sensors and in diagnostics and is
+        never pushed to the base integration. See ``shading_geometry`` for why the
+        single-array fit is not accurate enough below ~15 deg elevation to divide a
+        forecast by.
+        """
+        if not self._db:
+            return
+        albedo = float(opts.get(CONF_ALBEDO, DEFAULT_ALBEDO))
+        records = await self._db.async_get_records_for_shading(site=DEFAULT_SITE_ID)
+        if records:
+            result = await self.hass.async_add_executor_job(
+                analyse_shading,
+                records,
+                float(opts.get(CONF_TILT, 20.0)),
+                panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
+                albedo,
+            )
+            if result:
+                self._shading_result = result
+                _LOGGER.debug("Shading advisory: %s", result)
+
+        groups = opts.get(CONF_SITE_GROUPS) or []
+        by_id = {s["resource_id"]: s for s in self._sites}
+        results: dict[str, dict[str, Any]] = {}
+        for site_id in self._configured_site_ids(groups):
+            site_records = await self._db.async_get_records_for_shading(site=site_id)
+            if not site_records:
+                continue
+            tilt, azimuth = self._site_orientation_seed(site_id, opts)
+            result = await self.hass.async_add_executor_job(
+                analyse_shading,
+                site_records,
+                tilt,
+                azimuth,
+                albedo,
+            )
+            if result:
+                result["resource_id"] = site_id
+                result["name"] = by_id.get(site_id, {}).get("name")
+                results[site_id] = result
+        if results:
+            self._site_shading_results = results
+            _LOGGER.debug("Per-site shading advisory: %s", results)
 
     @staticmethod
     def _configured_site_ids(groups: list[dict[str, Any]]) -> list[str]:
@@ -2379,6 +2437,57 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         """Number of half-hour slots whose dampening is backed by DB history."""
         return sum(1 for s in self._dampening_table if s.get("source") not in ("no_data", "night"))
 
+    # ------------------------------------------------------------------
+    # Geometric shading advisory (read-only)
+    # ------------------------------------------------------------------
+
+    @property
+    def shading_advisory(self) -> float | None:
+        """Property-wide beam-attributable shading loss (%), or None when unfitted."""
+        return self._shading_result.get("loss_pct") if self._shading_result else None
+
+    @property
+    def shading_advisory_attributes(self) -> dict[str, Any]:
+        """Supporting detail for the shading advisory sensor."""
+        return self._advisory_attributes(self._shading_result)
+
+    def site_shading_advisory(self, site_id: str) -> float | None:
+        """One array's beam-attributable shading loss (%), or None when unfitted."""
+        result = self._site_shading_results.get(site_id)
+        return result.get("loss_pct") if result else None
+
+    def site_shading_advisory_attributes(self, site_id: str) -> dict[str, Any]:
+        """Supporting detail for one array's shading advisory sensor."""
+        return self._advisory_attributes(self._site_shading_results.get(site_id))
+
+    @staticmethod
+    def _advisory_attributes(result: dict[str, Any] | None) -> dict[str, Any]:
+        """Flatten a shading result into sensor attributes.
+
+        The full ``surface`` is deliberately omitted — it is up to 100 cells, which
+        belongs in diagnostics rather than in an entity's state attributes, where it
+        would be written to the recorder database on every update.
+        """
+        if not result:
+            return {}
+        return {
+            "worst_bearing": result.get("worst_bearing"),
+            "worst_elevation": result.get("worst_elevation"),
+            "worst_transmission": result.get("worst_transmission"),
+            "mechanism": result.get("mechanism"),
+            "model_valid": result.get("model_valid"),
+            "voltage_ratio": result.get("voltage_ratio"),
+            "current_ratio": result.get("current_ratio"),
+            "sky_view": result.get("sky_view"),
+            "sky_view_source": result.get("sky_view_source"),
+            "capacity_ratio": result.get("capacity_ratio"),
+            "n_records": result.get("n_records"),
+            "n_cells": result.get("n_cells"),
+            "n_cells_floored": result.get("n_cells_floored"),
+            "low_sun_uncertain": result.get("low_sun_uncertain"),
+            "advisory_only": True,
+        }
+
     @property
     def confidence(self) -> int | None:
         """Short-horizon forecast-confidence score (0–100), or None until there's data."""
@@ -2705,6 +2814,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "extra": self.tuning_extra,
                 "per_site": self._site_tuning_results,
                 "last_run_ts": self._last_tuning_ts,
+            },
+            # The full sky map lives here rather than in entity attributes: it is up
+            # to 100 cells and would otherwise be recorded on every state write.
+            "shading_advisory": {
+                "property": self._shading_result,
+                "per_site": self._site_shading_results,
+                "last_run_ts": self._last_shading_ts,
             },
             "dampening": {
                 "slots": self._dampening_table,

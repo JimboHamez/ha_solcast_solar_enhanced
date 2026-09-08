@@ -427,6 +427,7 @@ The per-site step asks which of these two topologies you have, then shows only t
 | PV Power 30min Average | kW | Average generation for the period (restored across restarts) |
 | PV Export 30min Average | kW | Average export for the period (restored across restarts) |
 | PV Forecast Confidence | 0–100 | Short-horizon load-scheduling decision aid — how well recent output is tracking the forecast (`rating` high/medium/low + `recent_bias` in attributes). A decision aid, not a forecast; never pushed to the base |
+| Shading Loss (Measured) | % | *Diagnostic.* Share of output lost to a blocked **sun**, from a fitted sky map of your roof — with the worst compass bearing and elevation, and whether the shadow is even across the panels or hitting bypass diodes. **Advisory only: never pushed to Solcast** |
 | Base Integration Status | — | `connected` or `not_detected` |
 
 All sensor names above are **translated into your Home Assistant language** (11 locales ship with the integration); the English names are shown here. Existing entities keep the entity IDs they were registered with, so nothing breaks on upgrade — but note that on a *fresh* install in a non-English language, Home Assistant builds each entity ID from the translated name, so the IDs will not be the English ones listed here. Check the entity IDs in Home Assistant before writing automations against them.
@@ -443,6 +444,7 @@ When you configure more than one array, each array gets **its own HA device** (g
 | `<array>` Azimuth | ° | That array's orientation as configured in Solcast — held fixed, never tuned |
 | `<array>` Tuning RMSE | kW | *Diagnostic.* That array's tuning fit error; the trust signal for its tuned tilt (lower = tighter fit) |
 | `<array>` Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect for that array for the current local hour — the per-array counterpart to the property-wide sensor above, so differently-shaded arrays can be watched apart |
+| `<array>` Shading Loss (Measured) | % | *Diagnostic.* That array's own shading sky map — which direction and how low the sun has to be before something blocks it. Advisory only |
 
 Each array's display name comes from the **sites** config step (defaults to its Solcast site name).
 
@@ -467,6 +469,8 @@ They also raise when the work itself fails, rather than logging quietly and repo
 > The entity IDs below are the **English** defaults. On a non-English install Home Assistant builds them from the translated names, so check yours under **Developer tools → States** before copying anything.
 
 ### Run a heavy load when the forecast is being trusted
+
+*Shading Loss (Measured)* is a different question from the dampening factors. Dampening asks "how much less than forecast does this hour usually produce?"; this asks **"where in the sky is something in the way?"** — building a map of your roof's horizon from the irradiance and output already in the database, and reporting the direction and sun height where the loss bites. It also says *what kind* of shadow it is: one lying evenly across the panels loses power in proportion to the area covered, while one triggering the bypass diodes does not, and only the first kind can be modelled by a simple factor at all. It is **read-only** — nothing here is sent to Solcast and your dampening is unchanged. Below about 15° of sun elevation the method cannot cleanly separate a blocked sun from a blocked sky, so it flags rather than hides that; and shading that dims *every* array on the property equally is invisible to it.
 
 *PV Forecast Confidence* scores how well the last few hours of real output tracked the forecast. It is a scheduling aid, not a forecast — high confidence means "today's forecast is behaving", which is when it is safe to commit a dishwasher or a car charge to it.
 

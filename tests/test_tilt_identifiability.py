@@ -17,7 +17,7 @@ from custom_components.solcast_solar_enhanced.const import DAMPENING_GATE_MIN_RE
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
 from custom_components.solcast_solar_enhanced.pv_tuning import (
     TUNING_AVAILABLE,
-    _extraterrestrial_normal,
+    extraterrestrial_normal,
     panel_azimuth_to_internal,
     run_tuning,
     solar_position,
@@ -59,7 +59,7 @@ def _records(noise: float = 0.0, low_sun_deficit: float = 0.0, days: int = 12, s
             cos_aoi = max(0.0, cz * math.cos(tr) + sz * math.sin(tr) * math.cos(math.radians(sun_az) - az_internal))
             # Hay-Davies, matching run_tuning's default model — an isotropic generator
             # here would bias the recovered tilt through model mismatch alone.
-            ai = min(1.0, max(0.0, dni / _extraterrestrial_normal(when.timetuple().tm_yday)))
+            ai = min(1.0, max(0.0, dni / extraterrestrial_normal(when.timetuple().tm_yday)))
             rb = cos_aoi / max(cz, 0.035)
             diffuse = dhi * (ai * rb + (1 - ai) * (1 + math.cos(tr)) / 2)
             poa = dni * cos_aoi + diffuse + ghi * 0.2 * (1 - math.cos(tr)) / 2

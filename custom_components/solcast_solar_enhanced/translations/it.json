@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Stato dell'integrazione di base"
+      },
+      "shading_advisory": {
+        "name": "Perdita da ombreggiamento (misurata)"
+      },
+      "site_shading_advisory": {
+        "name": "Perdita da ombreggiamento (misurata)"
       }
     }
   },

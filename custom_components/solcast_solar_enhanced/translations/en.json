@@ -252,6 +252,12 @@
       },
       "base_status": {
         "name": "Base Integration Status"
+      },
+      "shading_advisory": {
+        "name": "Shading Loss (Measured)"
+      },
+      "site_shading_advisory": {
+        "name": "Shading Loss (Measured)"
       }
     }
   },
