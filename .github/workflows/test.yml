@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Both jobs only check out the repo and install from PyPI; neither writes
+# back to it. Not the empty `permissions: {}` used by validate.yaml, which
+# has no checkout step to feed.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     name: pytest
