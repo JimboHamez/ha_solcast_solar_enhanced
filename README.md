@@ -38,7 +38,22 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b2
+## 🆕 What's new in v1.11.0b3
+
+**Beta: your roof now gets a shading map — which direction the sun has to come from, and how low it has to be, before something gets in the way.**
+
+Until now the integration measured shading by asking "how much less than forecast does this hour usually produce?". That question is asked in the wrong units. Shading depends on **where the sun is**, but an hour of the clock means a different sun position in July than it does in December, so a real morning shadow gets averaged away across the season. On the reference system the measured morning loss was 30–59% while the correction actually applied was 0–3%.
+
+The new **Shading Loss (Measured)** sensor asks the right question instead. Using the irradiance and output already in your database, it works out how much of the direct sun each array is losing, and from which part of the sky — reporting a compass bearing and a sun elevation. You get one for the property and one for each array.
+
+It also reports **what kind of shadow it is**, using the per-tracker DC figures collected since b2. A shadow lying evenly across the panels drops the current while the voltage holds steady, and loses power in proportion to the area covered. One that triggers the panels' bypass diodes drops the voltage too, and does not behave proportionally at all. Only the first kind can be described by a simple correction factor, so the sensor tells you which you have.
+
+**This is read-only.** Nothing here is sent to Solcast, and your dampening factors are exactly as they were. It is a diagnostic — the aim is that you can see what your roof is doing before anything acts on it.
+
+Two honest limits, both reported rather than hidden. Below about 15° of sun elevation the method cannot cleanly separate "the sun is blocked" from "the sky is blocked", so results down there are flagged as uncertain. And shading that dims *every* array on the property equally is invisible to it — there is nothing left to compare against.
+
+<details>
+<summary><b>What landed in v1.11.0b2</b></summary>
 
 **Beta: the integration now records the DC current your trackers actually held, not just their worst instant.** This is a data-collection release. Nothing reads the new figures yet, and your tuning, dampening and the factors pushed to Solcast are unchanged.
 
@@ -49,6 +64,8 @@ Alongside it there is now a **median** current — the value the tracker held fo
 **This only accumulates going forward** — a lowest reading can't be turned back into a typical one after the event — so the sooner it is running, the more of this spring it captures.
 
 **Also fixed: the whole-property DC row was empty on multi-array systems.** If you have more than one array and mapped each one's trackers on the sites step, the property-wide DC figures had been recorded once at setup and then stayed at zero, while the per-array rows filled up normally. The **MPPT DC Voltage** sensor hid this — the headline number it shows was already drawn from the per-array trackers, so it looked fine. Its per-tracker attributes will go from zero to real values.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0b1</b></summary>
