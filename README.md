@@ -9,7 +9,8 @@
 [![HA quality scale](https://img.shields.io/badge/HA%20quality%20scale-gold-CFB53B?style=for-the-badge)](#home-assistant-quality-scale)
 
 [![Tests](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/test.yml)
-[![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yml)
+[![Validate](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yaml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/validate.yaml)
+[![hassfest](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/hassfest.yaml)
 [![Security](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/security.yml/badge.svg)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/actions/workflows/security.yml)
 
 An adaptive forecasting layer that uses the telemetry available from your PV system to identify and compensate for site-specific differences between modelled and actual generation.
