@@ -577,7 +577,7 @@ reads ~100 when output tracks the forecast and falls as they diverge (local clou
 
 ## Feature 8 — Geometric shading advisory (sky map)
 
-> **Status: unreleased (advisory only).** Read-only. It does **not** feed `set_dampening`,
+> **Status: v1.11.0b3 (advisory only).** Read-only. It does **not** feed `set_dampening`,
 > and it is deliberately separate from [Feature 3](#feature-3--adaptive-shading-dampening).
 
 Feature 3 measures shading in the wrong coordinates. Shading is a function of **sun
