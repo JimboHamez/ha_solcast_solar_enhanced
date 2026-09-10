@@ -641,7 +641,7 @@ the innocent reason that there is less light):
 | ≤ `SHADING_BYPASS_VOLTAGE_MAX` (0.80) | Bypass diodes conducting — a non-linearity no multiplicative factor can represent | **no** |
 | between | Undetermined | unknown |
 
-The thresholds are looser than the 0.996 a *differential* measurement gives, because comparing
+The thresholds are looser than the 0.996 a *differential* measurement gives (`tools/differential_shading_fit.py`), because comparing
 one array's low sun against its own high sun carries an innocent Vmp drop (Vmp falls
 logarithmically with irradiance and rises as cells cool). Calibrated on a store where the
 differential had already proved the shadow uniform: that array reads **0.967** here, so a 0.97
@@ -651,8 +651,12 @@ one shaded string is enough to invalidate a single factor for the array.
 ### Why it stays advisory
 
 - The single-array fit is **unreliable below ~15° elevation**. Fitting the same array both
-  ways agrees to 0.03 above 30° and diverges to 0.39 below 15°, with cells inverting to
-  negative transmission. The cause is structural: `s` is held constant, but an obstruction
+  ways (`tools/differential_shading_fit.py`) agrees to **0.018** above 30° and diverges to
+  **0.162** below 15° — worst cell 0.50 — on the 78-day two-array store, with cells inverting
+  to negative transmission. The capacity and sky-view terms agree between the two methods to
+  within 0.02, so the divergence is specifically the low-sun **beam mask** and not the model
+  elsewhere. (An earlier run quoted 0.03/0.39; those figures came from a snapshot whose script
+  was never committed, which is why the tool now ships.) The cause is structural: `s` is held constant, but an obstruction
   blocking the beam blocks part of the sky dome too, so `s` is too generous in exactly the
   shaded directions. A worst cell in that band — or any cell driven onto the clamp floor —
   sets `low_sun_uncertain`.
@@ -692,6 +696,18 @@ The baseline they sit on is deliberately strong and should be protected: `manife
 2. **Narrow `_resolve_base_forecast_entity`'s attribute sweep.** It adopts *any* sensor exposing a `detailedForecast*` attribute as the base forecast source, so anything able to create an entity in HA (a template sensor, another integration, a blueprint) could steer the forecast the dampening push is computed from. Defence-in-depth only — the attacker is already inside the trust boundary. A cheap improvement is to prefer a candidate belonging to the base integration's config entry before falling back to the sweep. **Constraint:** the sweep exists because the base's entity ids are localised (issue #41), so an entry/platform check must be a *preference*, never a filter, or non-English installs regress.
 3. **Register the three actions with an explicit (empty) `vol.Schema`.** They take no schema today and ignore `call.data`, so a malformed call is silently accepted and discarded rather than rejected at the boundary. Harmless while they take no input; it stops being harmless the first time one grows a parameter.
 4. **Collapse the duplicate validation workflows.** `hassfest.yaml` and `validate.yaml` are fully subsumed by `validate.yml`, which runs both jobs with `actions/checkout@v4` and the `ignore: brands` HACS flag. All runs are green, so this is CI waste (two "Validate" runs plus one "Validate with hassfest" per push), not breakage. `hassfest.yaml` is still on the deprecated `actions/checkout@v3`.
+
+### Promoting the shading advisory into a correction (on hold)
+
+**Where it stands.** The decomposition already exists: `poa_components` splits beam/diffuse/ground, `analyse_shading` fits the capacity ratio `k`, the sky-view factor `s` and the per-cell beam transmission `f`, and `evaluate()` can already return a factor for a given sun position and beam fraction. `evaluate()` has **no callers** — the pieces are staged, not half-wired.
+
+**Why it is not wired.** Three separate blockers, in order of severity:
+
+1. **The single-array fit cannot be trusted near the horizon** (see *Why it stays advisory*), which is exactly where the mask is deepest. Anything pushed must rest on the *differential* fit, which cancels the forecast out of the measurement — that instrument now exists (`tools/differential_shading_fit.py`) but is offline and manual.
+2. **The sky-view term is under-sampled.** `s` is fitted on high-sun *overcast* records, of which the 78-day two-array store holds only **23**. That is the term any diffuse correction would carry, and 23 samples will not support it. Winter should supply them; re-run the tool and watch `n_diffuse` before revisiting.
+3. **`model_valid` must gate the push.** A multiplicative factor is only defensible while the loss is linear in shaded area. Once bypass diodes conduct, no single factor can represent the array, and `classify_mechanism` already says so — but nothing consumes the flag. Pushing without honouring it would produce confidently wrong corrections on precisely the partially-shaded roofs that most need help.
+
+**Shape of the eventual change**, if all three clear: apply `evaluate()` per site where the map is confident (populated cell, elevation above the uncertain band, `model_valid` true) and fall back to the residual dampener everywhere else. The diffuse component ships with that step, since the decomposition already computes it and merely withholds it from the headline today.
 
 ### Curtailment-aware actual/forecast filtering (DC-telemetry off-MPP detection)
 
@@ -773,7 +789,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.10.0b1** (dampening's clear-sky quality weighting moved onto the measured Kt index). Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`). **v1.10.0** promotes that ten-beta line to stable unchanged; the design content above is current for it.
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.11.0b5**. The 1.11.0 beta line added the geometric shading advisory (Feature 8, b3), the `shared_no_dc` measurement topology for properties with one combined meter and no per-array telemetry (b4), and committed the differential shading fit as `tools/differential_shading_fit.py` (b5). Earlier, **v1.10.0b1** moved dampening's clear-sky quality weighting onto the measured Kt index. Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`). **v1.10.0** promotes that ten-beta line to stable unchanged; the design content above is current for it.
 
 ---
 
