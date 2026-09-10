@@ -43,6 +43,7 @@ from custom_components.solcast_solar_enhanced.const import (
     DOMAIN,
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
+    SITE_TOPOLOGY_SHARED_NO_DC,
 )
 from custom_components.solcast_solar_enhanced.config_flow import (
     _TOPOLOGY_FIELD,
@@ -50,6 +51,7 @@ from custom_components.solcast_solar_enhanced.config_flow import (
     _derive_groups,
     _parse_sites_input,
     _seed_flat_mppt,
+    _validate_direct,
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -281,12 +283,29 @@ async def test_multi_site_flow_shows_sites_step(hass):
     assert result["step_id"] == "sites"
 
 
-async def test_sites_step_prefills_generation_from_system_sensor(hass):
-    """D2a — each per-array generation field is pre-filled with the system-wide
-    PV generation sensor entered on Step 1."""
+async def test_sites_step_direct_does_not_prefill_generation_sensor(hass):
+    """D2a — direct mode leaves each per-array generation field empty.
+
+    Seeding it with the system-wide sensor pre-fills a misconfiguration: direct
+    means one sensor per array, so the same whole-system entity on every row
+    double-counts the property (see ``_validate_direct``). The user must pick.
+    """
     _set_two_sites(hass)
     result = await _advance_to_sites(hass)
     suggested = _suggested_for_suffix(result, "— generation sensor")
+    assert len(suggested) == 2
+    assert all(v is None for v in suggested)
+
+
+async def test_sites_step_dc_split_prefills_shared_generation_sensor(hass):
+    """D2a — dc_split *does* prefill: there every row carries the same shared AC
+    sensor by definition, so the Step 1 entity is the right suggestion."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_DC_SPLIT}
+    )
+    suggested = _suggested_for_suffix(result, "— AC generation sensor (shared)")
     assert len(suggested) == 2
     assert all(v == STEP_SITE[CONF_PV_ACTUAL_SENSOR] for v in suggested)
 
@@ -303,7 +322,10 @@ def _sites_submission(result, mode, ac_map, dc_map=None) -> dict:
         if name == _TOPOLOGY_FIELD:
             continue
         if "generation sensor" in name:
-            sub[name] = ac_map[_site_for(name)]
+            # A falsy mapping means "left blank": the entity picker rejects an
+            # empty string, so the field is omitted the way an untouched one is.
+            if ac := ac_map[_site_for(name)]:
+                sub[name] = ac
         elif name.endswith("(for split)"):
             val = (dc_map or {}).get(_site_for(name))
             if val is not None:
@@ -448,6 +470,85 @@ async def test_sites_step_dc_split_ac_mismatch_errors(hass):
     )
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "dc_split_ac_mismatch"}
+
+
+async def test_sites_step_direct_rejects_duplicate_ac(hass):
+    """Direct mode with one shared sensor on both arrays surfaces a form error.
+
+    This is the shared-meter install (e.g. a Tesla Powerwall 3) reaching for the
+    only sensor it has. Accepting it would record the whole property on each
+    array, whose actual/forecast ratio then clamps to 1.0 — silently no
+    dampening at all, on a base flipped into granular per-site mode.
+    """
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.shared", "B": "sensor.shared"}),
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert result["errors"] == {"base": "direct_ac_duplicate"}
+
+
+async def test_sites_step_direct_allows_one_array_mapped(hass):
+    """One array mapped and the other left blank is not a duplicate."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    submission = _sites_submission(result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.ac_a", "B": ""})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], submission)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert [g["site"] for g in result["data"][CONF_SITE_GROUPS]] == ["AAAA"]
+
+
+async def test_sites_step_shared_no_dc_renders_only_the_selector(hass):
+    """shared_no_dc has nothing mappable, so no per-site fields are rendered."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_SHARED_NO_DC}
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert _schema_keys(result) == {_TOPOLOGY_FIELD}
+
+
+async def test_sites_step_shared_no_dc_maps_no_sites(hass):
+    """shared_no_dc completes the flow with no groups — the property is measured
+    as a single aggregate, which is all one combined reading supports."""
+    _set_two_sites(hass)
+    result = await _advance_to_sites(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_SHARED_NO_DC}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_SHARED_NO_DC}
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_SITE_TOPOLOGY] == SITE_TOPOLOGY_SHARED_NO_DC
+    assert result["data"][CONF_SITE_GROUPS] == []
+
+
+def test_derive_groups_shared_no_dc_maps_nothing_even_when_assigned():
+    """shared_no_dc returns no groups even for assignments the other modes would
+    happily map — the mode is the decision, not the absence of input."""
+    assignments = {
+        "AAAA": {"ac": "sensor.shared", "dc": ["sensor.mppt1"], "mode": "auto"},
+        "BBBB": {"ac": "sensor.shared", "dc": ["sensor.mppt2"], "mode": "auto"},
+    }
+    assert _derive_groups(assignments, mode=SITE_TOPOLOGY_SHARED_NO_DC) == []
+    # Same input under dc_split does produce a group, so the assertion above is
+    # about the mode rather than about unmappable input.
+    assert _derive_groups(assignments, mode=SITE_TOPOLOGY_DC_SPLIT)
+
+
+def test_validate_direct_accepts_distinct_sensors():
+    """Distinct per-array sensors are the valid direct topology."""
+    assignments = {
+        "AAAA": {"ac": "sensor.ac_a"},
+        "BBBB": {"ac": "sensor.ac_b"},
+    }
+    assert _validate_direct(assignments) is None
 
 
 async def _advance_options_to_sites(hass, entry):
@@ -782,6 +883,47 @@ async def test_options_sites_step_rejects_incomplete_dc_split(hass):
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "sites"
     assert result["errors"] == {"base": "dc_split_missing_dc"}
+
+
+async def test_options_sites_step_rejects_duplicate_ac_in_direct(hass):
+    """The options flow validates direct mode too, and reports it on the form."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("opt_dup", with_topology=True)
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+
+    # Switch to direct (re-render drops the DC fields), then map one sensor twice.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_DIRECT}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _sites_submission(result, SITE_TOPOLOGY_DIRECT, {"A": "sensor.shared", "B": "sensor.shared"}),
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "sites"
+    assert result["errors"] == {"base": "direct_ac_duplicate"}
+
+
+async def test_options_switch_to_shared_no_dc_clears_groups(hass):
+    """Moving an existing apportioned entry to shared_no_dc unmaps every array."""
+    _set_two_sites(hass)
+    entry = _dc_split_entry("opt_shared", with_topology=True)
+    entry.add_to_hass(hass)
+    result = await _advance_options_to_sites(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_SHARED_NO_DC}
+    )
+    assert _schema_keys(result) == {_TOPOLOGY_FIELD}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {_TOPOLOGY_FIELD: SITE_TOPOLOGY_SHARED_NO_DC}
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_SITE_TOPOLOGY] == SITE_TOPOLOGY_SHARED_NO_DC
+    assert result["data"][CONF_SITE_GROUPS] == []
 
 
 # ---------------------------------------------------------------------------

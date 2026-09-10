@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. „Ein kombinierter Zähler, keine Daten je Array“ – wählen Sie dies, wenn ein einzelner Sensor das gesamte System meldet und keine DC-Daten je String verfügbar sind (z. B. eine Tesla Powerwall 3): Die Arrays werden nicht zugeordnet und die Anlage wird als ein System erfasst, da sich die Leistung je Array aus einem summierten Messwert nicht rekonstruieren lässt. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
         "data": {
           "__site_topology__": "Wie werden Ihre Arrays gemessen?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
       "invalid_auth": "OpenWeatherMap hat diesen API-Schlüssel abgelehnt. Prüfe ihn auf Tippfehler — ein neu erstellter Schlüssel kann außerdem einige Stunden bis zur Aktivierung brauchen.",
       "cannot_connect": "OpenWeatherMap ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
-      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern."
+      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern.",
+      "direct_ac_duplicate": "Derselbe Erzeugungssensor ist mehreren Arrays zugeordnet, wodurch die Leistung der gesamten Anlage bei jedem Array gezählt würde. Geben Sie jedem Array einen eigenen Sensor oder wechseln Sie – wenn ein Sensor das gesamte System meldet – zu „Ein kombinierter Zähler, keine Daten je Array“."
     },
     "abort": {
       "reconfigure_successful": "Neukonfiguration war erfolgreich"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Sensorzuordnung je Standort",
-        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
+        "description": "{count} Solcast-Standorte erkannt. Wählen Sie zuerst, wie Ihre Arrays gemessen werden. „Jedes Array hat einen eigenen Erzeugungssensor“ – ordnen Sie jedem Array seinen eigenen AC-Sensor zu (Mikrowechselrichter, z. B. Enphase, oder ein Wechselrichter pro Array); DC leer lassen. „Ein gemeinsamer Wechselrichter“ – verwenden Sie denselben Gesamtsystem-AC-Sensor für jedes Array und geben Sie jedem seinen DC/MPPT-Sensor, damit die Leistung nach DC-Anteil aufgeteilt wird. „Ein kombinierter Zähler, keine Daten je Array“ – wählen Sie dies, wenn ein einzelner Sensor das gesamte System meldet und keine DC-Daten je String verfügbar sind (z. B. eine Tesla Powerwall 3): Die Arrays werden nicht zugeordnet und die Anlage wird als ein System erfasst, da sich die Leistung je Array aus einem summierten Messwert nicht rekonstruieren lässt. Optional können Sie für die Diagnose Spannung/Strom je MPPT angeben. Lassen Sie einen Standort leer, um ihn zu überspringen. „Sensortyp“ ist normalerweise Automatisch erkennen.",
         "data": {
           "__site_topology__": "Wie werden Ihre Arrays gemessen?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "Die DC-Aufteilung benötigt denselben gemeinsamen AC-Erzeugungssensor für jedes Array. Verwenden Sie in allen Zeilen denselben AC-Sensor oder wechseln Sie zu „Jedes Array hat einen eigenen Erzeugungssensor“.",
       "invalid_auth": "OpenWeatherMap hat diesen API-Schlüssel abgelehnt. Prüfe ihn auf Tippfehler — ein neu erstellter Schlüssel kann außerdem einige Stunden bis zur Aktivierung brauchen.",
       "cannot_connect": "OpenWeatherMap ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
-      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern."
+      "owm_key_missing": "OpenWeatherMap ist aktiviert, aber es wurde kein API-Schlüssel eingegeben. Gib einen Schlüssel ein oder deaktiviere OpenWeatherMap und lass Open-Meteo die Bewölkung liefern.",
+      "direct_ac_duplicate": "Derselbe Erzeugungssensor ist mehreren Arrays zugeordnet, wodurch die Leistung der gesamten Anlage bei jedem Array gezählt würde. Geben Sie jedem Array einen eigenen Sensor oder wechseln Sie – wenn ein Sensor das gesamte System meldet – zu „Ein kombinierter Zähler, keine Daten je Array“."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Jedes Array hat einen eigenen Erzeugungssensor (Mikrowechselrichter / ein Wechselrichter pro Array)",
-        "dc_split": "Ein gemeinsamer Wechselrichter, nach DC auf die Arrays aufgeteilt (ein Wechselrichter, mehrere MPPTs)"
+        "dc_split": "Ein gemeinsamer Wechselrichter, nach DC auf die Arrays aufgeteilt (ein Wechselrichter, mehrere MPPTs)",
+        "shared_no_dc": "Ein kombinierter Zähler, keine Daten je Array (z. B. Tesla Powerwall 3) – Anlage als ein einziges System erfassen"
       }
     }
   },

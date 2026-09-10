@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. „Jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“ – vyberte túto možnosť, keď jeden snímač meria celý systém a nie sú dostupné DC údaje pre jednotlivé reťazce (napr. Tesla Powerwall 3): polia sa nepriradia a inštalácia sa sleduje ako jeden systém, pretože výrobu jednotlivých polí nemožno zo súhrnného merania rekonštruovať. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
         "data": {
           "__site_topology__": "Ako sa merajú vaše polia?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“.",
       "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
       "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
-      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo."
+      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo.",
+      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“."
     },
     "abort": {
       "reconfigure_successful": "Rekonfigurácia bola úspešná"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Priradenie senzorov pre jednotlivé lokality",
-        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
+        "description": "Zistených {count} lokalít Solcast. Najprv vyberte, ako sa vaše polia merajú. „Každé pole má vlastný snímač výroby“ – priraďte každému poľu jeho vlastný AC snímač (mikromeniče, napr. Enphase, alebo jeden menič na pole); DC nechajte prázdne. „Jeden zdieľaný menič“ – nastavte rovnaký AC snímač celého systému na každé pole a každému priraďte jeho DC/MPPT snímač, aby sa výroba rozdelila podľa podielu DC. „Jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“ – vyberte túto možnosť, keď jeden snímač meria celý systém a nie sú dostupné DC údaje pre jednotlivé reťazce (napr. Tesla Powerwall 3): polia sa nepriradia a inštalácia sa sleduje ako jeden systém, pretože výrobu jednotlivých polí nemožno zo súhrnného merania rekonštruovať. Voliteľne pridajte napätie/prúd každého MPPT na diagnostiku. Lokalitu nechajte prázdnu, ak ju chcete preskočiť. „Typ snímača“ je zvyčajne Automatická detekcia.",
         "data": {
           "__site_topology__": "Ako sa merajú vaše polia?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "Rozdelenie podľa DC vyžaduje rovnaký zdieľaný AC snímač výroby na každom poli. Použite jeden identický AC snímač vo všetkých riadkoch alebo prepnite na „každé pole má vlastný snímač výroby“.",
       "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
       "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
-      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo."
+      "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo.",
+      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Každé pole má vlastný snímač výroby (mikromeniče / jeden menič na pole)",
-        "dc_split": "Jeden zdieľaný menič, rozdelený medzi polia podľa DC (jeden menič, viac MPPT)"
+        "dc_split": "Jeden zdieľaný menič, rozdelený medzi polia podľa DC (jeden menič, viac MPPT)",
+        "shared_no_dc": "Jeden kombinovaný merač, žiadne údaje pre jednotlivé polia (napr. Tesla Powerwall 3) – sledovať inštaláciu ako jeden systém"
       }
     }
   },

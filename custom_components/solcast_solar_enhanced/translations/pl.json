@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. „Jeden wspólny licznik, brak danych dla poszczególnych łańcuchów” — wybierz to, gdy jeden czujnik mierzy cały system i nie ma danych DC dla poszczególnych łańcuchów (np. Tesla Powerwall 3): łańcuchy nie są przypisywane, a instalacja jest śledzona jako jeden system, ponieważ produkcji poszczególnych łańcuchów nie da się odtworzyć z sumarycznego odczytu. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
         "data": {
           "__site_topology__": "Jak mierzone są Twoje łańcuchy?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
       "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
       "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
-      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo."
+      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo.",
+      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”."
     },
     "abort": {
       "reconfigure_successful": "Ponowna konfiguracja zakończona powodzeniem"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Przypisanie czujników na lokalizację",
-        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
+        "description": "Wykryto {count} lokalizacji Solcast. Najpierw wybierz sposób pomiaru łańcuchów. „Każdy łańcuch ma własny czujnik produkcji” — przypisz każdemu łańcuchowi własny czujnik AC (mikroinwertery, np. Enphase, lub jeden inwerter na łańcuch); pozostaw DC puste. „Jeden wspólny inwerter” — ustaw ten sam czujnik AC całego systemu w każdym łańcuchu i podaj każdemu jego czujnik DC/MPPT, aby podzielić produkcję według udziału DC. „Jeden wspólny licznik, brak danych dla poszczególnych łańcuchów” — wybierz to, gdy jeden czujnik mierzy cały system i nie ma danych DC dla poszczególnych łańcuchów (np. Tesla Powerwall 3): łańcuchy nie są przypisywane, a instalacja jest śledzona jako jeden system, ponieważ produkcji poszczególnych łańcuchów nie da się odtworzyć z sumarycznego odczytu. Opcjonalnie dodaj napięcie/prąd każdego MPPT do diagnostyki. Pozostaw lokalizację pustą, aby ją pominąć. „Typ czujnika” to zwykle Wykrywanie automatyczne.",
         "data": {
           "__site_topology__": "Jak mierzone są Twoje łańcuchy?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "Podział DC wymaga tego samego wspólnego czujnika produkcji AC w każdym łańcuchu. Użyj jednego identycznego czujnika AC we wszystkich wierszach lub przełącz na „każdy łańcuch ma własny czujnik produkcji”.",
       "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
       "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
-      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo."
+      "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo.",
+      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Każdy łańcuch ma własny czujnik produkcji (mikroinwertery / jeden inwerter na łańcuch)",
-        "dc_split": "Jeden wspólny inwerter, dzielony między łańcuchy według DC (jeden inwerter, wiele MPPT)"
+        "dc_split": "Jeden wspólny inwerter, dzielony między łańcuchy według DC (jeden inwerter, wiele MPPT)",
+        "shared_no_dc": "Jeden wspólny licznik, brak danych dla poszczególnych łańcuchów (np. Tesla Powerwall 3) — traktuj instalację jako jeden system"
       }
     }
   },

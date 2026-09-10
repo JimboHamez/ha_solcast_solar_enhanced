@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. 'Eén gecombineerde meter, geen gegevens per array' — kies dit wanneer één sensor het hele systeem meet en er geen DC per string beschikbaar is (bijv. een Tesla Powerwall 3): de arrays worden niet toegewezen en de installatie wordt als één systeem gevolgd, omdat de opbrengst per array niet uit één opgetelde meting is af te leiden. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
         "data": {
           "__site_topology__": "Hoe worden uw arrays gemeten?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "DC-verdeling vereist dezelfde gedeelde AC-opwekkingssensor op elke array. Gebruik op alle rijen één identieke AC-sensor of schakel over naar 'elke array heeft een eigen opwekkingssensor'.",
       "invalid_auth": "OpenWeatherMap heeft deze API-sleutel geweigerd. Controleer op typefouten — een nieuw aangemaakte sleutel kan ook een paar uur nodig hebben om actief te worden.",
       "cannot_connect": "Kan OpenWeatherMap niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
-      "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren."
+      "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren.",
+      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'."
     },
     "abort": {
       "reconfigure_successful": "Herconfiguratie is geslaagd"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Sensortoewijzing per locatie",
-        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
+        "description": "{count} Solcast-locaties gedetecteerd. Kies eerst hoe uw arrays worden gemeten. 'Elke array heeft een eigen opwekkingssensor' — wijs elke array zijn eigen AC-sensor toe (micro-omvormers, bijv. Enphase, of één omvormer per array); laat DC leeg. 'Eén gedeelde omvormer' — gebruik dezelfde AC-sensor van het hele systeem op elke array en geef elke array zijn DC/MPPT-sensor zodat de opbrengst op DC-aandeel wordt verdeeld. 'Eén gecombineerde meter, geen gegevens per array' — kies dit wanneer één sensor het hele systeem meet en er geen DC per string beschikbaar is (bijv. een Tesla Powerwall 3): de arrays worden niet toegewezen en de installatie wordt als één systeem gevolgd, omdat de opbrengst per array niet uit één opgetelde meting is af te leiden. Optioneel kunt u per MPPT spanning/stroom invoeren voor diagnose. Laat een locatie leeg om deze over te slaan. 'Sensortype' is meestal Automatisch detecteren.",
         "data": {
           "__site_topology__": "Hoe worden uw arrays gemeten?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "DC-verdeling vereist dezelfde gedeelde AC-opwekkingssensor op elke array. Gebruik op alle rijen één identieke AC-sensor of schakel over naar 'elke array heeft een eigen opwekkingssensor'.",
       "invalid_auth": "OpenWeatherMap heeft deze API-sleutel geweigerd. Controleer op typefouten — een nieuw aangemaakte sleutel kan ook een paar uur nodig hebben om actief te worden.",
       "cannot_connect": "Kan OpenWeatherMap niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
-      "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren."
+      "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren.",
+      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Elke array heeft een eigen opwekkingssensor (micro-omvormers / één omvormer per array)",
-        "dc_split": "Eén gedeelde omvormer, over de arrays verdeeld op basis van DC (één omvormer, meerdere MPPT's)"
+        "dc_split": "Eén gedeelde omvormer, over de arrays verdeeld op basis van DC (één omvormer, meerdere MPPT's)",
+        "shared_no_dc": "Eén gecombineerde meter, geen gegevens per array (bijv. Tesla Powerwall 3) — de installatie als één systeem volgen"
       }
     }
   },

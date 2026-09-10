@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. «Un unico contatore combinato, nessun dato per stringa»: scegli questa opzione quando un solo sensore misura l'intero sistema e non è disponibile il CC per stringa (es. una Tesla Powerwall 3): le stringhe non vengono mappate e l'impianto è tracciato come un unico sistema, perché la produzione per stringa non è ricavabile da una lettura complessiva. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
         "data": {
           "__site_topology__": "Come vengono misurate le stringhe?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "La ripartizione CC richiede lo stesso sensore di generazione CA condiviso su ogni stringa. Usa un unico sensore CA identico su tutte le righe oppure passa a «ogni stringa ha il proprio sensore di generazione».",
       "invalid_auth": "OpenWeatherMap ha rifiutato questa chiave API. Controlla che non contenga errori di battitura: una chiave appena creata può inoltre richiedere un paio d'ore per attivarsi.",
       "cannot_connect": "Impossibile raggiungere OpenWeatherMap. Controlla la connessione a internet e riprova.",
-      "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità."
+      "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità.",
+      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa»."
     },
     "abort": {
       "reconfigure_successful": "Riconfigurazione completata correttamente"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Mappatura sensori per sito",
-        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
+        "description": "{count} siti Solcast rilevati. Scegli prima come vengono misurate le stringhe. «Ogni stringa ha il proprio sensore di generazione»: assegna a ogni stringa il proprio sensore CA (microinverter, es. Enphase, o un inverter per stringa); lascia vuoto il CC. «Un inverter condiviso»: imposta lo stesso sensore CA dell'intero sistema su ogni stringa e assegna a ciascuna il suo sensore CC/MPPT per ripartire la produzione in base alla quota CC. «Un unico contatore combinato, nessun dato per stringa»: scegli questa opzione quando un solo sensore misura l'intero sistema e non è disponibile il CC per stringa (es. una Tesla Powerwall 3): le stringhe non vengono mappate e l'impianto è tracciato come un unico sistema, perché la produzione per stringa non è ricavabile da una lettura complessiva. Facoltativamente aggiungi tensione/corrente di ogni MPPT per la diagnostica. Lascia vuoto un sito per saltarlo. «Tipo di sensore» è di solito Rilevamento automatico.",
         "data": {
           "__site_topology__": "Come vengono misurate le stringhe?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "La ripartizione CC richiede lo stesso sensore di generazione CA condiviso su ogni stringa. Usa un unico sensore CA identico su tutte le righe oppure passa a «ogni stringa ha il proprio sensore di generazione».",
       "invalid_auth": "OpenWeatherMap ha rifiutato questa chiave API. Controlla che non contenga errori di battitura: una chiave appena creata può inoltre richiedere un paio d'ore per attivarsi.",
       "cannot_connect": "Impossibile raggiungere OpenWeatherMap. Controlla la connessione a internet e riprova.",
-      "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità."
+      "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità.",
+      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa»."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Ogni stringa ha il proprio sensore di generazione (microinverter / un inverter per stringa)",
-        "dc_split": "Un inverter condiviso, ripartito tra le stringhe in base al CC (un inverter, più MPPT)"
+        "dc_split": "Un inverter condiviso, ripartito tra le stringhe in base al CC (un inverter, più MPPT)",
+        "shared_no_dc": "Un unico contatore combinato, nessun dato per stringa (es. Tesla Powerwall 3) — traccia l'impianto come un unico sistema"
       }
     }
   },
