@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> The manifest carries `1.11.0b6` as a **pre-release soak marker**, not a release.
+> No tag and no GitHub release exist for b6. The bump is deliberate: HACS compares
+> the installed version against the latest release, and anything that sorts at or
+> below `1.11.0b5` invites it to overwrite a hand-installed build. Every
+> dev-flavoured suffix (`.dev0`, `-soak`) either sorts *below* b5 under
+> AwesomeVersion — it ranks the modifier before the number — or fails validation
+> outright, so a plain beta number is the only option that holds.
+
 ### Fixed
 - **Partial export curtailment was being recorded as shading (issue #86).** Both
   curtailment gates compared a *half-hour mean* export figure against an export
