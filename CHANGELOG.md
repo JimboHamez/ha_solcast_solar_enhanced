@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **A third measurement topology: "one combined meter, no per-array data."** Setups
+  that report the whole system through a single sensor and expose no per-string DC —
+  a **Tesla Powerwall 3** being the clearest case, since Tesla removed per-MPPT data
+  from every consumer API, but also any single revenue meter — could not complete the
+  per-site step at all: "one shared inverter" demands a DC sensor per array and
+  refuses to continue without one ([#77](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/77)).
+  The new option maps nothing and needs no other input; the property is tracked as a
+  single aggregate, which is all one summed reading supports. Adaptive dampening is
+  unaffected — the curve is per hour, so an east array dominating the morning and a
+  west one dominating the afternoon are still separated in time. The per-array sensors
+  and per-array tuning are what such a system cannot have.
+
+### Fixed
+- **The same generation sensor on two arrays is now refused instead of silently
+  wrecking your dampening.** "Each array has its own generation sensor" accepted one
+  shared entity mapped to every array — the natural move for a shared-meter install
+  with nowhere else to go, and previously *pre-filled* for you. Each array then
+  recorded the whole property's output, so every per-site actual/forecast ratio read
+  far above 1, and the `[0, 1]` clamp on the pushed factors turned that into **no
+  dampening at all** — on a Solcast install the push had already switched into
+  granular per-site mode. Nothing warned. This is now a form error naming the fix.
+- **The per-array generation field no longer comes pre-filled with the whole-system
+  sensor** in "each array has its own generation sensor" mode, where that suggestion
+  was the misconfiguration above. It is still pre-filled under "one shared inverter,
+  split by DC", where every row is meant to carry that same shared entity.
+
 ## [1.11.0b3] - 2026-09-08
 
 > Beta. Adds a read-only shading advisory. Your tuning, dampening and the

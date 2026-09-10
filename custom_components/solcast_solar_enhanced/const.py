@@ -68,11 +68,16 @@ CONF_SITE_GROUPS = "site_groups"
 # Measurement topology for multi-array properties, authored in the per-site step.
 # "direct": each array has its own generation sensor (microinverters / one inverter
 # per array). "dc_split": one inverter's shared AC output is apportioned across
-# arrays by each array's per-MPPT DC share.
+# arrays by each array's per-MPPT DC share. "shared_no_dc": one combined
+# generation meter with no per-array telemetry (e.g. a Tesla Powerwall 3, whose
+# APIs expose no per-MPPT data) — nothing is mapped and the property is measured
+# as a single aggregate, because per-array output is not recoverable from one
+# summed reading.
 CONF_SITE_TOPOLOGY = "site_topology"
 SITE_TOPOLOGY_DIRECT = "direct"
 SITE_TOPOLOGY_DC_SPLIT = "dc_split"
-SITE_TOPOLOGIES = [SITE_TOPOLOGY_DIRECT, SITE_TOPOLOGY_DC_SPLIT]
+SITE_TOPOLOGY_SHARED_NO_DC = "shared_no_dc"
+SITE_TOPOLOGIES = [SITE_TOPOLOGY_DIRECT, SITE_TOPOLOGY_DC_SPLIT, SITE_TOPOLOGY_SHARED_NO_DC]
 DEFAULT_SITE_TOPOLOGY = SITE_TOPOLOGY_DIRECT
 # Auto-discover sites from the base integration's per-site RooftopSensors
 # (attributes: resource_id, name, capacity, capacity_dc, azimuth, tilt, ...).

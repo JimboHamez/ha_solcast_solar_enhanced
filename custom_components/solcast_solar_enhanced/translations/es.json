@@ -63,7 +63,7 @@
       },
       "sites": {
         "title": "Asignación de sensores por sitio",
-        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
+        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. «Un único contador combinado, sin datos por campo»: elija esta opción cuando un solo sensor informe de todo el sistema y no haya CC por cadena (p. ej. una Tesla Powerwall 3): los campos no se asignan y la instalación se registra como un único sistema, porque la producción por campo no puede recuperarse de una lectura sumada. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
         "data": {
           "__site_topology__": "¿Cómo se miden sus campos?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "El reparto por CC necesita el mismo sensor de generación de CA compartido en cada campo. Use un único sensor de CA idéntico en todas las filas o cambie a «cada campo tiene su propio sensor de generación».",
       "invalid_auth": "OpenWeatherMap ha rechazado esta clave de API. Comprueba que no tenga erratas: una clave recién creada también puede tardar un par de horas en activarse.",
       "cannot_connect": "No se ha podido conectar con OpenWeatherMap. Comprueba tu conexión a internet e inténtalo de nuevo.",
-      "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad."
+      "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad.",
+      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo»."
     },
     "abort": {
       "reconfigure_successful": "La reconfiguración se ha realizado correctamente"
@@ -156,7 +157,7 @@
       },
       "sites": {
         "title": "Asignación de sensores por sitio",
-        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
+        "description": "{count} sitios de Solcast detectados. Primero elija cómo se miden sus campos. «Cada campo tiene su propio sensor de generación»: asigne a cada campo su propio sensor de CA (microinversores, p. ej. Enphase, o un inversor por campo); deje CC en blanco. «Un inversor compartido»: ponga el mismo sensor de CA de todo el sistema en cada campo y dé a cada uno su sensor de CC/MPPT para repartir la producción por proporción de CC. «Un único contador combinado, sin datos por campo»: elija esta opción cuando un solo sensor informe de todo el sistema y no haya CC por cadena (p. ej. una Tesla Powerwall 3): los campos no se asignan y la instalación se registra como un único sistema, porque la producción por campo no puede recuperarse de una lectura sumada. Opcionalmente, añada la tensión/corriente de cada MPPT para diagnóstico. Deje un sitio en blanco para omitirlo. «Tipo de sensor» suele ser Detección automática.",
         "data": {
           "__site_topology__": "¿Cómo se miden sus campos?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "El reparto por CC necesita el mismo sensor de generación de CA compartido en cada campo. Use un único sensor de CA idéntico en todas las filas o cambie a «cada campo tiene su propio sensor de generación».",
       "invalid_auth": "OpenWeatherMap ha rechazado esta clave de API. Comprueba que no tenga erratas: una clave recién creada también puede tardar un par de horas en activarse.",
       "cannot_connect": "No se ha podido conectar con OpenWeatherMap. Comprueba tu conexión a internet e inténtalo de nuevo.",
-      "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad."
+      "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad.",
+      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo»."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Cada campo tiene su propio sensor de generación (microinversores / un inversor por campo)",
-        "dc_split": "Un inversor compartido, repartido entre los campos por CC (un inversor, varios MPPT)"
+        "dc_split": "Un inversor compartido, repartido entre los campos por CC (un inversor, varios MPPT)",
+        "shared_no_dc": "Un único contador combinado, sin datos por campo (p. ej. Tesla Powerwall 3): tratar la instalación como un solo sistema"
       }
     }
   },

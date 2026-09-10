@@ -81,6 +81,7 @@ from .const import (
     SITE_TOPOLOGIES,
     SITE_TOPOLOGY_DC_SPLIT,
     SITE_TOPOLOGY_DIRECT,
+    SITE_TOPOLOGY_SHARED_NO_DC,
 )
 from .solcast_api import OWMAuthError, OWMClient, OWMConnectionError
 
@@ -383,6 +384,36 @@ def _validate_dc_split(assignments: dict[str, dict[str, Any]]) -> str | None:
     return None
 
 
+def _validate_direct(assignments: dict[str, dict[str, Any]]) -> str | None:
+    """Validate direct assignments, returning an error key or ``None`` if valid.
+
+    Direct measurement means every array owns its generation sensor, so the same
+    entity mapped to two arrays is always a misconfiguration — typically a shared
+    whole-system meter (a Tesla Powerwall 3, a single revenue meter) that a user
+    reached for because no per-array sensor exists. Left unchecked each array
+    records the *whole property's* output, its actual/forecast ratio reads far
+    above 1, and the ``[0, 1]`` clamp in the dampening push silently turns that
+    into no dampening at all — while still flipping the base into granular
+    per-site mode. ``shared_no_dc`` is the honest answer for that hardware.
+    """
+    mapped = [a["ac"] for a in assignments.values() if a.get("ac")]
+    if len(set(mapped)) < len(mapped):
+        return "direct_ac_duplicate"
+    return None
+
+
+def _validate_assignments(assignments: dict[str, dict[str, Any]], mode: str) -> str | None:
+    """Dispatch per-topology validation, returning an error key or ``None``.
+
+    ``shared_no_dc`` maps nothing, so there is never anything to validate.
+    """
+    if mode == SITE_TOPOLOGY_DC_SPLIT:
+        return _validate_dc_split(assignments)
+    if mode == SITE_TOPOLOGY_DIRECT:
+        return _validate_direct(assignments)
+    return None
+
+
 def _derive_groups(
     assignments: dict[str, dict[str, Any]], *, mode: str = DEFAULT_SITE_TOPOLOGY
 ) -> list[dict[str, Any]]:
@@ -393,8 +424,13 @@ def _derive_groups(
     sensor become a single group whose ``strings`` carry each array's DC sensors, so
     the shared AC output is split by DC share — an array whose DC arrives on several
     MPPTs lists them all and they are summed (callers validate first via
-    ``_validate_dc_split``).
+    ``_validate_dc_split``). ``SITE_TOPOLOGY_SHARED_NO_DC`` maps nothing and returns
+    an empty list: with one combined reading and no per-array telemetry, per-array
+    generation is not recoverable, so the property is measured as a single aggregate
+    rather than split on a fabricated share.
     """
+    if mode == SITE_TOPOLOGY_SHARED_NO_DC:
+        return []
 
     def _with_mppts(entry: dict[str, Any], a: dict[str, Any]) -> dict[str, Any]:
         """Attach the optional per-MPPT capture list and per-site display name."""
@@ -487,17 +523,26 @@ def _build_sites_schema(
     """Build a per-site mapping form. Returns (schema, {rid: {ac,dc,mode field keys}}).
 
     Field keys embed the readable site name so HA renders them as labels without
-    needing per-site translations. ``default_ac`` (the system-wide PV generation
-    sensor) seeds each site's generation field when it has no assignment yet, so a
-    shared-meter install confirms rather than re-types the same entity. ``mode``
-    selects the measurement topology: in ``SITE_TOPOLOGY_DIRECT`` each site owns its
-    generation sensor and the DC field is omitted; in ``SITE_TOPOLOGY_DC_SPLIT`` one
-    shared AC sensor is apportioned, so the DC field is shown and the generation
-    field is labelled as the shared AC source.
+    needing per-site translations. ``mode`` selects the measurement topology: in
+    ``SITE_TOPOLOGY_DIRECT`` each site owns its generation sensor and the DC field is
+    omitted; in ``SITE_TOPOLOGY_DC_SPLIT`` one shared AC sensor is apportioned, so the
+    DC field is shown and the generation field is labelled as the shared AC source; in
+    ``SITE_TOPOLOGY_SHARED_NO_DC`` nothing is mappable, so only the selector is
+    rendered and the field map is empty.
+
+    ``default_ac`` (the system-wide PV generation sensor) seeds each site's generation
+    field when it has no assignment yet — but only in ``dc_split``, where every row is
+    meant to carry that same shared entity. Seeding it in ``direct`` mode pre-fills a
+    misconfiguration that a user need only click past to double-count the property on
+    every array (see ``_validate_direct``), so there the field starts empty.
     """
     dc_split = mode == SITE_TOPOLOGY_DC_SPLIT
     schema_dict: dict[Any, Any] = {vol.Required(_TOPOLOGY_FIELD, default=mode): _topology_selector()}
     field_map: dict[str, dict[str, str]] = {}
+    if mode == SITE_TOPOLOGY_SHARED_NO_DC:
+        return vol.Schema(schema_dict), field_map
+    if not dc_split:
+        default_ac = None
     seen_names: dict[str, int] = {}
     for site in discovered:
         rid = site["resource_id"]
@@ -724,7 +769,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if submitted_mode != render_mode:
                 # Topology changed — re-render with the matching fields, keeping entries.
                 return self._show_sites_form(discovered, assignments, default_ac, submitted_mode)
-            if submitted_mode == SITE_TOPOLOGY_DC_SPLIT and (err := _validate_dc_split(assignments)):
+            if err := _validate_assignments(assignments, submitted_mode):
                 return self._show_sites_form(discovered, assignments, default_ac, submitted_mode, {"base": err})
             self._data[CONF_SITE_GROUPS] = _derive_groups(assignments, mode=submitted_mode)
             self._data[CONF_SITE_TOPOLOGY] = submitted_mode
@@ -847,7 +892,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
             assignments = _parse_sites_input(user_input, field_map, mode=render_mode)
             if submitted_mode != render_mode:
                 return self._show_sites_form(discovered, assignments, default_ac, submitted_mode)
-            if submitted_mode == SITE_TOPOLOGY_DC_SPLIT and (err := _validate_dc_split(assignments)):
+            if err := _validate_assignments(assignments, submitted_mode):
                 return self._show_sites_form(discovered, assignments, default_ac, submitted_mode, {"base": err})
             self._opts[CONF_SITE_GROUPS] = _derive_groups(assignments, mode=submitted_mode)
             self._opts[CONF_SITE_TOPOLOGY] = submitted_mode

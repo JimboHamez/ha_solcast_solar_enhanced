@@ -75,7 +75,7 @@
       },
       "sites": {
         "title": "Per-site sensor mapping",
-        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
+        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. 'One combined meter, no per-array data' — choose this when a single sensor reports the whole system and no per-string DC is available (e.g. a Tesla Powerwall 3): the arrays are not mapped and the property is tracked as one system, because per-array output cannot be recovered from a summed reading. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
         "data": {
           "__site_topology__": "How are your arrays measured?"
         }
@@ -86,7 +86,8 @@
       "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'.",
       "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
       "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
-      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover."
+      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover.",
+      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'."
     },
     "abort": {
       "reconfigure_successful": "Reconfiguration was successful"
@@ -168,7 +169,7 @@
       },
       "sites": {
         "title": "Per-site sensor mapping",
-        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
+        "description": "{count} Solcast sites detected. First choose how your arrays are measured. 'Each array has its own generation sensor' — assign each array its own AC sensor (microinverters, e.g. Enphase, or one inverter per array); leave DC blank. 'One shared inverter' — put the same whole-system AC sensor on every array and give each its DC/MPPT sensor so output is split by DC share. 'One combined meter, no per-array data' — choose this when a single sensor reports the whole system and no per-string DC is available (e.g. a Tesla Powerwall 3): the arrays are not mapped and the property is tracked as one system, because per-array output cannot be recovered from a summed reading. Optionally add each array's MPPT voltage/current for diagnostics. Leave a site blank to skip it. 'Sensor type' is usually Auto-detect.",
         "data": {
           "__site_topology__": "How are your arrays measured?"
         }
@@ -179,7 +180,8 @@
       "dc_split_ac_mismatch": "DC-split needs the same shared AC generation sensor on every array. Use one identical AC sensor on all rows, or switch to 'each array has its own generation sensor'.",
       "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
       "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
-      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover."
+      "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover.",
+      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'."
     }
   },
   "entity": {
@@ -275,7 +277,8 @@
     "site_topology": {
       "options": {
         "direct": "Each array has its own generation sensor (microinverters / one inverter per array)",
-        "dc_split": "One shared inverter, split across arrays by DC (single inverter, multiple MPPTs)"
+        "dc_split": "One shared inverter, split across arrays by DC (single inverter, multiple MPPTs)",
+        "shared_no_dc": "One combined meter, no per-array data (e.g. Tesla Powerwall 3) — track the property as a single system"
       }
     }
   },
