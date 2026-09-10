@@ -38,7 +38,16 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b4
+## 🆕 What's new in v1.11.0b5
+
+**Beta: nothing changes.** This release fixes documentation and adds a test so those mistakes stop happening. The integration behaves exactly as v1.11.0b4 did — if you are already on b4, there is nothing here you need.
+
+Two sensors were named inexactly in this README. The troubleshooting section referred to `MPPT DC Voltage` when the entity is **MPPT DC Voltage (max)**, and to `Dampening` when the entity is **Dampening Hours with DB Data**. Searching Home Assistant for either short name finds nothing, so anyone following those sections was hunting an entity that does not exist under that name. Both are corrected, and the sensor tables below are now checked against the shipped entity names by a test — a documented name no sensor answers to, or a sensor missing from the tables, fails the build.
+
+There is also a new offline analysis tool, `tools/differential_shading_fit.py`, for anyone with **two arrays at the same tilt and azimuth**. It measures shading by comparing the two arrays against *each other* rather than against the Solcast forecast, which takes the forecast's own error out of the measurement entirely. It reads your database, prints a report, and changes nothing — no factors are affected and nothing is sent to Solcast.
+
+<details>
+<summary><b>What landed in v1.11.0b4</b></summary>
 
 **Beta: if one meter reports your whole system, the setup wizard now has an option that fits — and it no longer lets you pick the one that quietly turned your dampening off.**
 
@@ -51,6 +60,8 @@ There is now a third option — **"one combined meter, no per-array data"** — 
 **The more important half of this release is what it stops you doing.** Faced with no fitting option, the natural move was to pick "each array has its own generation sensor" and put the same whole-system sensor on every array — and that field came *pre-filled* with it, so it took one click. Every array then recorded the whole property's output. Each array's measured-vs-forecast ratio came out roughly double, and because a factor above 1 is clamped back to 1, the result was **no dampening at all** — on a Solcast install that the per-array push had already switched into per-site mode. Nothing warned you.
 
 That is now a clear error explaining the fix, and the field is no longer pre-filled where the suggestion was the mistake. If you have a multi-array system, it is worth reopening **Configure** to check that each array points at its own sensor.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0b3</b></summary>

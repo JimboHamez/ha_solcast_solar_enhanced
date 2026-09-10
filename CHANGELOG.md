@@ -5,6 +5,38 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0b5] - 2026-09-10
+
+> Beta. **No functional change** — the integration behaves exactly as 1.11.0b4.
+> Documentation corrections, a test that stops them recurring, and one analysis
+> tool. If you are running b4, there is nothing here you need.
+
+### Fixed
+- **Two sensors were named inexactly in the documentation.** The troubleshooting and
+  quality-scale sections referred to *MPPT DC Voltage* (the entity is **MPPT DC
+  Voltage (max)**) and to *Dampening* (the entity is **Dampening Hours with DB
+  Data**). Searching Home Assistant for either of the shortened names finds
+  nothing, so anyone following those sections was sent looking for an entity that
+  does not exist under that name.
+
+### Internal
+- **The documented sensor list is now enforced by tests.** Both README sensor tables
+  are checked against the shipped translation keys in each direction — a documented
+  name no sensor answers to, and a sensor nobody documented, both fail the build. A
+  second check catches names written inexactly in prose. This class of error is
+  invisible to review, which is why it survived this long.
+- **The differential shading fit is now in the repository** as
+  `tools/differential_shading_fit.py`. It fits shading by comparing two co-oriented
+  arrays against each other rather than against the Solcast forecast, which removes
+  the forecast's own error from the measurement. The code has quoted results from
+  this method for some time without shipping the means to reproduce them; it now
+  does. Advisory and offline — it reads the database and prints a report, and
+  changes nothing.
+- Documented why the cloud filter in `run_tuning` is inert on a default install: the
+  clear-sky selection already happens in SQL via the clearness index, and the caller
+  disables the second filter. Read on its own, the line looks like a live
+  cloud-cover gate; it is the fallback for installs with Open-Meteo turned off.
+
 ## [1.11.0b4] - 2026-09-10
 
 > Beta. Config-flow only. Adds a third measurement topology for systems with
@@ -1392,7 +1424,8 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...HEAD
+[1.11.0b5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...v1.11.0b5
 [1.11.0b4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...v1.11.0b4
 [1.11.0b3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b2...v1.11.0b3
 [1.11.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b1...v1.11.0b2
