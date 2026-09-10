@@ -413,7 +413,7 @@ def analyse_shading(
         # of the sky dome too, so s is too generous exactly where the mask is
         # deepest. Measured against the differential fit in
         # tools/differential_shading_fit.py on the 78-day two-array store, mean
-        # per-cell disagreement is 0.018 above 30 deg and 0.16 below 15 deg, worst
+        # per-cell disagreement is 0.018 above 30 deg and 0.162 below 15 deg, worst
         # cell 0.50. The capacity and sky-view terms agree to within 0.02, so it is
         # specifically the low-sun beam mask that diverges. Flag it, don't hide it.
         "low_sun_uncertain": worst_elev < _LOW_SUN_UNCERTAIN_ELEV or floored > 0,
