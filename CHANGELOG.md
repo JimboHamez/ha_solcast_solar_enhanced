@@ -5,7 +5,10 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0b4] - 2026-09-10
+
+> Beta. Config-flow only. Adds a third measurement topology for systems with
+> one combined meter, and refuses a mapping that silently disabled dampening.
 
 ### Added
 - **A third measurement topology: "one combined meter, no per-array data."** Setups
@@ -1389,7 +1392,8 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...HEAD
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...HEAD
+[1.11.0b4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...v1.11.0b4
 [1.11.0b3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b2...v1.11.0b3
 [1.11.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b1...v1.11.0b2
 [1.10.3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.10.2...v1.10.3
