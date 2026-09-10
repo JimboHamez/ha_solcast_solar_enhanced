@@ -821,3 +821,36 @@ async def test_records_for_shading_honours_the_limit(store):
     for i in range(5):
         await store.async_insert_record(_record(JUNE1 + i * 1800))
     assert len(await store.async_get_records_for_shading(limit=3)) == 3
+
+
+# ---------------------------------------------------------------------------
+# Read-only opens of an older schema
+# ---------------------------------------------------------------------------
+
+async def test_readonly_open_of_an_older_db_still_queries(hass, tmp_path):
+    """A read-only open cannot ALTER, so an older file genuinely lacks the columns
+    added after the original schema. Naming one fails the *whole* query — the
+    consumer gets no records at all rather than the 0.0 sentinel it already knows
+    how to handle. The ``tools/`` command-line analysers open read-only and are
+    routinely pointed at an archived database, so this is reachable in normal use.
+    """
+    path = str(tmp_path / "old.db")
+    writable = SqliteStore(hass, path)
+    assert await writable.async_connect() is True
+    await writable.async_insert_record(_record(JUNE1, dc_vmed1=380.0))
+    await writable.async_close()
+    # Drop a post-original column back off, as a file from an older version has it.
+    conn = sqlite3.connect(path)
+    conn.execute("ALTER TABLE solcast_data DROP COLUMN dc_vmed1")
+    conn.commit()
+    conn.close()
+
+    ro = SqliteStore(hass, path, readonly=True)
+    assert await ro.async_connect() is True
+    try:
+        assert "dc_vmed1" not in ro._columns
+        rows = await ro.async_get_records_for_shading()
+        assert len(rows) == 1          # the query still returns the record
+        assert rows[0]["dc_vmed1"] == 0.0   # ... with the "unknown" sentinel
+    finally:
+        await ro.async_close()

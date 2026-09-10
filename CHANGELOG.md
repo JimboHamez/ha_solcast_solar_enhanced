@@ -5,6 +5,15 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Read-only opens of an older database no longer fail their queries.** A
+  read-only open cannot run the additive `ALTER` pass, so an older file genuinely
+  lacks newer columns; naming one failed the entire query and returned no records
+  rather than the "unknown" sentinel. This affected the `tools/` command-line
+  analysers pointed at an archived database.
+
 ## [1.11.0b5] - 2026-09-10
 
 > Beta. **No functional change** — the integration behaves exactly as 1.11.0b4.

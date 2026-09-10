@@ -119,6 +119,9 @@ _ADDED_COLUMNS = (
     ("pv_estimate_undampened", "REAL NOT NULL DEFAULT 0"),
 )
 
+# Names only, for the optional-column SELECT guard below.
+_ADDED_COLUMN_NAMES = frozenset(name for name, _ in _ADDED_COLUMNS)
+
 # Columns written by an insert, in order. Shared by single and bulk inserts.
 _INSERT_COLUMNS = (
     "period_end",
@@ -166,6 +169,11 @@ class SqliteStore:
         self._hass = hass
         self._path = path
         self._readonly = readonly
+        # The columns actually present in the open file. A read-only open skips the
+        # additive ALTER pass, so an older database keeps an older column set and a
+        # query naming a newer column fails outright rather than returning zeros —
+        # see ``_optional_column``.
+        self._columns: frozenset[str] = frozenset()
         self._conn: sqlite3.Connection | None = None
         # sqlite3 connections aren't safe to share across threads without
         # serialisation; every executor call holds this lock.
@@ -197,6 +205,10 @@ class SqliteStore:
                 conn.commit()
                 self._ensure_columns(conn)
             self._conn = conn
+            try:
+                self._columns = frozenset(row[1] for row in conn.execute("PRAGMA table_info(solcast_data)"))
+            except Exception:  # noqa: BLE001 — table may be absent on a read-only first open
+                self._columns = frozenset()
             # Surface the file path + current row count so users know where the
             # store lives (e.g. to point sqlite-web at it) and that it loaded.
             try:
@@ -444,10 +456,11 @@ class SqliteStore:
         # SQLite's % truncates toward zero and would otherwise return a negative
         # remainder for dates before the target.
         doy_delta = "((((CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) + 548) % 366) - 182)"
+        optional = ", ".join(self._optional_column(c) for c in ("ghi", "pv_estimate_undampened"))
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, pv_estimate10, "
-            "pv_estimate90, azimuth, zenith, clouds, ghi, "
-            "COALESCE(pv_estimate_undampened, 0.0) AS pv_estimate_undampened, "
+            "pv_estimate90, azimuth, zenith, clouds, "
+            f"{optional}, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
             "WHERE pv_actual > 0 AND pv_estimate > 0 "
@@ -503,9 +516,11 @@ class SqliteStore:
         elif cloud_max is not None:
             gate_clause = " AND clouds < ?"
             gate_params = (int(cloud_max),)
+        optional = ", ".join(self._optional_column(c) for c in ("ghi", "dni", "dhi"))
         sql = (
             "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
-            "azimuth, zenith, clouds, ghi, dni, dhi, "
+            "azimuth, zenith, clouds, "
+            f"{optional}, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
             "FROM solcast_data "
             f"WHERE pv_actual > 0{site_clause}{gate_clause} "
@@ -542,17 +557,39 @@ class SqliteStore:
         if self._conn is None:
             return []
         site_clause, site_params = self._site_filter(site)
+        optional = ", ".join(
+            self._optional_column(c)
+            for c in ("pv_estimate_undampened", "ghi", "dni", "dhi", "dc_vmed1", "dc_vmed2", "dc_imed1", "dc_imed2")
+        )
         sql = (
             "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
-            "COALESCE(pv_estimate_undampened, 0.0) AS pv_estimate_undampened, "
-            "azimuth, zenith, clouds, temp, ghi, dni, dhi, "
-            "dc_vmed1, dc_vmed2, dc_imed1, dc_imed2 "
+            "azimuth, zenith, clouds, temp, "
+            f"{optional} "
             "FROM solcast_data "
             f"WHERE pv_actual > 0 AND zenith < ?{site_clause} "
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )
         params = (float(zenith_max), *site_params, limit)
         return await self._hass.async_add_executor_job(self._query, sql, params)
+
+    def _optional_column(self, name: str) -> str:
+        """SELECT fragment for a post-original column that may be absent.
+
+        A writable open ALTERs every ``_ADDED_COLUMNS`` entry in, so the column is
+        always there and this is a plain ``COALESCE``. A **read-only** open cannot
+        ALTER, so an older database — a reference copy handed to one of the
+        ``tools/`` CLIs, or a checked-in fixture — genuinely lacks the column, and
+        naming it would fail the whole query instead of yielding the 0.0 "unknown"
+        sentinel every consumer already handles. Substituting the literal keeps the
+        result shape identical either way.
+
+        ``name`` is asserted to be a known column so the f-string interpolation
+        below can never carry caller-supplied text into SQL.
+        """
+        assert name in _ADDED_COLUMN_NAMES, name
+        if self._columns and name not in self._columns:
+            return f"0.0 AS {name}"
+        return f"COALESCE({name}, 0.0) AS {name}"
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         assert self._conn is not None  # Narrowed by each async query wrapper's guard.
