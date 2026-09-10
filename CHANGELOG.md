@@ -8,11 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Partial export curtailment was being recorded as shading (issue #86).** Both
+  curtailment gates compared a *half-hour mean* export figure against an export
+  limit that only ever binds *instantaneously*. A slot that was capped for ten of
+  its thirty minutes averages out at well under half the limit and read as
+  uncapped — while its measured output was held down by the capped portion. The
+  dampening path then booked the shortfall as shading and pushed the forecast
+  down, which is the harmful direction: the `[0, 1]` clamp that protects against
+  ratios above 1 gives no protection at all here. Every curtailment episode has two
+  such shoulder half-hours by construction, so a curtailing site mis-measured at
+  least two slots a day.
+
+  The integration now records the **peak** export over each half hour alongside the
+  mean. Where the peak reaches the limit the interval was capped, and the forecast
+  is clipped to the delivered output so the record contributes a neutral 1.0 rather
+  than a penalty it did not earn; where the peak stayed below the limit nothing
+  changes. Tuning excludes a capped record on the same test. On synthetic data for
+  an unshaded 8 kW array behind a 5 kW limit, the pushed factor for a partly capped
+  hour moves from as low as **0.73 to a correct 1.00**.
+
+  The column is forward-only — the recorder keeps around ten days, so existing rows
+  cannot be backfilled. They carry `0`, which means "unknown" and preserves the
+  previous behaviour exactly, so the correction phases in as new data accumulates.
+
 - **Read-only opens of an older database no longer fail their queries.** A
   read-only open cannot run the additive `ALTER` pass, so an older file genuinely
   lacks newer columns; naming one failed the entire query and returned no records
   rather than the "unknown" sentinel. This affected the `tools/` command-line
   analysers pointed at an archived database.
+
+### Changed
+- The Dampening sensor reports an `hour_NN_export_capped` attribute for any hour
+  whose records were export-capped. On a curtailing site this is the answer to "why
+  is this hour neutral?" — the records were capped, not unshaded.
 
 ## [1.11.0b5] - 2026-09-10
 

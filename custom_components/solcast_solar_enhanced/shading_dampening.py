@@ -120,7 +120,7 @@ def compute_dampening(
     happened to contain.
 
     Returns dict with: factor, alpha, source, clear_sky_basis, quality_records,
-    avg_quality, clipped_excluded, forecast_clipped, undampened_records
+    avg_quality, clipped_excluded, forecast_clipped, export_capped, undampened_records
     """
     clip_kw = capacity_kw * clipping_threshold
     basis = "kt" if kt_threshold is not None else "cloud"
@@ -131,6 +131,7 @@ def compute_dampening(
     weighted_est_sum = 0.0
     clipped_excluded = 0
     forecast_clipped = 0
+    export_capped = 0
     n_records = 0
     n_undampened = 0
 
@@ -148,6 +149,8 @@ def compute_dampening(
         used_undampened = pv_est_raw > 0
         pv_est = pv_est_raw if used_undampened else float(r.get("pv_estimate", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
+        # Interval peak export; 0 on rows predating the column (issue #86).
+        pv_export_peak = float(r.get("pv_export_max", 0) or 0)
         # Distinguish a genuine 0% (clearest sky — the highest-quality records for
         # a shading ratio) from a missing value. A bare `or 100` would coerce a
         # falsy 0 to 100, so `_cloud_weight` would score the clearest sky in its
@@ -199,15 +202,40 @@ def compute_dampening(
         # Export-curtailment forecast clipping. When grid export is pegged at the
         # limit the inverter holds total output below pv_estimate, so the raw
         # actual/estimate ratio reads spuriously low — curtailment masquerading as
-        # shading. Clip the forecast to the achievable ceiling (the delivered
-        # output plus whatever export headroom remained) so a curtailed clear-sky
-        # record contributes a valid ~1.0 ratio instead of a false penalty. The
-        # clip only ever lowers the forecast, never below the delivered output
-        # (so ratio ≤ 1.0), and is a no-op when export_limit_kw <= 0 or there was
-        # export headroom (i.e. the inverter was not curtailing).
+        # shading. Clip the forecast to the achievable ceiling so a curtailed
+        # clear-sky record contributes a valid ~1.0 ratio instead of a false
+        # penalty. The clip only ever lowers the forecast, never below the delivered
+        # output (so ratio <= 1.0), and is a no-op when export_limit_kw <= 0.
+        #
+        # Which ceiling depends on whether the interval was capped at any point,
+        # which only the stored PEAK export can answer (issue #86):
+        #
+        # - **Peak below the limit — nothing was capped.** The mean headroom
+        #   ``export_limit_kw - pv_export`` is then the right figure and is exact:
+        #   for a slot that is capped for a fraction c, mean headroom works out to
+        #   ``L - mean_export`` regardless of c, so the arithmetic was never the
+        #   problem.
+        # - **Peak at the limit — the interval was capped.** The problem is that
+        #   headroom is not *fungible across time*: the surplus generation the
+        #   forecast expects would have arrived in exactly the minutes the inverter
+        #   was already pinned, and export headroom that existed twenty minutes
+        #   later could not have carried it. The only defensible ceiling is the
+        #   delivered output itself, so the record contributes a neutral 1.0 rather
+        #   than a shading penalty it did not earn. Recovering the capped fraction
+        #   and clipping proportionally would need an at-limit *duty cycle* stored
+        #   per row, which bakes today's limit into the data (see the column note in
+        #   sqlite_store) — the conservative ceiling needs no such assumption and
+        #   errs toward under-dampening, the safe direction here.
+        #
+        # ``pv_export_max`` is 0 on rows written before the column existed, which
+        # falls into the first branch and preserves the previous behaviour exactly.
         effective_est = pv_est
         if export_limit_kw > 0:
-            ceiling = total_pv + (export_limit_kw - pv_export)
+            if pv_export_peak >= export_limit_kw * clipping_threshold:
+                ceiling = total_pv
+                export_capped += 1
+            else:
+                ceiling = total_pv + (export_limit_kw - pv_export)
             clipped = max(total_pv, min(pv_est, ceiling))
             if clipped < pv_est - 1e-9:
                 effective_est = clipped
@@ -245,6 +273,7 @@ def compute_dampening(
             "avg_quality": 0.0,
             "clipped_excluded": clipped_excluded,
             "forecast_clipped": forecast_clipped,
+            "export_capped": export_capped,
             "undampened_records": 0,
         }
 
@@ -287,6 +316,7 @@ def compute_dampening(
         "avg_quality": round(avg_quality, 3),
         "clipped_excluded": clipped_excluded,
         "forecast_clipped": forecast_clipped,
+        "export_capped": export_capped,
         "undampened_records": n_undampened,
     }
 

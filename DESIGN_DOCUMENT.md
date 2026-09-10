@@ -114,6 +114,7 @@ CREATE TABLE solcast_data (
   site             TEXT NOT NULL DEFAULT '_total', -- Solcast resource_id, or '_total' aggregate
   pv_actual        REAL NOT NULL,                  -- 30-min avg generation (kW)
   pv_export        REAL NOT NULL DEFAULT 0,        -- 30-min avg export (kW)
+  pv_export_max    REAL NOT NULL DEFAULT 0,        -- 30-min PEAK export (kW) — curtailment detector
   pv_estimate      REAL NOT NULL,                  -- from Solcast via base integration
   pv_estimate10    REAL NOT NULL,                  -- Solcast p10
   pv_estimate90    REAL NOT NULL,                  -- Solcast p90
@@ -172,7 +173,7 @@ Recovers panel **tilt** by transposing measured irradiance to the panel plane an
 1. Fetch up to 2000 recent **clear-sky** records (`pv_actual > 0`), including `ghi`/`dni`/`dhi`. The clear-sky gate is applied **in SQL before the `LIMIT`** (see *Clear-sky selection* below) so the result is the most recent 2000 *clear-sky* rows, not the most recent rows of any weather.
 2. Skip rows lacking irradiance (`ghi = 0`). The in-tuning cloud re-filter is **disabled** (threshold `101`) when the SQL Kt gate already ran, so it can't wrongly drop rows when OWM is absent and `clouds` is the `100` sentinel.
 3. Exclude clipped records (`total_pv` **and** `pv_estimate` ≥ `capacity × clipping_threshold`).
-4. Exclude export-limited records (`pv_export ≥ export_limit_kw × clipping_threshold`, when set) — see below.
+4. Exclude export-limited records (`max(pv_export, pv_export_max) ≥ export_limit_kw × clipping_threshold`, when set) — see below.
 5. For each candidate **tilt** (azimuth held fixed — see below), transpose to plane-of-array irradiance (Hay-Davies anisotropic sky by default, isotropic fallback), fit a single capacity scale by least squares (`s = Σ(poa·obs)/Σ(poa²)` — closed-form, no scipy), and score **MAE** against `total_pv`.
 6. Minimise MAE via a coarse-to-fine numpy **1-D grid search** over tilt (`_minimize_tilt`: full 5° sweep, then ±5° at 1°, then ±1° at 0.25°). ~30 evaluations; no seed dependence; ~750 ms on a Pi. Drops scipy (no Pi wheel, issue #85).
 7. Run in an executor thread; requires ≥10 qualifying irradiance-bearing records; runs daily.
@@ -220,10 +221,12 @@ Tuning needs sun-angle diversity across seasons; the clear-sky rows are chosen i
 A site with a grid export cap produces artificially low `total_pv` while `pv_export` is pegged at the limit, which would pull the optimiser toward a shallower/more-northerly geometry. Records at the ceiling are excluded:
 
 ```
-is_export_limited = export_limit_kw > 0 AND pv_export >= export_limit_kw × clipping_threshold
+is_export_limited = export_limit_kw > 0 AND max(pv_export, pv_export_max) >= export_limit_kw × clipping_threshold
 ```
 
 Reusing `clipping_threshold` keeps marginal export values; `export_limit_kw = 0` (default) disables it. This filter matters more now: with a capacity scale fitted across all records, a cluster of export-curtailed points would drag the fit. Results surface on the `Tuned Panel Tilt` sensor (`azimuth` — the fixed configured value, `azimuth_tuned: false`, `rmse_kw`, `mae_kw`, `capacity_scale`, `n_records` attributes) and the Configure page. The `battery_full + export_capped` double-curtailment case remains a known AC-side limitation, addressed by the DC-telemetry [roadmap](#curtailment-aware-actualforecast-filtering-dc-telemetry-off-mpp-detection).
+
+**Why the test is on the peak, not the mean (issue #86).** `pv_export` is a half-hour *average* and an export limit binds *instantaneously*. A slot pinned at a 5 kW limit for ten minutes and then clouded over for twenty averages 2.33 kW — 47% of the limit — and slips through a 0.95 gate as uncapped, while its `pv_actual` is depressed by the capped portion. Every curtailment episode has two such shoulder half-hours by construction. `pv_export_max` records the interval peak alongside the mean, so `max ≥ limit` says capping occurred whatever the duty cycle was. It is stored as a **max rather than an at-limit fraction** deliberately: a fraction bakes the limit in force at write time into the row and is wrong the moment a DNSP dynamic or backstop limit changes it, whereas a max stays limit-agnostic and can be re-judged against whatever limit applied.
 
 ---
 
@@ -719,10 +722,10 @@ Measured on a 12 k-row Melbourne DB (single 5 kW-export site): ~50% of high-sun 
 
 | Consumer | Method |
 |---|---|
-| Tuning (`run_tuning`) | excludes export-limited records (`pv_export ≥ export_limit × threshold`) |
+| Tuning (`run_tuning`) | excludes export-limited records (`max(pv_export, pv_export_max) ≥ export_limit × threshold`) |
 | Dampening (`compute_dampening`) | clips the forecast to the achievable ceiling so a curtailed record contributes ≈1.0 |
 
-Both infer curtailment from the AC side (output flat, export pegged) — so they are forecast-/limit-dependent, cause-blind, and miss the `battery-full + export-capped` case. DC telemetry removes those limits.
+Both read the **interval peak** as well as the mean, so partial-interval capping is caught (issue #86) — but they still infer curtailment from the AC side (output flat, export pegged), so they remain forecast-/limit-dependent, cause-blind, and miss the `battery-full + export-capped` case where no export limit is configured at all ([issue #85](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/85)). DC telemetry removes those limits.
 
 **The off-MPP signal (why DC voltage is ground truth).** Curtailment is a DC-side phenomenon. A PV string is a current source; to deliver less power the inverter walks the operating point off MPP **up the I-V curve toward `Voc`** — voltage rises, current collapses. So an elevated DC string voltage is a *direct measurement* of curtailment, independent of forecast and export limit, and identical regardless of cause. It also unifies the two AC heuristics: inverter clipping and export curtailment are the same off-MPP excursion, so one measured flag subsumes both.
 
@@ -731,7 +734,7 @@ Both infer curtailment from the AC side (output flat, export pegged) — so they
 | Tier | Signal | Catches |
 |---|---|---|
 | 1 (best) | per-MPPT DC voltage (+ current) → off-MPP | export curtailment **and** inverter clip, cause-agnostic, limit-independent |
-| 2 | `pv_export ≥ export_limit × threshold` (ideally the *dynamic* limit) | export curtailment only |
+| 2 | `max(pv_export, pv_export_max) ≥ export_limit × threshold` (ideally the *dynamic* limit) | export curtailment only |
 | 3 | `total_pv ≥ capacity × clipping_threshold` (existing) | inverter AC clip only |
 
 Within Tier 1, each extra DC channel removes a specific failure mode, so more data buys strictly higher accuracy:
@@ -743,12 +746,13 @@ Within Tier 1, each extra DC channel removes a specific failure mode, so more da
 
 **Consumer wiring (independent of tier).** Tuning **excludes** a flagged record (a flat-topped peak has no geometry to fit — costs ~50% of high-sun clear-sky records at an export-limited site, hence the ~2× slower tuning caveat). Dampening **clips the forecast** to the achievable ceiling (`min(pv_estimate, load + export_limit)`) so the record still contributes ≈1.0 with none discarded — or, with a hard Tier-1 flag, simply neutralises it.
 
-**Storage shape.** Per-record `dc_voltage1/current1/voltage2/current2` (up to `MAX_MPPT_TRACKERS = 2`), kept **per-MPPT** so a later `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. Still to add when detection lands: `export_limit` (the active, possibly dynamic, limit) and a derived `curtailed` boolean (`_total.curtailed = OR` across strings). All forward-only. The DC read is **aggregated over the slot** — max voltage (most off-MPP) and min current (most throttled) from recorder history (`_interval_values` → `get_significant_states`), falling back to the instantaneous state so users can point at raw per-string sensors.
+**Storage shape.** Per-record `dc_voltage1/current1/voltage2/current2` (up to `MAX_MPPT_TRACKERS = 2`), kept **per-MPPT** so a later `Vmp`-band calibrator can learn each string; per-site rows carry that site's trackers, `_total` the property-wide ones. Still to add when detection lands: `export_limit` (the active, possibly dynamic, limit) and a derived `curtailed` boolean (`_total.curtailed = OR` across strings). All forward-only. The DC read is **aggregated over the slot** — max voltage (most off-MPP) and min current (most throttled) from recorder history (`_interval_samples` → `get_significant_states`), falling back to the instantaneous state so users can point at raw per-string sensors. The export meter rides the same batched query, reduced to its interval peak (`_interval_peak_kw`); for a cumulative energy counter — the recommended input — that peak comes from successive `Δenergy/Δt`, since the monotonic counter's own maximum is not a power figure.
 
 **Hardware applicability.** The integration consumes HA *entities*, so this works wherever the upstream integration surfaces per-string DC voltage (+ current). **SunSpec Model 160** over Modbus is the common denominator — SMA, Huawei, Sungrow, GoodWe, SolaX, Victron (via GX), Fronius all expose it. Cloud APIs (Growatt/SolarEdge/Solar.web) are unsuitable (latency/rate-limits break per-half-hour sampling). **SolarEdge** is a structural exception: per-panel optimizers hold the string at a fixed DC-bus voltage, so the off-MPP fingerprint never appears — Tier-2 only.
 
 **Rollout.**
 1. **Implemented (Phase 1, data-only).** Export-aware **dampening**: `compute_dampening` takes `export_limit_kw` (from the base `site_export_limit`, manual fallback) and clips the forecast to `total_pv + (export_limit − pv_export)`, floored at delivered output (ratio ≤ 1.0). Curtailed clear-sky records contribute ≈1.0 instead of a penalty, none discarded; a `forecast_clipped` count is surfaced per hour. Validated on the reference DB: high-sun `db_factor` recovers 0.909 → 0.943. Works on the existing database.
+   - **Phase 1b (issue #86).** The ceiling now branches on the stored interval peak. Where the peak reached the limit the interval *was* capped, and the mean-headroom ceiling is invalid — not because the arithmetic is wrong (mean headroom is `L − Ē` for any capped fraction) but because headroom is **not fungible across time**: the surplus the forecast expected would have arrived in the very minutes the inverter was pinned. The ceiling is then the delivered output itself. Clipping proportionally instead would need an at-limit duty cycle per row, which is exactly the limit-dependent quantity the max was chosen to avoid; the conservative ceiling needs no such assumption and errs toward under-dampening, the safe direction. On synthetic data (unshaded 8 kW array, 5 kW limit, `tools/simulate_curtailment.py`) a partly capped hour's pushed factor moves from as low as 0.73 to a correct 1.00. An `export_capped` count is surfaced per hour.
 2. **Implemented (Phase 2, capture).** Paired per-MPPT telemetry banked each cycle: schema columns (additive `ALTER TABLE`, legacy rows → 0), flat config keys on the site step + per-site fields in the multi-site step (derived into an `mppts` list), and a batched `get_significant_states` read taking max-voltage/min-current over the slot. **Confirmed logging real production data** — a full clear day yields a clean `Vmp` band with `Voc` at first light. Capture only; nothing acts on it yet.
 
 **Still to do** before promotion (waiting on accumulated telemetry): the per-string `Vmp`-band calibrator, the `curtailed` flag + `export_limit` column, and wiring detection into the consumers. *Wing-reconstruction* (fit the clear-sky curve to a day's unclipped points and interpolate the clipped midday to recover curtailed days for tuning) remains proposed — Tier-1 perfects the flag, but recovering generation from an off-MPP point still needs the curve fit.

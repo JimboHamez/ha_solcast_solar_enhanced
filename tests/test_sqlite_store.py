@@ -345,7 +345,7 @@ async def test_tuning_orders_desc_and_limits(store):
     # Returned newest-first; tuning rows expose the consumed columns, now including
     # the irradiance components + epoch for transposition-based tuning.
     assert set(rows[0]) == {
-        "period_end_epoch", "pv_actual", "pv_export", "pv_estimate",
+        "period_end_epoch", "pv_actual", "pv_export", "pv_export_max", "pv_estimate",
         "azimuth", "zenith", "clouds", "ghi", "dni", "dhi", "battery_charge",
     }
 
@@ -824,33 +824,82 @@ async def test_records_for_shading_honours_the_limit(store):
 
 
 # ---------------------------------------------------------------------------
-# Read-only opens of an older schema
+# pv_export_max — the interval export peak (issue #86)
 # ---------------------------------------------------------------------------
 
+async def test_insert_and_read_export_peak(store):
+    await store.async_insert_record(_record(JUNE1, pv_export=2.33, pv_export_max=5.0))
+    rows = await store.async_get_records_for_dampening(JUNE1_DOY)
+    assert rows[0]["pv_export"] == pytest.approx(2.33)
+    assert rows[0]["pv_export_max"] == pytest.approx(5.0)
+    tuning = await store.async_get_records_for_tuning()
+    assert tuning[0]["pv_export_max"] == pytest.approx(5.0)
+
+
+async def test_export_peak_defaults_to_zero(store):
+    """0.0 is the "unknown" sentinel: a record written without a peak (an older
+    integration, or a recorder that returned nothing) must read back as 0 so both
+    consumers fall through to the mean-only behaviour."""
+    await store.async_insert_record(_record(JUNE1))
+    rows = await store.async_get_records_for_dampening(JUNE1_DOY)
+    assert rows[0]["pv_export_max"] == 0.0
+
+
+async def test_connect_adds_export_peak_column_to_legacy_db(hass, tmp_path):
+    """An existing database gains the column through the additive ALTER pass."""
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE solcast_data (
+          "index" INTEGER PRIMARY KEY AUTOINCREMENT,
+          period_end TEXT NOT NULL, period_end_epoch INTEGER NOT NULL,
+          period_start TEXT NOT NULL, site TEXT NOT NULL DEFAULT '_total',
+          pv_actual REAL NOT NULL, pv_export REAL NOT NULL DEFAULT 0,
+          pv_estimate REAL NOT NULL, pv_estimate10 REAL NOT NULL,
+          pv_estimate90 REAL NOT NULL, azimuth REAL NOT NULL, zenith REAL NOT NULL,
+          temp REAL NOT NULL, clouds INTEGER NOT NULL, description TEXT NOT NULL,
+          battery_charge REAL NOT NULL DEFAULT 0,
+          UNIQUE(period_end_epoch, site)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    try:
+        assert "pv_export_max" in s._columns
+        assert await s.async_insert_record(_record(JUNE1, pv_export_max=4.9)) is True
+        rows = await s.async_get_records_for_dampening(JUNE1_DOY)
+        assert rows[0]["pv_export_max"] == pytest.approx(4.9)
+    finally:
+        await s.async_close()
+
+
 async def test_readonly_open_of_an_older_db_still_queries(hass, tmp_path):
-    """A read-only open cannot ALTER, so an older file genuinely lacks the columns
-    added after the original schema. Naming one fails the *whole* query — the
-    consumer gets no records at all rather than the 0.0 sentinel it already knows
-    how to handle. The ``tools/`` command-line analysers open read-only and are
-    routinely pointed at an archived database, so this is reachable in normal use.
-    """
+    """A read-only open cannot ALTER, so an older file genuinely lacks the newer
+    columns. Naming one would fail the whole query and return no records at all —
+    the tools/ CLIs and the checked-in fixtures both open read-only — so the SELECT
+    substitutes the 0.0 sentinel instead."""
     path = str(tmp_path / "old.db")
     writable = SqliteStore(hass, path)
     assert await writable.async_connect() is True
-    await writable.async_insert_record(_record(JUNE1, dc_vmed1=380.0))
+    await writable.async_insert_record(_record(JUNE1))
     await writable.async_close()
-    # Drop a post-original column back off, as a file from an older version has it.
+    # Drop the column back off to simulate a file written by an older version.
     conn = sqlite3.connect(path)
-    conn.execute("ALTER TABLE solcast_data DROP COLUMN dc_vmed1")
+    conn.execute("ALTER TABLE solcast_data DROP COLUMN pv_export_max")
     conn.commit()
     conn.close()
 
     ro = SqliteStore(hass, path, readonly=True)
     assert await ro.async_connect() is True
     try:
-        assert "dc_vmed1" not in ro._columns
-        rows = await ro.async_get_records_for_shading()
-        assert len(rows) == 1          # the query still returns the record
-        assert rows[0]["dc_vmed1"] == 0.0   # ... with the "unknown" sentinel
+        assert "pv_export_max" not in ro._columns
+        rows = await ro.async_get_records_for_dampening(JUNE1_DOY)
+        assert len(rows) == 1
+        assert rows[0]["pv_export_max"] == 0.0
     finally:
         await ro.async_close()

@@ -537,3 +537,121 @@ def test_avg_quality_still_falls_for_hazier_skies():
     clear_result = compute_dampening([_ON_TARGET] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
     hazy_result = compute_dampening([hazy] * 20, 10.0, 20, 60, 0.95, 45.0, 180.0)
     assert hazy_result["avg_quality"] < clear_result["avg_quality"]
+
+
+# ---------------------------------------------------------------------------
+# Interval-peak export gate (issue #86)
+# ---------------------------------------------------------------------------
+
+def _partly_capped_record() -> dict:
+    """A half-hour that was export-capped for ten of its thirty minutes.
+
+    8 kW array behind a 5 kW export limit, no house load. Ten minutes pinned at the
+    limit (delivering 5 kW against 8 kW available), twenty minutes of cloud at
+    1 kW. The stored figures are the interval means the coordinator writes, plus
+    the interval peak: mean export is 2.33 kW — **47% of the limit**, nowhere near
+    the 0.95 clip threshold — while the peak sits on the limit. Only the peak can
+    tell these apart, which is the whole of issue #86.
+    """
+    return {
+        "pv_actual": (10 * 5.0 + 20 * 1.0) / 30.0,   # 2.333 kW mean delivered
+        "pv_export": (10 * 5.0 + 20 * 1.0) / 30.0,   # 2.333 kW mean export
+        "pv_export_max": 5.0,                        # pinned at the limit mid-slot
+        "pv_estimate": (10 * 8.0 + 20 * 1.0) / 30.0,  # 3.333 kW the sky actually offered
+        "battery_charge": 0.0,
+        "clouds": 5,
+        "zenith": 30.0,
+        "azimuth": 0.0,
+    }
+
+
+def test_partial_curtailment_is_missed_without_the_stored_peak():
+    """The pre-fix behaviour, pinned: with no stored peak (rows predating the
+    column) a partly-capped slot passes as uncapped and books the cap as shading."""
+    rec = _partly_capped_record() | {"pv_export_max": 0.0}
+    result = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0)
+    assert result["export_capped"] == 0
+    # Mean headroom (5 - 2.33) exceeds the 1 kW forecast excess, so the clip is a
+    # no-op and the full spurious penalty lands.
+    assert result["forecast_clipped"] == 0
+    assert result["factor"] == pytest.approx(2.3333 / 3.3333, abs=0.01)
+
+
+def test_partial_curtailment_caught_by_the_stored_peak():
+    """With the peak stored, the same slot is recognised as capped and contributes
+    a neutral 1.0 instead of a 30% shading penalty it did not earn."""
+    result = compute_dampening(
+        [_partly_capped_record()] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0
+    )
+    assert result["export_capped"] == 200
+    assert result["forecast_clipped"] == 200
+    assert result["factor"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_peak_below_limit_leaves_genuine_shading_intact():
+    """The guard against the fix becoming a blanket no-op: a genuinely shaded slot
+    whose peak export never reaches the limit must still dampen, and must give the
+    identical answer to the pre-column behaviour."""
+    shaded = {
+        "pv_actual": 2.0,
+        "pv_export": 1.0,
+        "pv_export_max": 2.5,   # 50% of the limit — no cap occurred
+        "pv_estimate": 4.0,
+        "battery_charge": 0.0,
+        "clouds": 5,
+        "zenith": 30.0,
+        "azimuth": 0.0,
+    }
+    with_peak = compute_dampening([shaded] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0)
+    legacy = compute_dampening(
+        [shaded | {"pv_export_max": 0.0}] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0
+    )
+    assert with_peak["export_capped"] == 0
+    assert with_peak["factor"] == pytest.approx(legacy["factor"])
+    assert with_peak["factor"] < 0.9  # the shading survives
+
+
+def test_peak_gate_is_a_noop_without_a_configured_export_limit():
+    """No export limit configured: the peak cannot be judged against anything, so
+    nothing is counted as capped (this is the residual #85 covers)."""
+    result = compute_dampening([_partly_capped_record()] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0)
+    assert result["export_capped"] == 0
+    assert result["factor"] < 0.9
+
+
+def test_peak_gate_honours_the_clipping_threshold():
+    """The cap test is ``peak >= limit * clipping_threshold``, not ``peak >= limit``
+    — an inverter holding 4.8 kW against a 5 kW limit is capping."""
+    rec = _partly_capped_record() | {"pv_export_max": 4.8}
+    at_95 = compute_dampening([rec] * 200, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0)
+    at_99 = compute_dampening([rec] * 200, 8.0, 20, 60, 0.99, 30.0, 0.0, export_limit_kw=5.0)
+    assert at_95["export_capped"] == 200   # 4.8 >= 4.75
+    assert at_99["export_capped"] == 0     # 4.8 <  4.95
+
+
+def test_worst_case_partial_curtailment_penalty_is_pinned():
+    """The figure the CHANGELOG and design document quote for issue #86.
+
+    Sixteen of thirty minutes capped at a 5 kW limit on an unshaded 8 kW array is
+    the worst of the partial-curtailment cases: the mean export (3.13 kW) leaves
+    enough apparent headroom that even the mean-based clip does nothing, so the
+    full 0.662 ratio reaches the blend. Anchored here so the quoted "as low as
+    0.73" cannot drift away from what the code does.
+    """
+    slot = {
+        "pv_actual": (16 * 5.0 + 14 * 1.0) / 30.0,
+        "pv_export": (16 * 5.0 + 14 * 1.0) / 30.0,
+        "pv_export_max": 5.0,
+        "pv_estimate": (16 * 8.0 + 14 * 1.0) / 30.0,
+        "battery_charge": 0.0,
+        "clouds": 5,
+        "zenith": 30.0,
+        "azimuth": 0.0,
+    }
+    before = compute_dampening(
+        [slot | {"pv_export_max": 0.0}] * 60, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0
+    )
+    after = compute_dampening([slot] * 60, 8.0, 20, 60, 0.95, 30.0, 0.0, export_limit_kw=5.0)
+    assert before["forecast_clipped"] == 0  # mean headroom hides it entirely
+    assert before["factor"] == pytest.approx(0.73, abs=0.005)
+    assert after["factor"] == pytest.approx(1.0, abs=1e-6)

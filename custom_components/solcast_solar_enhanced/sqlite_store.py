@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_imed1         REAL NOT NULL DEFAULT 0,
   dc_imed2         REAL NOT NULL DEFAULT 0,
   pv_estimate_undampened REAL NOT NULL DEFAULT 0,
+  pv_export_max    REAL NOT NULL DEFAULT 0,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -117,6 +118,15 @@ _ADDED_COLUMNS = (
     # backfillable — the base retains only ~28 days of undampened data — so 0 means
     # "unknown" and the ratio falls back to ``pv_estimate``.
     ("pv_estimate_undampened", "REAL NOT NULL DEFAULT 0"),
+    # Peak instantaneous export over the slot, in kW. ``pv_export`` is a half-hour
+    # MEAN, and both curtailment gates compare it against an export limit that only
+    # ever holds instantaneously, so a slot capped for part of the interval averages
+    # out below the limit and reads as uncapped (issue #86). The max answers the
+    # question the mean cannot: did export touch the ceiling at any point? Stored as
+    # a max rather than an at-limit fraction so it stays limit-agnostic — a fraction
+    # bakes today's limit into the row and breaks under a DNSP dynamic limit.
+    # Forward-only: the recorder keeps ~10 days, so only a short backfill is possible.
+    ("pv_export_max", "REAL NOT NULL DEFAULT 0"),
 )
 
 # Names only, for the optional-column SELECT guard below.
@@ -151,6 +161,7 @@ _INSERT_COLUMNS = (
     "dc_imed1",
     "dc_imed2",
     "pv_estimate_undampened",
+    "pv_export_max",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -284,6 +295,7 @@ class SqliteStore:
             record.get("dc_imed1", 0.0) or 0.0,
             record.get("dc_imed2", 0.0) or 0.0,
             record.get("pv_estimate_undampened", 0.0) or 0.0,
+            record.get("pv_export_max", 0.0) or 0.0,
         )
 
     async def async_insert_record(self, record: dict[str, Any]) -> bool:
@@ -456,7 +468,7 @@ class SqliteStore:
         # SQLite's % truncates toward zero and would otherwise return a negative
         # remainder for dates before the target.
         doy_delta = "((((CAST(strftime('%j', period_end_epoch, 'unixepoch') AS INTEGER) - ?) + 548) % 366) - 182)"
-        optional = ", ".join(self._optional_column(c) for c in ("ghi", "pv_estimate_undampened"))
+        optional = ", ".join(self._optional_column(c) for c in ("ghi", "pv_export_max", "pv_estimate_undampened"))
         sql = (
             "SELECT pv_actual, pv_export, pv_estimate, pv_estimate10, "
             "pv_estimate90, azimuth, zenith, clouds, "
@@ -516,7 +528,7 @@ class SqliteStore:
         elif cloud_max is not None:
             gate_clause = " AND clouds < ?"
             gate_params = (int(cloud_max),)
-        optional = ", ".join(self._optional_column(c) for c in ("ghi", "dni", "dhi"))
+        optional = ", ".join(self._optional_column(c) for c in ("pv_export_max", "ghi", "dni", "dhi"))
         sql = (
             "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
             "azimuth, zenith, clouds, "

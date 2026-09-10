@@ -717,3 +717,70 @@ async def test_property_mppt_list_truncates_to_max_trackers(coordinator):
     got = coordinator._property_mppt_list(opts)
     assert len(got) == MAX_MPPT_TRACKERS
     assert got[0]["current_sensor"] == "sensor.ia"
+
+
+# ---------------------------------------------------------------------------
+# _interval_peak_kw — the interval export peak behind issue #86
+# ---------------------------------------------------------------------------
+
+async def test_interval_peak_kw_power_sensor_takes_the_maximum(hass, coordinator):
+    """An averaged-power sensor already reports power, so the peak is the max."""
+    hass.states.async_set("sensor.export", "1.0", {"unit_of_measurement": "kW"})
+    samples = {"sensor.export": [(0.0, 1.0), (60.0, 5.0), (120.0, 2.0)]}
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == 5.0
+
+
+async def test_interval_peak_kw_converts_watts(hass, coordinator):
+    hass.states.async_set("sensor.export", "1000", {"unit_of_measurement": "W"})
+    samples = {"sensor.export": [(0.0, 1000.0), (60.0, 4500.0)]}
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == 4.5
+
+
+async def test_interval_peak_kw_energy_counter_uses_successive_deltas(hass, coordinator):
+    """A cumulative kWh counter's maximum is meaningless as power — the peak has to
+    come from Δenergy/Δt. Three minutes: 0.01 kWh, then 0.25 kWh, then 0.02 kWh, so
+    the middle minute ran at 15 kW while the half-hour mean would read ~5.6 kW."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    samples = {
+        "sensor.export": [
+            (0.0, 100.00),
+            (60.0, 100.01),   # 0.01 kWh in 60 s → 0.6 kW
+            (120.0, 100.26),  # 0.25 kWh in 60 s → 15.0 kW
+            (180.0, 100.28),  # 0.02 kWh in 60 s → 1.2 kW
+        ]
+    }
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == pytest.approx(15.0)
+
+
+async def test_interval_peak_kw_ignores_counter_resets(hass, coordinator):
+    """A counter reset must not invent a curtailment episode.
+
+    Pinned as a behaviour rather than as a guarded branch: the reset shows up as a
+    negative delta, which cannot raise a maximum that starts at 0.0, so the reading
+    after it is the only one that counts. (A ``delta < 0`` branch here was removed
+    after a mutation check showed no test could tell it from its absence.)
+    """
+    hass.states.async_set("sensor.export", "0.5", {"unit_of_measurement": "kWh"})
+    samples = {
+        "sensor.export": [
+            (0.0, 100.0),
+            (60.0, 0.0),    # reset — negative delta, skipped
+            (120.0, 0.05),  # 0.05 kWh in 60 s → 3.0 kW, the only real reading
+        ]
+    }
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == pytest.approx(3.0)
+
+
+async def test_interval_peak_kw_unknown_sentinels(hass, coordinator):
+    """0.0 is the "unknown" sentinel the stored column uses, and the one every
+    consumer treats as "fall back to the mean"."""
+    hass.states.async_set("sensor.export", "1.0", {"unit_of_measurement": "kW"})
+    assert coordinator._interval_peak_kw("", "auto", {"sensor.export": [(0.0, 5.0)]}) == 0.0
+    assert coordinator._interval_peak_kw("sensor.export", "auto", {}) == 0.0        # recorder gave nothing
+    assert coordinator._interval_peak_kw("sensor.gone", "auto", {"sensor.gone": [(0.0, 5.0)]}) == 0.0
+
+
+async def test_interval_peak_kw_energy_counter_single_sample(hass, coordinator):
+    """One sample yields no delta, so there is no power figure to report."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    assert coordinator._interval_peak_kw("sensor.export", "auto", {"sensor.export": [(0.0, 100.0)]}) == 0.0
