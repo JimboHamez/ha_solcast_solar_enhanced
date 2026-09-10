@@ -1,6 +1,7 @@
 """Test sensor entity native values and attributes."""
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -474,6 +475,99 @@ def test_every_locale_translates_every_entity_name(locale):
 
     assert set(names) == expected, f"{locale} key set differs from strings.json"
     assert all(entry["name"].strip() for entry in names.values()), f"{locale} has a blank name"
+
+
+# ---------------------------------------------------------------------------
+# Documented sensor names (README must name sensors that actually exist)
+# ---------------------------------------------------------------------------
+#
+# The README's two sensor tables are the list users read when writing
+# automations or filing a bug, and a name there is unverifiable by eye: a
+# renamed sensor, a new one nobody documented, or an invented name all look
+# equally plausible in review. These pin both tables against strings.json in
+# both directions.
+
+_README = (_COMPONENT.parents[1] / "README.md").read_text(encoding="utf-8")
+
+_SITE_ENTITY_BASE = "SolcastEnhancedSiteEntity"
+
+
+def _translation_keys_by_scope() -> tuple[set[str], set[str]]:
+    """Split sensor.py's translation keys into (property-wide, per-array).
+
+    Bucketed on the declared base class rather than a ``site_`` key prefix, so a
+    future per-array sensor named otherwise lands in the right table.
+    """
+    per_site: set[str] = set()
+    property_wide: set[str] = set()
+    for node in ast.parse(_SENSOR_SRC).body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        key = next(
+            (
+                stmt.value.value
+                for stmt in node.body
+                if isinstance(stmt, ast.Assign)
+                and isinstance(stmt.targets[0], ast.Name)
+                and stmt.targets[0].id == "_attr_translation_key"
+            ),
+            None,
+        )
+        if key is None:
+            continue
+        bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+        (per_site if _SITE_ENTITY_BASE in bases else property_wide).add(key)
+    return property_wide, per_site
+
+
+def _readme_table_names(heading: str) -> set[str]:
+    """First-column entries of the first markdown table under ``heading``.
+
+    The per-array table prefixes every row with a literal ``<array>`` placeholder
+    standing in for the user's own array name; it is stripped so the rows compare
+    against the untemplated sensor names.
+    """
+    lines = _README.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(heading))
+    names: set[str] = set()
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            if names:  # Table ended; anything later belongs to another section.
+                break
+            continue
+        cell = line.split("|")[1].strip()
+        if cell in ("Sensor", "") or set(cell) <= {"-", ":"}:
+            continue  # Header row or the |---| separator.
+        names.add(cell.removeprefix("`<array>` ").strip())
+    return names
+
+
+def _names_for(keys: set[str]) -> set[str]:
+    entries = _strings(_COMPONENT / "strings.json")["entity"]["sensor"]
+    return {entries[key]["name"] for key in keys}
+
+
+@pytest.mark.parametrize(
+    ("heading", "scope"),
+    [("## Sensors", "property"), ("### Per-site sensors", "site")],
+)
+def test_readme_sensor_table_matches_the_shipped_names(heading, scope):
+    """Every documented sensor exists, and every sensor is documented.
+
+    Set equality rather than a subset check, because both failures mislead: a
+    name in the README that no sensor answers to sends a user hunting for an
+    entity that was never registered, and a sensor missing from the table is one
+    nobody can find.
+    """
+    property_wide, per_site = _translation_keys_by_scope()
+    expected = _names_for(property_wide if scope == "property" else per_site)
+    documented = _readme_table_names(heading)
+
+    assert documented == expected, (
+        f"README '{heading}' table is out of step with strings.json — "
+        f"documented but not shipped: {sorted(documented - expected)}; "
+        f"shipped but not documented: {sorted(expected - documented)}"
+    )
 
 
 # ---------------------------------------------------------------------------
