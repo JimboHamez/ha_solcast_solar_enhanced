@@ -197,7 +197,7 @@ def extraterrestrial_normal(doy: int) -> float:
 def run_tuning(
     records: list[dict[str, Any]],
     capacity_kw: float,
-    cloud_threshold: int,
+    cloud_threshold: int,  # >100 disables the internal re-filter; see the note at its use.
     clipping_threshold: float,
     export_limit_kw: float = 0.0,
     fixed_azimuth: float = 0.0,
@@ -243,6 +243,14 @@ def run_tuning(
         # 0 and lose exactly the records tuning most wants.
         raw_clouds = r.get("clouds")
         clouds = 100.0 if raw_clouds is None else float(raw_clouds)
+        # Usually a no-op: the caller disables this by passing a threshold above 100
+        # whenever Open-Meteo is enabled, because ``async_get_records_for_tuning``
+        # has already applied the measured-Kt clear-sky gate in SQL (before the
+        # LIMIT, so the rows are the most recent *clear* ones). Re-filtering them on
+        # the model cloud field would undo that — and with OWM absent ``clouds`` is
+        # the 100% sentinel, so it would reject every row. This is the OWM-only
+        # fallback path, live only when Open-Meteo is off and no GHI exists to form
+        # Kt from. See ``coordinator._tuning_cloud_threshold``.
         if clouds >= cloud_threshold:
             continue
         zen = float(r.get("zenith", 90) or 90)
