@@ -570,6 +570,48 @@ def test_readme_sensor_table_matches_the_shipped_names(heading, scope):
     )
 
 
+# The italic branch deliberately accepts any opening character: a name written in
+# the wrong case is exactly the drift being hunted, so anchoring on [A-Z] would
+# make the lowercase form invisible to the scan.
+_EMPHASIS_RE = re.compile(r"\*\*([^*\n]{3,70})\*\*|(?<![*\w])\*([^\s*][^*\n]{2,70})\*(?!\*)")
+
+
+def _readme_emphasised_spans() -> list[tuple[int, str]]:
+    """Every bold or italic span in the README, with its 1-based line number."""
+    return [
+        (i, (m.group(1) or m.group(2)).strip())
+        for i, line in enumerate(_README.splitlines(), 1)
+        for m in _EMPHASIS_RE.finditer(line)
+    ]
+
+
+def test_readme_prose_names_sensors_exactly():
+    """Prose that emphasises a sensor must use its full name, not a shortened one.
+
+    The tables above are checked exhaustively; prose can only be checked for
+    *drift*, since most emphasis is ordinary writing rather than a sensor
+    reference. So this flags a span that is a truncation of a real name (``MPPT
+    DC Voltage`` for ``MPPT DC Voltage (max)``) or the right name in the wrong
+    case — both of which send a reader to Developer tools to search for a string
+    that will not match.
+
+    Single-word spans are exempt: *Dampening* and *Shading* are concepts in this
+    README as often as they are entities, and flagging them would trade a real
+    class of error for a stream of false ones.
+    """
+    names = _names_for(set(_declared_translation_keys()))
+    drifted = []
+    for line_no, span in _readme_emphasised_spans():
+        if span in names or len(span.split()) < 2:
+            continue
+        low = span.lower()
+        near = [n for n in names if n.lower() == low or n.lower().startswith(low + " ") or n.lower().startswith(low + "(")]
+        if near:
+            drifted.append(f"README:{line_no} {span!r} -> {near[0]!r}")
+
+    assert not drifted, "prose names a sensor inexactly:\n  " + "\n  ".join(drifted)
+
+
 # ---------------------------------------------------------------------------
 # Entity icons (quality scale: icon-translations)
 # ---------------------------------------------------------------------------
