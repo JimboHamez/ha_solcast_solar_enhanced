@@ -73,6 +73,36 @@ topology_dc_split        both arrays fit separately; differential fit runs
 `classify_mechanism` returning `undetermined` exactly where the DC columns are
 empty is correct behaviour that previously had no fixture exercising it.
 
+### `--seasonal`: the band the dampening query actually reads
+
+```
+python tools/build_test_fixtures.py --seasonal [--target-date YYYY-MM-DD]
+```
+
+Writes `seasonal_*.db` instead of `topology_*.db`. Rather than a trailing window,
+it keeps the **day-of-year band across every year present** — `-28/+14` days
+around the target, the same `DAMPENING_WINDOW_*` bounds
+`async_get_records_for_dampening` uses. The day-of-year predicate is copied
+verbatim from `sqlite_store.py`, including the `+548` wrap bias, so the fixture
+selects exactly the rows the query would; a fixture built on an approximation
+would silently include or drop the boundary rows that matter most.
+
+The target defaults to the newest date in the source. `--target-date 2026-07-15`
+against a store ending in September yields a **22 Jun – 29 Jul** band, not the
+recent data — day-of-year, not recency.
+
+**Why it matters, and when.** The forward half of that window can only ever be
+filled from a *previous* year, so on a single-year store it is empty — which is
+the correct year-one behaviour, and why the generator prints a note saying so.
+Once the source spans 13+ months, `--seasonal` produces one band per year and
+becomes the first fixture able to exercise:
+
+- the **year-2 seasonal path**, where the window is populated on both sides
+- the **New Year day-of-year wrap**, only reachable with data either side of 1 Jan
+
+At `-28/+14` per year that is ~42 days of data per year rather than a full year,
+so a two-year seasonal fixture stays small.
+
 ### Caveats
 
 - **Nothing consumes these yet.** They are fixtures looking for tests, not a
@@ -86,3 +116,13 @@ empty is correct behaviour that previously had no fixture exercising it.
   margin. Regenerate with `--days` for more.
 - `battery_charge` is zero throughout: the source system has no battery. These
   cannot exercise anything battery-related (see issues #85, #86).
+- **Forward-only columns stratify with age.** `pv_estimate_undampened` exists only
+  from 1.10.0b6 and `dc_vmed*`/`dc_imed*` only from 1.11.0b2, so the further back a
+  window reaches the more of them are zero. That is faithful — every upgraded store
+  looks like this, and it exercises the fallback paths — but a longer window buys
+  more rows, not more capability, for the features that depend on them. Only
+  `ghi`/`dni`/`dhi` can be backfilled (`tools/backfill_irradiance.py`).
+- **Retention bounds what can ever be rebuilt.** These are derived, not archival. If
+  `CONF_DB_RETENTION_DAYS` is set below `DB_RETENTION_MIN_RECOMMENDED_DAYS` (400) the
+  source prunes and no regeneration recovers that history — so leave retention at the
+  default `0` if a multi-year seasonal fixture is wanted.
