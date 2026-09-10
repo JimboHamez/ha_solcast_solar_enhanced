@@ -38,7 +38,22 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b3
+## 🆕 What's new in v1.11.0b4
+
+**Beta: if one meter reports your whole system, the setup wizard now has an option that fits — and it no longer lets you pick the one that quietly turned your dampening off.**
+
+Some systems report all their solar through a single sensor and expose nothing per array. A **Tesla Powerwall 3** is the clearest case: Tesla removed per-string data from every consumer API, local and cloud. The wizard offered two ways to describe a multi-array property and that was neither of them, so those setups simply could not get past the per-array page ([#77](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/77)).
+
+There is now a third option — **"one combined meter, no per-array data"** — which asks for nothing else and tracks your property as a single system.
+
+**You lose less than that sounds like.** Dampening is worked out *per hour*, so if you have an east-facing array and a west-facing one, the east array is most of your morning total and the west array is most of your afternoon. A morning shading loss still lands in the morning hours of the correction. What a single meter genuinely can't give you is the per-array sensors and per-array tilt tuning — per-array output cannot be recovered from one summed reading, and splitting it by forecast share only relabels the property-wide figure without adding anything.
+
+**The more important half of this release is what it stops you doing.** Faced with no fitting option, the natural move was to pick "each array has its own generation sensor" and put the same whole-system sensor on every array — and that field came *pre-filled* with it, so it took one click. Every array then recorded the whole property's output. Each array's measured-vs-forecast ratio came out roughly double, and because a factor above 1 is clamped back to 1, the result was **no dampening at all** — on a Solcast install that the per-array push had already switched into per-site mode. Nothing warned you.
+
+That is now a clear error explaining the fix, and the field is no longer pre-filled where the suggestion was the mistake. If you have a multi-array system, it is worth reopening **Configure** to check that each array points at its own sensor.
+
+<details>
+<summary><b>What landed in v1.11.0b3</b></summary>
 
 **Beta: your roof now gets a shading map — which direction the sun has to come from, and how low it has to be, before something gets in the way.**
 
@@ -51,6 +66,8 @@ It also reports **what kind of shadow it is**, using the per-tracker DC figures 
 **This is read-only.** Nothing here is sent to Solcast, and your dampening factors are exactly as they were. It is a diagnostic — the aim is that you can see what your roof is doing before anything acts on it.
 
 Two honest limits, both reported rather than hidden. Below about 15° of sun elevation the method cannot cleanly separate "the sun is blocked" from "the sky is blocked", so results down there are flagged as uncertain. And shading that dims *every* array on the property equally is invisible to it — there is nothing left to compare against.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0b2</b></summary>
