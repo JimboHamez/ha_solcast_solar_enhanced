@@ -119,6 +119,15 @@ KT_ZENITH_MAX = 85.0
 KT_GHI_CS_FLOOR = 40.0
 DEFAULT_CLIPPING_THRESHOLD = 0.95
 DEFAULT_EXPORT_LIMIT_KW = 0.0
+# Shortest window (seconds) over which a cumulative energy counter is differenced
+# for the interval export peak. A counter is a staircase: the time between two
+# adjacent ticks is reporting jitter, not power, so a per-tick derivative is
+# quantisation noise (a 10 Wh tick logged 0.33 s after the last reads 108 kW).
+# Differencing over at least this span bounds the error to resolution / window —
+# 0.12 kW for a 10 Wh counter — while any capped episode at least this long still
+# registers at the limit itself. Shorter episodes barely move the half-hour mean
+# the detector exists to correct.
+EXPORT_PEAK_WINDOW_S = 300
 DEFAULT_DAMPENING_GATE = True
 # Max shortest-arc azimuth spread (degrees) across configured arrays for which the
 # property-wide forecast may be capacity-apportioned to each site. Beyond it the

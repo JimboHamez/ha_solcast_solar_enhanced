@@ -82,6 +82,7 @@ from .const import (
     DOMAIN,
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
+    EXPORT_PEAK_WINDOW_S,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
     ISSUE_CAPACITY_LOOKS_DC,
     ISSUE_DAMPENING_GATED_LEGACY,
@@ -1626,11 +1627,19 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
           mean does.
         - **Cumulative energy** (``Wh``/``kWh``/``MWh`` — the recommended input): the
           values are a monotonic counter whose maximum is meaningless as a power
-          figure. Power comes from successive deltas, ``Δenergy / Δt``, which
-          resolves at the counter's own update rate rather than the half hour.
+          figure. Power comes from ``Δenergy / Δt`` — but **not** between adjacent
+          samples. A counter is a staircase whose steps are its resolution, and the
+          time between two adjacent ticks is reporting jitter rather than power:
+          on the live store a 10 Wh tick logged 0.33 s after the previous one read
+          as 108 kW on an 8 kW system, and 13 of the first 15 slots cleared the
+          export limit. Each sample is instead differenced against the latest
+          sample at least ``EXPORT_PEAK_WINDOW_S`` earlier, which bounds the
+          quantisation error to ``resolution / window`` while a capped episode of
+          at least that length still registers at the limit exactly.
 
         Returns ``0.0`` — the "unknown" sentinel the stored column uses — when the
-        recorder gave nothing, the entity is unset, or no delta was usable.
+        recorder gave nothing, the entity is unset, or no delta was usable (for a
+        counter, that includes a series too short to span the window).
         """
         if not entity_id:
             return 0.0
@@ -1645,19 +1654,21 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if mode.startswith("power"):
             return max([0.0, *(self._to_kw(v, mode) for _, v in pairs)])
 
+        series = [(ts, self._to_kwh(max(0.0, raw), mode)) for ts, raw in pairs]
         peak = 0.0
-        prev_ts, prev_kwh = pairs[0][0], self._to_kwh(max(0.0, pairs[0][1]), mode)
-        for ts, raw in pairs[1:]:
-            kwh = self._to_kwh(max(0.0, raw), mode)
+        anchor = 0  # Latest index at least a window behind the sample being judged.
+        for i in range(1, len(series)):
+            ts, kwh = series[i]
+            while anchor + 1 < i and series[anchor + 1][0] <= ts - EXPORT_PEAK_WINDOW_S:
+                anchor += 1
+            prev_ts, prev_kwh = series[anchor]
             dt = ts - prev_ts
-            delta = kwh - prev_kwh
-            prev_ts, prev_kwh = ts, kwh
-            # A duplicate timestamp would divide by zero. A counter reset needs no
-            # branch of its own: it makes ``delta`` negative, and a negative
-            # candidate can never raise a maximum that starts at 0.0.
-            if dt <= 0:
-                continue
-            peak = max(peak, delta / (dt / 3600.0))
+            if dt < EXPORT_PEAK_WINDOW_S:
+                continue  # Not yet a full window into the series.
+            # A counter reset needs no branch of its own: it makes the delta
+            # negative, and a negative candidate can never raise a maximum that
+            # starts at 0.0.
+            peak = max(peak, (kwh - prev_kwh) / (dt / 3600.0))
         return peak
 
     def _interval_extreme(self, entity_id: str | None, mode: str, hist: dict[str, list[float]]) -> float | None:

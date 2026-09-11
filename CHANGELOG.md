@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot be backfilled. They carry `0`, which means "unknown" and preserves the
   previous behaviour exactly, so the correction phases in as new data accumulates.
 
+  For a cumulative energy counter — the recommended export input — the peak is
+  derived from `Δenergy/Δt` over a **five-minute minimum window**, not between
+  adjacent recorder samples. A counter is a staircase whose steps are its
+  resolution, and the time between two adjacent ticks is reporting jitter rather
+  than power: the first soak hours of the per-tick form read a 10 Wh tick logged
+  0.33 s after the previous one as **108 kW on an 8 kW system**, and flagged 13 of
+  the first 15 daylight slots as capped — which would have neutralised the shading
+  measurement on nearly every sunny slot and excluded them from tuning. Windowing
+  bounds the error to `resolution ÷ window` (0.12 kW for a 10 Wh counter) while a
+  capped episode of five minutes or more still registers at the limit exactly.
+  No released build ever wrote the per-tick form, so no stored data needs repair.
+
 - **Read-only opens of an older database no longer fail their queries.** A
   read-only open cannot run the additive `ALTER` pass, so an older file genuinely
   lacks newer columns; naming one failed the entire query and returned no records
