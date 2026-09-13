@@ -117,6 +117,12 @@ SHARED_FIGURES = [
     ("shading agreement below 15 deg", "0.162", [CLAUDE_MD, DESIGN_MD, SHADING_PY]),
     ("shading agreement worst cell", "0.50", [CLAUDE_MD, DESIGN_MD, SHADING_PY]),
     ("capacity/sky-view cross-method agreement", "0.02", [CLAUDE_MD, DESIGN_MD, SHADING_PY]),
+    # The worked example behind issue #86: a half-hour capped for ten of thirty
+    # minutes at a 5 kW limit averages 2.33 kW, i.e. 47% of the limit, and passes a
+    # 0.95 gate as uncapped. Quoted in both living documents; the resulting pushed
+    # factor is pinned separately by
+    # tests/test_shading_dampening.py::test_worst_case_partial_curtailment_penalty_is_pinned.
+    ("partial-curtailment mean as a fraction of the limit", "47%", [CLAUDE_MD, DESIGN_MD]),
 ]
 
 

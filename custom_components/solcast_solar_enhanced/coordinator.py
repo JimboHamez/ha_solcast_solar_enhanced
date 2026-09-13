@@ -82,6 +82,7 @@ from .const import (
     DOMAIN,
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
+    EXPORT_PEAK_WINDOW_S,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
     ISSUE_CAPACITY_LOOKS_DC,
     ISSUE_DAMPENING_GATED_LEGACY,
@@ -502,7 +503,23 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             # '_total' row uses the property-wide trackers; per-site rows use their
             # own. Banked now (cannot be backfilled); nothing acts on it yet.
             dc_entities = self._collect_dc_entities(opts)
-            dc_hist = await self._interval_values(dc_entities, slot_start_epoch, period_epoch)
+            # The export meter rides along in the same batched recorder query: its
+            # interval PEAK is what tells the curtailment gates whether export ever
+            # touched the limit, which the half-hour mean they have today cannot
+            # (issue #86). Property-wide, so it is replicated onto the per-site rows
+            # exactly as ``pv_export`` already is.
+            export_entity = str(opts.get(CONF_PV_EXPORT_SENSOR, "") or "")
+            samples = await self._interval_samples(
+                dc_entities | ({export_entity} if export_entity else set()),
+                slot_start_epoch,
+                period_epoch,
+            )
+            dc_hist = self._values_only(samples)
+            pv_export_max = self._interval_peak_kw(
+                export_entity,
+                str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)),
+                samples,
+            )
             site_dc = self._read_site_dc_telemetry(opts, dc_hist)
             # The property-wide trackers: the flat config keys on a single-array
             # system, the arrays' own trackers otherwise (see _property_mppt_list).
@@ -547,6 +564,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "site": DEFAULT_SITE_ID,
                 "pv_actual": round(pv_actual, 4),
                 "pv_export": round(pv_export, 4),
+                "pv_export_max": round(pv_export_max, 4),
                 "pv_estimate": round(pv_estimate, 4),
                 "pv_estimate10": round(pv_est10, 4),
                 "pv_estimate90": round(pv_est90, 4),
@@ -604,6 +622,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "site": site_id,
                         "pv_actual": round(site_kw, 4),
                         "pv_export": round(pv_export, 4),
+                        "pv_export_max": round(pv_export_max, 4),
                         "pv_estimate": round(s_est, 4),
                         "pv_estimate10": round(s_est10, 4),
                         "pv_estimate90": round(s_est90, 4),
@@ -1202,6 +1221,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                         "avg_quality": 0.0,
                         "clipped_excluded": 0,
                         "forecast_clipped": 0,
+                        "export_capped": 0,
                         "undampened_records": 0,
                     }
                 )
@@ -1516,13 +1536,20 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 _add(s.get("mppts"))
         return ids
 
-    async def _interval_values(self, entity_ids: set[str], start_epoch: int, end_epoch: int) -> dict[str, list[float]]:
-        """Recorded numeric values per entity over ``[start, end]`` from the recorder.
+    async def _interval_samples(
+        self, entity_ids: set[str], start_epoch: int, end_epoch: int
+    ) -> dict[str, list[tuple[float, float]]]:
+        """Recorded ``(epoch, value)`` samples per entity over ``[start, end]``.
 
         One batched ``get_significant_states`` (all states, no attributes) run on
         the recorder executor. Returns ``{}`` when the recorder is unavailable or
         errors — callers then fall back to the instantaneous state, so capture
         degrades gracefully rather than failing.
+
+        Timestamps are carried because a cumulative energy counter only becomes a
+        power series through its successive deltas (see ``_interval_peak_kw``);
+        reducers that only need the values project them off with
+        ``_interval_values``.
         """
         ids = [e for e in entity_ids if e]
         if not ids:
@@ -1550,19 +1577,99 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         try:
             raw = await get_instance(self.hass).async_add_executor_job(_job)
         except Exception as exc:  # noqa: BLE001 — recorder may be disabled/not ready
-            _LOGGER.debug("DC interval history unavailable: %s", exc)
+            _LOGGER.debug("Interval history unavailable: %s", exc)
             return {}
-        out: dict[str, list[float]] = {}
+        out: dict[str, list[tuple[float, float]]] = {}
         for eid, states in (raw or {}).items():
-            vals: list[float] = []
+            vals: list[tuple[float, float]] = []
             for st in states:
                 try:
-                    vals.append(float(st.state))
+                    value = float(st.state)
                 except (TypeError, ValueError):
                     continue  # 'unknown'/'unavailable' between real readings
+                ts = getattr(st, "last_updated_timestamp", None)
+                if ts is None:
+                    last_updated = getattr(st, "last_updated", None)
+                    ts = last_updated.timestamp() if last_updated is not None else 0.0
+                vals.append((float(ts), value))
             if vals:
+                vals.sort(key=lambda pair: pair[0])
                 out[eid] = vals
         return out
+
+    async def _interval_values(self, entity_ids: set[str], start_epoch: int, end_epoch: int) -> dict[str, list[float]]:
+        """Recorded numeric values per entity over ``[start, end]``, timestamps dropped."""
+        samples = await self._interval_samples(entity_ids, start_epoch, end_epoch)
+        return self._values_only(samples)
+
+    @staticmethod
+    def _values_only(samples: dict[str, list[tuple[float, float]]]) -> dict[str, list[float]]:
+        """Project ``_interval_samples`` output down to bare value lists."""
+        return {eid: [v for _, v in pairs] for eid, pairs in samples.items()}
+
+    def _interval_peak_kw(
+        self,
+        entity_id: str,
+        configured_mode: str,
+        samples: dict[str, list[tuple[float, float]]],
+    ) -> float:
+        """Peak instantaneous power over the interval, in kW (0.0 when unknown).
+
+        The companion to ``_read_pv_value``'s interval *mean*, and the answer to
+        issue #86: an export limit only ever binds instantaneously, so a slot that
+        was capped for ten of thirty minutes averages out well below the limit and
+        both curtailment gates read it as uncapped. Reduction depends on how the
+        sensor reports:
+
+        - **Averaged power** (``kW``/``W``): the recorded values are already power,
+          so the peak is their maximum. A heavily smoothed ``mean_linear`` helper
+          still under-reports the true peak, but strictly less than the half-hour
+          mean does.
+        - **Cumulative energy** (``Wh``/``kWh``/``MWh`` — the recommended input): the
+          values are a monotonic counter whose maximum is meaningless as a power
+          figure. Power comes from ``Δenergy / Δt`` — but **not** between adjacent
+          samples. A counter is a staircase whose steps are its resolution, and the
+          time between two adjacent ticks is reporting jitter rather than power:
+          on the live store a 10 Wh tick logged 0.33 s after the previous one read
+          as 108 kW on an 8 kW system, and 13 of the first 15 slots cleared the
+          export limit. Each sample is instead differenced against the latest
+          sample at least ``EXPORT_PEAK_WINDOW_S`` earlier, which bounds the
+          quantisation error to ``resolution / window`` while a capped episode of
+          at least that length still registers at the limit exactly.
+
+        Returns ``0.0`` — the "unknown" sentinel the stored column uses — when the
+        recorder gave nothing, the entity is unset, or no delta was usable (for a
+        counter, that includes a series too short to span the window).
+        """
+        if not entity_id:
+            return 0.0
+        pairs = samples.get(entity_id) or []
+        if not pairs:
+            return 0.0
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return 0.0
+        mode = self._resolve_input_mode(state, configured_mode)
+
+        if mode.startswith("power"):
+            return max([0.0, *(self._to_kw(v, mode) for _, v in pairs)])
+
+        series = [(ts, self._to_kwh(max(0.0, raw), mode)) for ts, raw in pairs]
+        peak = 0.0
+        anchor = 0  # Latest index at least a window behind the sample being judged.
+        for i in range(1, len(series)):
+            ts, kwh = series[i]
+            while anchor + 1 < i and series[anchor + 1][0] <= ts - EXPORT_PEAK_WINDOW_S:
+                anchor += 1
+            prev_ts, prev_kwh = series[anchor]
+            dt = ts - prev_ts
+            if dt < EXPORT_PEAK_WINDOW_S:
+                continue  # Not yet a full window into the series.
+            # A counter reset needs no branch of its own: it makes the delta
+            # negative, and a negative candidate can never raise a maximum that
+            # starts at 0.0.
+            peak = max(peak, (kwh - prev_kwh) / (dt / 3600.0))
+        return peak
 
     def _interval_extreme(self, entity_id: str | None, mode: str, hist: dict[str, list[float]]) -> float | None:
         """Return the extreme reading over the interval, or ``None`` if unreadable.
@@ -2750,6 +2857,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 fclip = slot_a.get("forecast_clipped", 0) + slot_b.get("forecast_clipped", 0)
                 if fclip:
                     attrs[f"{key}_forecast_clipped"] = fclip
+                # How many of this hour's records were export-capped at some point
+                # in their half hour (issue #86). Surfaced because it is the answer
+                # to "why is this hour neutral?" on a curtailing site: a capped
+                # record contributes a valid 1.0 rather than a shading penalty.
+                capped = slot_a.get("export_capped", 0) + slot_b.get("export_capped", 0)
+                if capped:
+                    attrs[f"{key}_export_capped"] = capped
         sources = [s.get("source") for s in self._dampening_table if s.get("source") != "night"]
         if sources:
             most_common = Counter(sources).most_common(1)

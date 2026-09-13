@@ -717,3 +717,123 @@ async def test_property_mppt_list_truncates_to_max_trackers(coordinator):
     got = coordinator._property_mppt_list(opts)
     assert len(got) == MAX_MPPT_TRACKERS
     assert got[0]["current_sensor"] == "sensor.ia"
+
+
+# ---------------------------------------------------------------------------
+# _interval_peak_kw — the interval export peak behind issue #86
+# ---------------------------------------------------------------------------
+
+async def test_interval_peak_kw_power_sensor_takes_the_maximum(hass, coordinator):
+    """An averaged-power sensor already reports power, so the peak is the max."""
+    hass.states.async_set("sensor.export", "1.0", {"unit_of_measurement": "kW"})
+    samples = {"sensor.export": [(0.0, 1.0), (60.0, 5.0), (120.0, 2.0)]}
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == 5.0
+
+
+async def test_interval_peak_kw_converts_watts(hass, coordinator):
+    hass.states.async_set("sensor.export", "1000", {"unit_of_measurement": "W"})
+    samples = {"sensor.export": [(0.0, 1000.0), (60.0, 4500.0)]}
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == 4.5
+
+
+def _staircase(segments: list[tuple[float, float]], resolution_kwh: float = 0.01, jitter: float = 0.0) -> list[tuple[float, float]]:
+    """Recorder samples for a cumulative counter of the given resolution.
+
+    ``segments`` is a list of ``(duration_s, power_kw)``; the counter ticks once per
+    ``resolution_kwh`` of energy, and ``jitter`` (0..1) shifts each tick's logged
+    timestamp by half that fraction of the tick interval, alternating late/early — the
+    way a meter polled on a fixed cadence reports an integrating counter.
+    """
+    out: list[tuple[float, float]] = [(0.0, 100.0)]
+    t, kwh, n = 0.0, 100.0, 0
+    for duration, kw in segments:
+        if kw <= 0:
+            t += duration
+            continue
+        tick_s = resolution_kwh / kw * 3600.0
+        end = t + duration
+        while t + tick_s <= end + 1e-9:
+            t += tick_s
+            kwh += resolution_kwh
+            n += 1
+            shift = tick_s * jitter / 2 * (1 if n % 2 else -1)
+            out.append((t + shift, round(kwh, 6)))
+        t = end
+    return out
+
+
+async def test_interval_peak_kw_energy_counter_reads_a_capped_episode_at_the_limit(hass, coordinator):
+    """A cumulative kWh counter's maximum is meaningless as power — the peak has to
+    come from Δenergy/Δt over the window. Ten minutes pinned at 5 kW, then twenty at
+    1 kW: the half-hour mean is 2.33 kW and the old mean-only gate reads uncapped;
+    the windowed peak must land on the 5 kW limit."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    samples = {"sensor.export": _staircase([(600, 5.0), (1200, 1.0)])}
+    peak = coordinator._interval_peak_kw("sensor.export", "auto", samples)
+    assert peak == pytest.approx(5.0, abs=0.12)  # resolution / window = 10 Wh / 300 s
+
+
+async def test_interval_peak_kw_energy_counter_is_immune_to_tick_jitter(hass, coordinator):
+    """The bug found on the first soak day: adjacent-sample Δenergy/Δt of a stepped
+    counter is quantisation noise. Steady 3 kW with 10 Wh ticks whose logged
+    timestamps jitter by 90% of the tick interval — adjacent deltas reach ~30 kW
+    (the live store showed 108 kW on an 8 kW system) — must still read ~3 kW."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    samples = {"sensor.export": _staircase([(1800, 3.0)], jitter=0.9)}
+    pairs = samples["sensor.export"]
+    adjacent = max((b[1] - a[1]) / ((b[0] - a[0]) / 3600) for a, b in zip(pairs, pairs[1:]) if b[0] > a[0])
+    assert adjacent > 20.0  # The naive reducer would have called this slot capped.
+    peak = coordinator._interval_peak_kw("sensor.export", "auto", samples)
+    assert peak == pytest.approx(3.0, abs=0.15)
+
+
+async def test_interval_peak_kw_energy_counter_window_is_five_minutes(hass, coordinator):
+    """A one-tick burst is not an episode. 0.25 kWh in a single 60 s tick (15 kW if
+    read per tick) inside an otherwise 0.6 kW half hour is spread over the window:
+    the peak is bounded by the energy delivered in any five minutes."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    pairs = _staircase([(1800, 0.6)])
+    burst = [(ts, kwh + (0.25 if ts >= 900 else 0.0)) for ts, kwh in pairs]
+    peak = coordinator._interval_peak_kw("sensor.export", "auto", {"sensor.export": burst})
+    assert peak == pytest.approx(0.6 + 0.25 / (300 / 3600), abs=0.2)  # 3.6 kW, not 15
+
+
+async def test_interval_peak_kw_ignores_counter_resets(hass, coordinator):
+    """A counter reset must not invent a curtailment episode.
+
+    Pinned as a behaviour rather than as a guarded branch: the reset shows up as a
+    negative delta, which cannot raise a maximum that starts at 0.0, so the reading
+    after it is the only one that counts. (A ``delta < 0`` branch here was removed
+    after a mutation check showed no test could tell it from its absence.)
+    """
+    hass.states.async_set("sensor.export", "0.5", {"unit_of_measurement": "kWh"})
+    samples = {
+        "sensor.export": [
+            (0.0, 100.0),
+            (300.0, 0.0),  # reset — negative delta, skipped
+            (600.0, 0.25),  # 0.25 kWh in 300 s → 3.0 kW, the only real reading
+        ]
+    }
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == pytest.approx(3.0)
+
+
+async def test_interval_peak_kw_energy_counter_too_short_to_span_the_window(hass, coordinator):
+    """A series shorter than the window has no usable delta and reports unknown."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    samples = {"sensor.export": [(0.0, 100.0), (60.0, 100.01), (120.0, 100.26), (180.0, 100.28)]}
+    assert coordinator._interval_peak_kw("sensor.export", "auto", samples) == 0.0
+
+
+async def test_interval_peak_kw_unknown_sentinels(hass, coordinator):
+    """0.0 is the "unknown" sentinel the stored column uses, and the one every
+    consumer treats as "fall back to the mean"."""
+    hass.states.async_set("sensor.export", "1.0", {"unit_of_measurement": "kW"})
+    assert coordinator._interval_peak_kw("", "auto", {"sensor.export": [(0.0, 5.0)]}) == 0.0
+    assert coordinator._interval_peak_kw("sensor.export", "auto", {}) == 0.0        # recorder gave nothing
+    assert coordinator._interval_peak_kw("sensor.gone", "auto", {"sensor.gone": [(0.0, 5.0)]}) == 0.0
+
+
+async def test_interval_peak_kw_energy_counter_single_sample(hass, coordinator):
+    """One sample yields no delta, so there is no power figure to report."""
+    hass.states.async_set("sensor.export", "100.0", {"unit_of_measurement": "kWh"})
+    assert coordinator._interval_peak_kw("sensor.export", "auto", {"sensor.export": [(0.0, 100.0)]}) == 0.0

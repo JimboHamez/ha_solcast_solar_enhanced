@@ -273,6 +273,31 @@ def test_run_tuning_excludes_export_limited_records():
     assert run_tuning(records, 5.0, 20, 0.95, export_limit_kw=3.0) is None
 
 
+def test_run_tuning_excludes_partly_capped_records_on_the_stored_peak():
+    """Issue #86: the mean export sits well under the clip level while the interval
+    peak is pinned on the limit. The mean-only gate keeps such a record — with a
+    ``pv_actual`` depressed by the capped minutes — and fits the capacity scale
+    against it; the stored peak excludes it."""
+    # Mean 2.33 kW is 47% of a 5 kW limit (clip level 4.75), the peak is on the limit.
+    capped = [_irr_record(pv_actual=2.33, pv_export=2.33, pv_export_max=5.0) for _ in range(20)]
+    assert run_tuning(capped, 5.0, 20, 0.95, export_limit_kw=5.0) is None
+    # Same rows with no stored peak (predating the column) still slip through, so
+    # the exclusion is attributable to the peak and nothing else.
+    legacy = [r | {"pv_export_max": 0.0} for r in capped]
+    assert run_tuning(legacy, 5.0, 20, 0.95, export_limit_kw=5.0) is not None
+
+
+def test_run_tuning_keeps_records_whose_peak_stayed_below_the_limit():
+    """The guard against over-exclusion: a peak below the clip level is not a cap."""
+    records = [
+        _irr_record(pv_actual=2.0, pv_export=1.0, pv_export_max=3.0, zenith=30.0 + i * 0.5)
+        for i in range(20)
+    ]
+    result = run_tuning(records, 5.0, 20, 0.95, export_limit_kw=5.0, fixed_azimuth=0.0)
+    assert result is not None
+    assert result["export_limited_excluded"] == 0
+
+
 def test_run_tuning_zero_export_limit_disables_filter():
     """export_limit_kw=0 (default) does not exclude any records based on export."""
     records = [

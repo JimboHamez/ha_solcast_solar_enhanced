@@ -259,12 +259,20 @@ def run_tuning(
         total_pv = float(r.get("pv_actual", 0) or 0)  # AC output incl. export + battery
         pv_est = float(r.get("pv_estimate", 0) or 0)
         pv_export = float(r.get("pv_export", 0) or 0)
+        # The interval PEAK export, when the row carries one. ``pv_export`` is a
+        # half-hour mean and the export limit only ever binds instantaneously, so a
+        # slot capped for ten of thirty minutes averages out far below the limit and
+        # passes this gate as uncapped — while its ``pv_actual`` is depressed by the
+        # capped portion, biasing the fitted capacity scale low (issue #86). 0 is the
+        # "unknown" sentinel for rows written before the column existed, and it
+        # leaves the mean-only behaviour exactly as it was.
+        pv_export_peak = float(r.get("pv_export_max", 0) or 0)
         # Clipping exclusion: both delivered and forecast pinned at the ceiling.
         if total_pv >= clip_kw and pv_est >= clip_kw:
             continue
         # Export-curtailment exclusion — after the cloud/clip filters so the tally
         # matches the former ordering.
-        if export_clip_kw > 0 and pv_export >= export_clip_kw:
+        if export_clip_kw > 0 and max(pv_export, pv_export_peak) >= export_clip_kw:
             export_limited_excluded += 1
             continue
         epoch = r.get("period_end_epoch")

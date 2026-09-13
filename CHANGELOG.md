@@ -5,6 +5,68 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0b7] - 2026-09-13
+
+> Beta. Fixes a measurement error that affects any site with an **export limit**
+> — partial curtailment was being booked as shading. Sites with no export limit
+> are unaffected. `1.11.0b6` was an unreleased soak build of this change; there
+> is no b6 tag or release, and nothing that shipped ever wrote the faulty per-tick
+> peak described below.
+>
+> Validated on a live 8 kW / 5 kW-export-limit system over two days before
+> release: the recorded peak tops out at 5.03 kW and lands at 5.00–5.03 kW on
+> every capped half hour while the mean export sat at 3.7–4.9 kW — exactly the
+> shape this release exists to catch. Fifteen midday slots on an unshaded
+> north-facing array that the previous code had scored as 0.78–0.91 shading now
+> contribute a neutral 1.0.
+
+### Fixed
+- **Partial export curtailment was being recorded as shading (issue #86).** Both
+  curtailment gates compared a *half-hour mean* export figure against an export
+  limit that only ever binds *instantaneously*. A slot that was capped for ten of
+  its thirty minutes averages out at well under half the limit and read as
+  uncapped — while its measured output was held down by the capped portion. The
+  dampening path then booked the shortfall as shading and pushed the forecast
+  down, which is the harmful direction: the `[0, 1]` clamp that protects against
+  ratios above 1 gives no protection at all here. Every curtailment episode has two
+  such shoulder half-hours by construction, so a curtailing site mis-measured at
+  least two slots a day.
+
+  The integration now records the **peak** export over each half hour alongside the
+  mean. Where the peak reaches the limit the interval was capped, and the forecast
+  is clipped to the delivered output so the record contributes a neutral 1.0 rather
+  than a penalty it did not earn; where the peak stayed below the limit nothing
+  changes. Tuning excludes a capped record on the same test. On synthetic data for
+  an unshaded 8 kW array behind a 5 kW limit, the pushed factor for a partly capped
+  hour moves from as low as **0.73 to a correct 1.00**.
+
+  The column is forward-only — the recorder keeps around ten days, so existing rows
+  cannot be backfilled. They carry `0`, which means "unknown" and preserves the
+  previous behaviour exactly, so the correction phases in as new data accumulates.
+
+  For a cumulative energy counter — the recommended export input — the peak is
+  derived from `Δenergy/Δt` over a **five-minute minimum window**, not between
+  adjacent recorder samples. A counter is a staircase whose steps are its
+  resolution, and the time between two adjacent ticks is reporting jitter rather
+  than power: the first soak hours of the per-tick form read a 10 Wh tick logged
+  0.33 s after the previous one as **108 kW on an 8 kW system**, and flagged 13 of
+  the first 15 daylight slots as capped — which would have neutralised the shading
+  measurement on nearly every sunny slot and excluded them from tuning. Windowing
+  bounds the error to `resolution ÷ window` (0.12 kW for a 10 Wh counter) while a
+  capped episode of five minutes or more still registers at the limit exactly.
+  No released build ever wrote the per-tick form, so no stored data needs repair.
+
+- **Read-only opens of an older database no longer fail their queries.** A
+  read-only open cannot run the additive `ALTER` pass, so an older file genuinely
+  lacks newer columns; naming one failed the entire query and returned no records
+  rather than the "unknown" sentinel. This affected the `tools/` command-line
+  analysers pointed at an archived database.
+
+### Changed
+- The Dampening sensor reports an `hour_NN_export_capped` attribute for any hour
+  whose records were export-capped. On a curtailing site this is the answer to "why
+  is this hour neutral?" — the records were capped, not unshaded.
+
 ## [1.11.0b5] - 2026-09-10
 
 > Beta. **No functional change** — the integration behaves exactly as 1.11.0b4.
@@ -1424,7 +1486,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...HEAD
+[1.11.0b7]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...v1.11.0b7
 [1.11.0b5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...v1.11.0b5
 [1.11.0b4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...v1.11.0b4
 [1.11.0b3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b2...v1.11.0b3

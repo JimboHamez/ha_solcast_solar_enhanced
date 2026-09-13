@@ -485,6 +485,25 @@ async def test_dampening_properties(coordinator):
     assert attrs["hour_00_clipped_excluded"] == 2
     assert attrs["overall_source"] == "db_blended"
     assert attrs["orientation_diverged"] is False
+    # Nothing was export-capped, so the key stays off the attributes entirely.
+    assert "hour_00_export_capped" not in attrs
+
+
+async def test_dampening_attributes_report_export_capped_records(coordinator):
+    """A curtailing site's neutral hour is otherwise unexplainable from the sensor:
+    the count says the records were export-capped (issue #86), not unshaded."""
+    def slot(capped):
+        return {
+            "factor": 1.0, "alpha": 0.5, "source": "db_blended",
+            "quality_records": 4.0, "avg_quality": 0.9,
+            "clipped_excluded": 0, "forecast_clipped": capped,
+            "export_capped": capped,
+        }
+    coordinator._dampening_table = [slot(3), slot(5)] + [
+        {"factor": 1.0, "alpha": 0.0, "source": "night"} for _ in range(46)
+    ]
+    attrs = coordinator.dampening_attributes
+    assert attrs["hour_00_export_capped"] == 8
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +840,47 @@ async def test_do_update_writes_per_site_rows(hass, mock_base_coordinator):
     assert rows[rid]["pv_estimate"] == pytest.approx(2.2)
     assert rows[rid]["battery_charge"] == 0.0
     assert set(coord._db_sites) == {DEFAULT_SITE_ID, rid}
+
+
+async def test_do_update_stores_the_export_peak_on_every_row(hass, mock_base_coordinator):
+    """End-to-end: the export meter's interval peak is captured alongside its mean
+    and replicated onto the per-site rows, exactly as ``pv_export`` already is.
+
+    The mean (1.2 kW) and the peak (4.9 kW) are deliberately far apart — the whole
+    of issue #86 is that a partly-capped slot averages down to something the export
+    gate reads as uncapped.
+    """
+    rid = "abcd-1234"
+    groups = [{"ac_sensor": "sensor.inv_ac", "site": rid}]
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True, CONF_SITE_GROUPS: groups})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+    hass.states.async_set("sensor.inv_ac", "4.0", {"unit_of_measurement": "kW"})
+
+    async def _samples(entity_ids, start, end):
+        assert "sensor.pv_export_30min" in entity_ids  # the meter rides the DC batch
+        return {"sensor.pv_export_30min": [(float(start), 0.4), (float(end), 4.9)]}
+
+    with patch.object(coord, "_interval_samples", side_effect=_samples):
+        await coord._do_update()
+
+    rows = {r["site"]: r for r in coord._db.records}
+    assert set(rows) == {DEFAULT_SITE_ID, rid}
+    for row in rows.values():
+        assert row["pv_export"] == pytest.approx(1.2)      # the mean, unchanged
+        assert row["pv_export_max"] == pytest.approx(4.9)  # the peak, new
+
+
+async def test_do_update_export_peak_is_zero_without_recorder_history(hass, mock_base_coordinator):
+    """No recorder history (or no export sensor) leaves the 0.0 sentinel, which both
+    consumers read as "unknown" and fall back to the mean-only behaviour."""
+    coord = _orch_coordinator(hass, {CONF_DB_ENABLED: True})
+    coord._db = _FakeStore()
+    _set_pv(hass)
+
+    await coord._do_update()
+
+    assert coord._db.records[0]["pv_export_max"] == 0.0
 
 
 async def test_do_update_total_summed_from_sites_when_no_system_sensor(hass, mock_base_coordinator):

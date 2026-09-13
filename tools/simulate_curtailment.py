@@ -61,15 +61,29 @@ def half_hour(
     export = (capped_minutes * clear_exp + cloudy_minutes * cloudy_exp) / 30.0
     # Unshaded array: the forecast equals what was actually available.
     estimate = (capped_minutes * available_kw + cloudy_minutes * cloudy_kw) / 30.0
-    return {"pv_actual": actual, "pv_export": export, "pv_estimate_undampened": estimate}
+    # The interval PEAK export the coordinator now records alongside the mean —
+    # the maximum over the minute-level truth, not its average. This is the signal
+    # the gates were missing; pass 0.0 to reproduce the pre-fix behaviour.
+    peak = max(clear_exp if capped_minutes else 0.0, cloudy_exp if cloudy_minutes else 0.0)
+    return {
+        "pv_actual": actual,
+        "pv_export": export,
+        "pv_export_max": peak,
+        "pv_estimate_undampened": estimate,
+    }
 
 
-def record(slot: dict[str, float], epoch: int) -> dict[str, object]:
-    """Wrap a slot as a store row at the target sun position under a clear sky."""
+def record(slot: dict[str, float], epoch: int, *, with_peak: bool = True) -> dict[str, object]:
+    """Wrap a slot as a store row at the target sun position under a clear sky.
+
+    ``with_peak=False`` drops ``pv_export_max`` to 0, the sentinel carried by rows
+    written before that column existed — i.e. the pre-fix behaviour of #86.
+    """
     return {
         "period_end_epoch": epoch,
         "pv_actual": slot["pv_actual"],
         "pv_export": slot["pv_export"],
+        "pv_export_max": slot["pv_export_max"] if with_peak else 0.0,
         "pv_estimate_undampened": slot["pv_estimate_undampened"],
         "pv_estimate": slot["pv_estimate_undampened"],
         "zenith": TARGET_ZENITH,
@@ -80,9 +94,9 @@ def record(slot: dict[str, float], epoch: int) -> dict[str, object]:
     }
 
 
-def run(label: str, slots: list[dict[str, float]]) -> dict[str, object]:
+def run(label: str, slots: list[dict[str, float]], *, with_peak: bool = True) -> dict[str, object]:
     base = int(datetime(2026, 1, 15, 12, 0, tzinfo=UTC).timestamp())
-    records = [record(s, base + i * 86400) for i, s in enumerate(slots)]
+    records = [record(s, base + i * 86400, with_peak=with_peak) for i, s in enumerate(slots)]
     result = compute_dampening(
         records,
         capacity_kw=CAPACITY_KW,
@@ -99,7 +113,8 @@ def run(label: str, slots: list[dict[str, float]]) -> dict[str, object]:
     print(
         f"{label:<34} ratio={mean_actual / mean_est:5.3f}  "
         f"factor={result['factor']:5.3f}  alpha={result['alpha']:5.3f}  "
-        f"clipped={result['forecast_clipped']:>2}  excluded={result['clipped_excluded']:>2}"
+        f"clipped={result['forecast_clipped']:>2}  excluded={result['clipped_excluded']:>2}  "
+        f"capped={result['export_capped']:>2}"
     )
     return result
 
@@ -114,7 +129,20 @@ def main() -> int:
     print("--- baseline -------------------------------------------------------------")
     run("no curtailment", [half_hour(available_kw=4.0, capped_minutes=30, cloudy_kw=4.0)] * n)
 
-    print("\n--- #86: does the export gate catch it? ----------------------------------")
+    print("\n--- #86 BEFORE: mean-only gate (rows with no stored peak) ----------------")
+    run(
+        "fully capped (30/30 min)",
+        [half_hour(available_kw=8.0, capped_minutes=30, cloudy_kw=0.0)] * n,
+        with_peak=False,
+    )
+    for minutes in (28, 25, 22, 20, 18, 16, 15, 14, 12, 10, 8, 5, 2):
+        run(
+            f"partly capped ({minutes}/30 min)",
+            [half_hour(available_kw=8.0, capped_minutes=minutes, cloudy_kw=1.0)] * n,
+            with_peak=False,
+        )
+
+    print("\n--- #86 AFTER: the stored interval peak drives the ceiling ---------------")
     run("fully capped (30/30 min)", [half_hour(available_kw=8.0, capped_minutes=30, cloudy_kw=0.0)] * n)
     for minutes in (28, 25, 22, 20, 18, 16, 15, 14, 12, 10, 8, 5, 2):
         run(
@@ -142,7 +170,8 @@ def main() -> int:
     print(
         f"{'battery full, no export limit set':<34} ratio=0.625  "
         f"factor={result['factor']:5.3f}  alpha={result['alpha']:5.3f}  "
-        f"clipped={result['forecast_clipped']:>2}  excluded={result['clipped_excluded']:>2}"
+        f"clipped={result['forecast_clipped']:>2}  excluded={result['clipped_excluded']:>2}  "
+        f"capped={result['export_capped']:>2}"
     )
     return 0
 
