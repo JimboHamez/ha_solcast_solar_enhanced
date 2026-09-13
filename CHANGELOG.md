@@ -5,15 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0b7] - 2026-09-13
 
-> The manifest carries `1.11.0b6` as a **pre-release soak marker**, not a release.
-> No tag and no GitHub release exist for b6. The bump is deliberate: HACS compares
-> the installed version against the latest release, and anything that sorts at or
-> below `1.11.0b5` invites it to overwrite a hand-installed build. Every
-> dev-flavoured suffix (`.dev0`, `-soak`) either sorts *below* b5 under
-> AwesomeVersion — it ranks the modifier before the number — or fails validation
-> outright, so a plain beta number is the only option that holds.
+> Beta. Fixes a measurement error that affects any site with an **export limit**
+> — partial curtailment was being booked as shading. Sites with no export limit
+> are unaffected. `1.11.0b6` was an unreleased soak build of this change; there
+> is no b6 tag or release, and nothing that shipped ever wrote the faulty per-tick
+> peak described below.
+>
+> Validated on a live 8 kW / 5 kW-export-limit system over two days before
+> release: the recorded peak tops out at 5.03 kW and lands at 5.00–5.03 kW on
+> every capped half hour while the mean export sat at 3.7–4.9 kW — exactly the
+> shape this release exists to catch. Fifteen midday slots on an unshaded
+> north-facing array that the previous code had scored as 0.78–0.91 shading now
+> contribute a neutral 1.0.
 
 ### Fixed
 - **Partial export curtailment was being recorded as shading (issue #86).** Both
@@ -1481,7 +1486,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...HEAD
+[1.11.0b7]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...v1.11.0b7
 [1.11.0b5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...v1.11.0b5
 [1.11.0b4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...v1.11.0b4
 [1.11.0b3]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b2...v1.11.0b3

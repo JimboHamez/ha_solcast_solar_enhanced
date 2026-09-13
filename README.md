@@ -38,13 +38,26 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b5
+## 🆕 What's new in v1.11.0b7
+
+**Beta: if you have an export limit, partial curtailment is no longer mistaken for shading.** Sites with no export limit are unaffected. (`v1.11.0b6` was an unreleased test build of this same change — there is no b6 release.)
+
+The integration checks whether your inverter was being held at the export limit, so that a half hour of curtailment isn't scored as a half hour of shade. But that check compared the limit against the **average** export over the half hour, and an export limit only ever bites **instantaneously**. A slot capped for ten of its thirty minutes averages out well under the limit and looked uncapped — while its output had been held down the whole time it was capped. The shortfall was then booked as shading and pushed to Solcast as a lower forecast, and the usual "nothing above 1" safety clamp offers no protection in that direction. Every curtailment episode has two such shoulder half-hours by construction, so a curtailing site was mis-measured at least twice a day.
+
+Each half hour now also records the **peak** export. Where the peak reaches the limit, the interval was capped and the record contributes a neutral factor rather than a penalty it didn't earn; where it stays below, nothing changes. Tilt tuning excludes capped records on the same test. Verified on a live 8 kW system behind a 5 kW limit: the peak reads 5.00–5.03 kW on every capped half hour while the mean sat at 3.7–4.9 kW, and fifteen midday slots on an unshaded north-facing array that the old test had scored as 0.78–0.91 shading now read as the neutral 1.0 they should.
+
+**This only accumulates going forward** — the recorder history the peak comes from is kept for about ten days, so existing rows can't be backfilled. They keep the old behaviour exactly, and the correction phases in as new data arrives. On the **Dampening Hours with DB Data** sensor, an `hour_NN_export_capped` attribute now tells you when an hour is neutral because it was capped rather than unshaded.
+
+<details>
+<summary><b>What landed in v1.11.0b5</b></summary>
 
 **Beta: nothing changes.** This release fixes documentation and adds a test so those mistakes stop happening. The integration behaves exactly as v1.11.0b4 did — if you are already on b4, there is nothing here you need.
 
 Two sensors were named inexactly in this README. The troubleshooting section referred to `MPPT DC Voltage` when the entity is **MPPT DC Voltage (max)**, and to `Dampening` when the entity is **Dampening Hours with DB Data**. Searching Home Assistant for either short name finds nothing, so anyone following those sections was hunting an entity that does not exist under that name. Both are corrected, and the sensor tables below are now checked against the shipped entity names by a test — a documented name no sensor answers to, or a sensor missing from the tables, fails the build.
 
 There is also a new offline analysis tool, `tools/differential_shading_fit.py`, for anyone with **two arrays at the same tilt and azimuth**. It measures shading by comparing the two arrays against *each other* rather than against the Solcast forecast, which takes the forecast's own error out of the measurement entirely. It reads your database, prints a report, and changes nothing — no factors are affected and nothing is sent to Solcast.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0b4</b></summary>
