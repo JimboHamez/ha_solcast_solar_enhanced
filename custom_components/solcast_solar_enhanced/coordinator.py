@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
@@ -163,19 +163,39 @@ def base_integration_available(hass: HomeAssistant) -> bool:
     return hass.data.get(BASE_DOMAIN) is not None
 
 
+def _is_base_rooftop(registry: er.EntityRegistry, entity_id: str) -> bool:
+    """Whether ``entity_id`` belongs to the base integration.
+
+    The base's ``RooftopSensor`` has never set ``has_entity_name``, so its entity id
+    is whatever Home Assistant derived at creation time: ``sensor.<site>`` on cores
+    before 2026.4, and the device-prefixed ``sensor.solcast_pv_forecast_<site>`` on
+    later ones. Ids persist in the registry, so a base installed on an older core
+    keeps the unprefixed form forever — matching on the ``solcast`` substring dropped
+    every one of those rooftops and left the sites step silently skipped. The entity
+    registry's ``platform`` is the authoritative owner, independent of naming; the
+    substring is kept only for states with no registry entry at all.
+    """
+    reg_entry = registry.async_get(entity_id)
+    if reg_entry is not None:
+        return reg_entry.platform == BASE_DOMAIN
+    return "solcast" in entity_id
+
+
 def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Discover Solcast sites from the base integration's RooftopSensors.
 
     Each site sensor exposes ``resource_id`` plus orientation/capacity attributes.
-    Returns a list of normalised site dicts; empty if none found. Shared by the
-    coordinator and the config flow.
+    Rooftops are identified by their entity-registry platform, never by entity id
+    (see :func:`_is_base_rooftop`). Returns a list of normalised site dicts; empty
+    if none found. Shared by the coordinator and the config flow.
     """
     sites: list[dict[str, Any]] = []
     try:
+        registry = er.async_get(hass)
         for state in hass.states.async_all("sensor"):
             attrs = state.attributes
             resource_id = attrs.get("resource_id")
-            if not resource_id or "solcast" not in state.entity_id:
+            if not resource_id or not _is_base_rooftop(registry, state.entity_id):
                 continue
 
             def _f(key: str, attrs: Mapping[str, Any] = attrs) -> float:

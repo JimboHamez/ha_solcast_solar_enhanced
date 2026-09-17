@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-09-17
+
+### Fixed
+
+- **Multi-site setup skipped the sites step on installs whose base integration predates HA 2026.4**
+  ([discussion #65](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/65)).
+  Site discovery kept a rooftop sensor only if its entity id contained `solcast`. The base's
+  `RooftopSensor` has never set `has_entity_name`, so the id is whatever Home Assistant derived
+  when the entity was first created: `sensor.<site>` on cores before 2026.4, and the device-prefixed
+  `sensor.solcast_pv_forecast_<site>` only on 2026.4+. Ids persist in the registry, so a base added
+  on an older core keeps the unprefixed form forever — every rooftop was dropped, discovery returned
+  zero sites, and the wizard treated a two-array property as a single array with no sites step.
+  Rooftops are now identified by the entity registry's `platform` (`solcast_solar`), independent of
+  naming; the substring test survives only for states with no registry entry. Two tests pin it: an
+  unprefixed registry-backed rooftop is discovered, and a foreign-platform sensor with `solcast` in
+  its id and a `resource_id` attribute is rejected.
+
 ## [1.11.0] - 2026-09-17
 
 > Stable. Promotes the seven-beta 1.11.0 line unchanged — the code is `1.11.0b7` with the
@@ -1559,6 +1576,8 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.11.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0...v1.11.1
+[1.11.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b7...v1.11.0
 [1.11.0b7]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...v1.11.0b7
 [1.11.0b5]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b4...v1.11.0b5
 [1.11.0b4]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b3...v1.11.0b4

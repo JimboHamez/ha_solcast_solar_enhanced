@@ -38,7 +38,18 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0
+## 🆕 What's new in v1.11.1
+
+**Patch: multi-array systems whose Solcast integration was installed before Home Assistant 2026.4 can now reach the sites step.** If you have two or more arrays and the setup wizard has always treated your property as a single array — never showing you the per-array sites step — this is why ([discussion #65](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/65)).
+
+Site discovery only recognised rooftop sensors whose entity id contained `solcast`. The base integration has never asked Home Assistant to prefix its rooftop ids with the device name, so the id is whatever the core in use at the time derived: `sensor.<site>` on cores before 2026.4, and `sensor.solcast_pv_forecast_<site>` only on 2026.4 and later. Entity ids persist, so a base added on an older core keeps the unprefixed form forever — every rooftop was dropped, discovery returned no sites, and the wizard skipped the sites step without a word. Rooftops are now identified by the integration that owns them in the entity registry, independent of what they are called.
+
+**Who is affected:** only installs where the base Solcast integration was first set up on a core before 2026.4 *and* the property has more than one array. Everyone else was already reaching the sites step and sees no change.
+
+**Upgrading?** Drop-in. Nothing else moves — the code is otherwise identical to v1.11.0. After updating, open **Configure** on a multi-array property and you will be offered the sites step.
+
+<details>
+<summary><b>What landed in v1.11.0</b></summary>
 
 **Stable release of the 1.11.0 line.** The code is identical to `v1.11.0b7`; if you have been running the betas there is nothing new here. If you are upgrading from **v1.10.3**, this is what changed.
 
@@ -50,6 +61,8 @@ This integration brings that back, on your own hardware. It records your actual-
 - Per-tracker **median DC current** is now recorded alongside the median voltage (the interval minimum was useless for shading — one cloud pinned it near zero), and the whole-property DC row is no longer empty on multi-array systems.
 
 **Upgrading from 1.10.x?** Drop-in. Existing entities keep their IDs; the database gains its columns additively on first run. The curtailment peak and the median current are forward-only, so the correction and the shading map build from the day you upgrade.
+
+</details>
 
 <details>
 <summary><b>How the 1.11.0 line got here — the seven betas, newest first</b></summary>
@@ -644,6 +657,7 @@ logger:
 | **Dampening factors are all 1.0** | Not enough history yet. The blend ramps from a neutral 1.0 toward the measured ratio as quality-weighted records accumulate | Check `alpha` and `quality_records` in the *Dampening Hours with DB Data* attributes. In winter, or after a database reset, this legitimately takes weeks |
 | **Shading sensor shows a real loss but the pushed factors stay near 1.0** | Before 1.10.3, two defects held the confidence weight `alpha` low: the average-quality term fell as history grew, and the seasonal window was permanently half-empty on a first-year install | Update to 1.10.3. `alpha` should rise substantially and the curve should deepen — the *measured* ratio was always right, only the amount applied was wrong. Compare `alpha` in the *Dampening Hours with DB Data* attributes before and after |
 | **Tuned Tilt reads *unknown*** | By design — the fit could not actually determine a tilt, and reporting one you might apply to Solcast would make your forecast worse | Read `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes. `railed` means the best fit sat on a search bound; `fit_too_loose` means the residual was too large relative to output |
+| **Two arrays, but the wizard never shows the sites step** | Before 1.11.1, site discovery only recognised rooftop sensors whose entity id contained `solcast`. Rooftops created on a Home Assistant core before 2026.4 are named `sensor.<site>` and keep that id forever, so every one was dropped and the property was treated as a single array ([discussion #65](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/65)) | Update — rooftops are now recognised by their integration, not their name. On an older version, renaming each rooftop's entity id to `sensor.solcast_pv_forecast_<site>` in **Settings → Devices & services → Entities** is a workaround |
 | **Per-site sensors read 0 or *unknown*** | The base integration is not exposing per-site forecast detail, and the arrays' azimuths differ by more than 10°, so we will not invent a capacity split | Confirm the base's `detailedForecast-<resource_id>` attribute exists. With divergent orientations, per-site dampening needs real per-site detail |
 | **Midday shading looks diluted on a clipping inverter** | The clipping filter is not firing, so saturated midday records stay in the dataset and pull the ratio toward 1.0 in the highest-value hours | Check *System capacity* is your inverter's **AC** rating, not the panel DC total. Before 1.10.1 the field was mislabelled "kW DC"; entering the DC figure on a DC-oversized array puts the ceiling out of reach ([#59](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/59)). It is now read from Solcast automatically where available, and a repair issue is raised if your stored value still looks like a DC figure |
 | **Database Records is not growing** | Storage disabled, or the base integration is not loaded | Check *Base Integration Status* reads `connected`, and that Storage is enabled in the options |
