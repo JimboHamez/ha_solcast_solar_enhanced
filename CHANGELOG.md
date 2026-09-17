@@ -5,6 +5,79 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-09-17
+
+> Stable. Promotes the seven-beta 1.11.0 line unchanged — the code is `1.11.0b7` with the
+> version string bumped. A curtailment measurement fix for export-limited sites, a read-only
+> shading map of your roof, a setup option for one-meter systems, and a guard against the
+> mapping that silently turned dampening off.
+
+Everything below already shipped across `1.11.0b1` … `1.11.0b7`; the per-beta entries are
+kept intact underneath. This entry is the summary for anyone upgrading from **1.10.3**.
+
+### Dampening accuracy — export curtailment is no longer booked as shading
+
+- **Partial export curtailment was being recorded as shading**
+  ([issue #86](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/86), b7). Both
+  curtailment gates compared a *half-hour mean* export against a limit that only ever binds
+  *instantaneously*: a slot capped for ten of its thirty minutes averages well under the limit
+  and read as uncapped, while its output had been held down the whole time it was capped. The
+  shortfall was booked as shading and pushed as a lower forecast — the direction the `[0, 1]`
+  clamp cannot protect against. Every curtailment episode has two such shoulder half-hours by
+  construction. Each half hour now also records the **peak** export (`pv_export_max`); where
+  the peak reaches the limit the record contributes a neutral 1.0 instead of a penalty, and
+  tuning excludes it on the same test. For an energy counter the peak is differenced over a
+  five-minute minimum window, never between adjacent ticks. Forward-only: existing rows carry
+  `0` ("unknown") and keep the previous behaviour, so the correction phases in. Validated live
+  on an 8 kW / 5 kW-limit system: capped half hours read 5.00–5.03 kW peak against a
+  3.7–4.9 kW mean, and midday slots the old code scored as 0.78–0.91 shading now read neutral.
+  The Dampening sensor reports `hour_NN_export_capped` so a neutral hour can be told from an
+  unshaded one.
+
+### Shading — a sky map, read-only
+
+- **Geometric shading advisory** (b3). The adaptive dampening measures shading by clock hour,
+  which scrambles solar elevation across the season. The new **Shading Loss (Measured)**
+  sensors — one for the property, one per configured array — read the same database in
+  sun-position space: stored irradiance is transposed to the panel plane, split into beam and
+  diffuse, and each beam-dominated record is inverted for the shadow transmission that explains
+  it, on a 5°×15° elevation/azimuth grid. Reports the beam-attributable loss with the worst
+  bearing and elevation, and whether the shadow is uniform (modellable) or bypass-diode
+  (not). **Advisory only — never pushed, never changes your dampening factors.** Unreliable
+  below ~15° elevation, flagged as `low_sun_uncertain` rather than hidden.
+- **Per-tracker median DC current** (`dc_imed1/2`, b2) joins the median voltage, giving the
+  advisory its mechanism classifier. The interval-*minimum* current was useless for shading —
+  one passing cloud pins the slot near zero (56 of 67 live mornings unusable). Forward-only.
+- **The whole-property DC row was permanently empty on multi-array systems** (b2) — the
+  aggregate capture read only the flat single-inverter keys, which the sites step clears.
+  Fixed; the per-array rows were always fine.
+
+### Setup
+
+- **A third measurement topology: "one combined meter, no per-array data"** (b4,
+  [#77](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/77)). Systems that
+  expose no per-string DC — a Tesla Powerwall 3 being the clearest case — could not complete
+  the sites step at all. The property is tracked as a single aggregate, which is all a summed
+  reading supports; hourly dampening still separates an east and a west array in time.
+- **The same generation sensor on two arrays is refused** (b4). It used to be accepted — and
+  pre-filled — and doubled every per-site ratio, which the `[0, 1]` clamp turned into no
+  dampening at all with no warning. Now a form error; the field is no longer pre-filled in
+  "each array has its own generation sensor" mode.
+- **An array's DC share can span several MPPTs** (b1). The per-array DC field is a
+  multi-entity picker, summed before apportionment. Entries with the old single `dc_sensor`
+  key are still read.
+
+### Quality
+
+- README sensor tables are enforced by tests in both directions, two inexact sensor names
+  corrected (b5); read-only opens of an older database no longer fail their queries (b7);
+  `tools/differential_shading_fit.py` committed (b5).
+
+**Upgrading from 1.10.x?** Drop-in. Existing entities keep their IDs; the database gains its
+columns additively on first run. `pv_export_max` and `dc_imed*` are forward-only, so the
+curtailment correction and the shading advisory build from the day you upgrade. If you run a
+multi-array system, reopen **Configure** once to confirm each array points at its own sensor.
+
 ## [1.11.0b7] - 2026-09-13
 
 > Beta. Fixes a measurement error that affects any site with an **export limit**
