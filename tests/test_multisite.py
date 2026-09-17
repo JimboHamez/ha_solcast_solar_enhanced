@@ -21,6 +21,7 @@ from custom_components.solcast_solar_enhanced.config_flow import (
     _validate_dc_split,
 )
 from custom_components.solcast_solar_enhanced.const import (
+    BASE_DOMAIN,
     CONF_SITE_GROUPS,
     DOMAIN,
     SITE_TOPOLOGY_DC_SPLIT,
@@ -70,6 +71,32 @@ async def test_discover_sites_finds_rooftops(hass):
 
 async def test_discover_sites_ignores_non_solcast(hass):
     hass.states.async_set("sensor.foo", "1.0", {"resource_id": "x"})  # not solcast
+    assert discover_sites(hass) == []
+
+
+async def test_discover_sites_finds_unprefixed_rooftop_by_registry_platform(hass, entity_registry):
+    """A rooftop created on a pre-2026.4 core has id ``sensor.<site>`` — no ``solcast`` in it.
+
+    Discussion #65: the base's RooftopSensor never set ``has_entity_name``, so only
+    cores ≥ 2026.4 device-prefix the id. The registry platform is what identifies it.
+    """
+    reg = entity_registry.async_get_or_create("sensor", BASE_DOMAIN, "rooftop-north", suggested_object_id="north_roof")
+    assert reg.entity_id == "sensor.north_roof"
+    _set_site(hass, reg.entity_id, "b68d-c05a", name="North Roof", capacity=5)
+
+    sites = discover_sites(hass)
+    assert [s["resource_id"] for s in sites] == ["b68d-c05a"]
+    assert sites[0]["entity_id"] == "sensor.north_roof"
+
+
+async def test_discover_sites_rejects_foreign_platform_despite_solcast_id(hass, entity_registry):
+    """Mutation check: a substring-only filter would accept this; the platform test must not."""
+    reg = entity_registry.async_get_or_create(
+        "sensor", "template", "fake-rooftop", suggested_object_id="solcast_pv_forecast_fake"
+    )
+    assert "solcast" in reg.entity_id
+    _set_site(hass, reg.entity_id, "dead-beef", name="Fake")
+
     assert discover_sites(hass) == []
 
 
