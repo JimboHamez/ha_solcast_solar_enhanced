@@ -38,7 +38,24 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.0b7
+## 🆕 What's new in v1.11.0
+
+**Stable release of the 1.11.0 line.** The code is identical to `v1.11.0b7`; if you have been running the betas there is nothing new here. If you are upgrading from **v1.10.3**, this is what changed.
+
+- **If you have an export limit, partial curtailment is no longer mistaken for shading** ([#86](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/86)). The curtailment check compared the limit against the *average* export over each half hour, but a limit only ever bites *instantaneously* — a slot capped for ten of its thirty minutes looked uncapped while its output had been held down, and the shortfall was pushed to Solcast as shading. Each half hour now also records the **peak** export; where it reaches the limit the record is scored neutral instead. Verified on a live 8 kW system behind a 5 kW limit. Builds forward from the day you upgrade, and the **Dampening Hours with DB Data** sensor gains an `hour_NN_export_capped` attribute so a neutral hour can be told from an unshaded one. Sites with no export limit are unaffected.
+- **Your roof gets a shading map.** The new **Shading Loss (Measured)** sensor — one for the property, one per array — works out how much direct sun each array loses and from which part of the sky, reporting a compass bearing and sun elevation, and whether the shadow is the kind a simple factor can describe. **Read-only**: nothing is sent to Solcast and your dampening factors are unchanged. Below about 15° of sun it flags its result as uncertain rather than hiding it.
+- **One-meter systems can complete setup.** A third topology, **"one combined meter, no per-array data"**, for systems that report everything through a single sensor and expose nothing per array — a Tesla Powerwall 3 being the clearest case ([#77](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/77)).
+- **The wizard refuses the mapping that quietly turned dampening off.** Putting the same whole-system sensor on every array — previously pre-filled, one click away — doubled each array's ratio, which the "nothing above 1" clamp turned into **no dampening at all** with no warning. It is now an error naming the fix. **If you have a multi-array system, reopen Configure once and check each array points at its own sensor.**
+- **An array wired across several MPPTs can select all of them** on the sites step; they are summed before apportionment.
+- Per-tracker **median DC current** is now recorded alongside the median voltage (the interval minimum was useless for shading — one cloud pinned it near zero), and the whole-property DC row is no longer empty on multi-array systems.
+
+**Upgrading from 1.10.x?** Drop-in. Existing entities keep their IDs; the database gains its columns additively on first run. The curtailment peak and the median current are forward-only, so the correction and the shading map build from the day you upgrade.
+
+<details>
+<summary><b>How the 1.11.0 line got here — the seven betas, newest first</b></summary>
+
+<details>
+<summary><b>What landed in v1.11.0b7</b></summary>
 
 **Beta: if you have an export limit, partial curtailment is no longer mistaken for shading.** Sites with no export limit are unaffected. (`v1.11.0b6` was an unreleased test build of this same change — there is no b6 release.)
 
@@ -47,6 +64,8 @@ The integration checks whether your inverter was being held at the export limit,
 Each half hour now also records the **peak** export. Where the peak reaches the limit, the interval was capped and the record contributes a neutral factor rather than a penalty it didn't earn; where it stays below, nothing changes. Tilt tuning excludes capped records on the same test. Verified on a live 8 kW system behind a 5 kW limit: the peak reads 5.00–5.03 kW on every capped half hour while the mean sat at 3.7–4.9 kW, and fifteen midday slots on an unshaded north-facing array that the old test had scored as 0.78–0.91 shading now read as the neutral 1.0 they should.
 
 **This only accumulates going forward** — the recorder history the peak comes from is kept for about ten days, so existing rows can't be backfilled. They keep the old behaviour exactly, and the correction phases in as new data arrives. On the **Dampening Hours with DB Data** sensor, an `hour_NN_export_capped` attribute now tells you when an hour is neutral because it was capped rather than unshaded.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0b5</b></summary>
@@ -118,6 +137,8 @@ This is for the common grouping where the number of MPPTs doesn't match the numb
 Summing is **exact, not an approximation** — only the *ratio* between arrays is ever used, so the units and scale cancel.
 
 **Nothing to reconfigure.** Existing setups keep working untouched; re-saving the sites step migrates them to the new form.
+
+</details>
 
 </details>
 
