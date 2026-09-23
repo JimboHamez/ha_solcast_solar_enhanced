@@ -102,19 +102,19 @@ def _async_remove_stale_devices(
     entry: SolcastEnhancedConfigEntry,
     coordinator: SolcastEnhancedCoordinator,
 ) -> None:
-    """Detach per-array devices for arrays the user has since unconfigured.
+    """Remove per-array devices for arrays the user has since unconfigured.
 
     Removing an array in the options flow drops its entities, but its device would
-    otherwise linger in the registry as an empty card. The entry is detached rather
-    than the device deleted outright, so a device another integration also claims
-    survives.
+    otherwise linger in the registry as an empty card. A device belongs to a single
+    config entry, so it is removed outright; ``async_update_device``'s
+    ``remove_config_entry_id`` is deprecated for exactly that reason.
     """
     device_registry = dr.async_get(hass)
     live = _live_identifiers(entry, coordinator)
     for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
         if not device.identifiers & live:
             _LOGGER.debug("Removing stale array device %s", device.name)
-            device_registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
+            device_registry.async_remove_device(device.id)
 
 
 async def async_remove_config_entry_device(
@@ -183,9 +183,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: SolcastEnhancedConfigEnt
 
     _async_remove_stale_devices(hass, entry, coordinator)
 
+    # No update listener: the options flow reloads the entry itself
+    # (``OptionsFlowWithReload``) and the reconfigure flow through
+    # ``async_update_reload_and_abort``. A listener on top of either is deprecated,
+    # because it reloads twice.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
 
@@ -197,8 +199,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: SolcastEnhancedConfigEn
         await entry.runtime_data.async_teardown()
 
     return unloaded
-
-
-async def async_reload_entry(hass: HomeAssistant, entry: SolcastEnhancedConfigEntry) -> None:
-    """Reload the config entry when its options change."""
-    await hass.config_entries.async_reload(entry.entry_id)

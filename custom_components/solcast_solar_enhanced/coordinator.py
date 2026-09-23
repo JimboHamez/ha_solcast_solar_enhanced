@@ -233,6 +233,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name="solcast_solar_enhanced",
             update_interval=None,
         )

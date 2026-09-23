@@ -1,6 +1,8 @@
 """Test integration setup, teardown and action registration."""
 from __future__ import annotations
 
+import pathlib
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,7 +13,6 @@ from homeassistant.helpers import device_registry as dr
 from custom_components.solcast_solar_enhanced.const import BASE_DOMAIN, DOMAIN
 from custom_components.solcast_solar_enhanced import (
     _async_remove_stale_devices,
-    async_reload_entry,
     async_remove_config_entry_device,
     async_setup,
     async_setup_entry,
@@ -179,14 +180,27 @@ async def test_setup_tears_the_coordinator_down_when_the_first_refresh_fails(has
     coordinator.async_teardown.assert_awaited_once()
 
 
-async def test_options_change_reloads_the_entry(hass, mock_config_entry):
-    """Options are read at setup, so a change only takes effect via a reload."""
+def test_options_flow_reloads_the_entry():
+    """Options are read at setup, so the options flow must reload on finish.
+
+    That reload now comes from ``OptionsFlowWithReload`` rather than an update
+    listener: a listener alongside the reconfigure flow's
+    ``async_update_reload_and_abort`` is deprecated (HA 2026.6) and an error from
+    2026.12, since it reloads the entry twice.
+    """
+    from homeassistant.config_entries import OptionsFlowWithReload
+
+    from custom_components.solcast_solar_enhanced.config_flow import SolcastEnhancedOptionsFlow
+
+    assert issubclass(SolcastEnhancedOptionsFlow, OptionsFlowWithReload)
+
+
+async def test_setup_registers_no_update_listener(hass, mock_config_entry):
+    """No update listener may sit alongside the flows' own reload methods."""
     mock_config_entry.add_to_hass(hass)
-
-    with patch.object(hass.config_entries, "async_reload", new=AsyncMock()) as reload:
-        await async_reload_entry(hass, mock_config_entry)
-
-    reload.assert_awaited_once_with(mock_config_entry.entry_id)
+    assert "add_update_listener" not in (
+        pathlib.Path(__file__).parent.parent / "custom_components/solcast_solar_enhanced/__init__.py"
+    ).read_text()
 
 
 async def test_unload_tears_down_coordinator(hass, mock_config_entry):

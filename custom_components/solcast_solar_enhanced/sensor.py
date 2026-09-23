@@ -41,7 +41,7 @@ from .entity import RestoringSensorEntity, SolcastEnhancedEntity, SolcastEnhance
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
     from .coordinator import SolcastEnhancedConfigEntry, SolcastEnhancedCoordinator
 
@@ -56,7 +56,7 @@ PARALLEL_UPDATES = 0
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SolcastEnhancedConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Solcast Solar Enhanced sensors from a config entry."""
     coordinator = entry.runtime_data

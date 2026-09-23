@@ -788,8 +788,12 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return SolcastEnhancedOptionsFlow()
 
 
-class SolcastEnhancedOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — reconfigures all settings."""
+class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Options flow — reconfigures all settings.
+
+    Options are read once at setup, so a change only takes effect on a reload,
+    which ``OptionsFlowWithReload`` performs when the flow finishes.
+    """
 
     def __init__(self) -> None:
         """Initialise the options flow with empty collected options."""
