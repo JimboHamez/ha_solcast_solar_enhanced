@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Always use the Context7 MCP server to fetch version-accurate API references and code snippets before generating or modifying code that uses external libraries. Do not rely on base training data for fast-evolving frameworks.
 - If asked to implement or modify features using frameworks like Home Assistant Core or auxiliary dependencies, always precede your response by invoking the Context7 tools.
 - Append "use context7" to your planning steps if you need to research the latest documentation. 
+- The server is defined in a local `.mcp.json` at the repo root. The file is git-ignored on purpose and never committed, and is enabled through `enabledMcpjsonServers` in `.claude/settings.local.json`. It reads its key from the `CONTEXT7_API_KEY` environment variable. Never write the key into the file.
+- Known library IDs. Pass these straight to `query-docs` and skip `resolve-library-id`:
+  - `/home-assistant/developers.home-assistant`: the HA developer docs, covering integrations, `DataUpdateCoordinator`, config/options flows, entities, the quality scale and translations. Use this one first.
+  - `/home-assistant/core`: HA Core source, for exact signatures and behaviour.
+  - `/home-assistant/home-assistant.io`: user-facing docs, for YAML/UI behaviour, recorder, statistics and energy.
 
 ## 2. Architectural Guardrails
 - **The Async Iron Law:** Never allow blocking code (e.g., `requests`, `time.sleep`, or synchronous file reads) in the main thread. Always wrap synchronous device calls in `await hass.async_add_executor_job()` or rewrite them natively using `aiohttp` or `asyncio`.
