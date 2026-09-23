@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from custom_components.solcast_solar_enhanced.const import DOMAIN
@@ -18,6 +19,7 @@ from custom_components.solcast_solar_enhanced.entity import (
     RestoringSensorEntity,
     SolcastEnhancedEntity,
     SolcastEnhancedSiteEntity,
+    main_device_info,
 )
 
 
@@ -96,9 +98,27 @@ def test_live_value_defaults_to_none():
 # SolcastEnhancedSiteEntity
 # ---------------------------------------------------------------------------
 
-def test_site_entity_gets_its_own_device_linked_to_the_main_one():
-    e = SolcastEnhancedSiteEntity(MagicMock(), _entry(), "site-1", "Ground Array", "site_output")
-    assert e.unique_id == f"{DOMAIN}_abc123_site_output_site-1"
-    assert e.device_info["identifiers"] == {(DOMAIN, "abc123_site-1")}
+async def test_site_entity_gets_its_own_device_linked_to_the_main_one(hass, mock_config_entry):
+    """The array device links to the main device by its registry id.
+
+    ``via_device_id`` must be the id of the device actually registered for this
+    entry, not merely any string, so the main device is registered for real.
+    """
+    mock_config_entry.add_to_hass(hass)
+    main = dr.async_get(hass).async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id, **main_device_info(mock_config_entry)
+    )
+    e = SolcastEnhancedSiteEntity(SimpleNamespace(hass=hass), mock_config_entry, "site-1", "Ground Array", "site_output")
+    entry_id = mock_config_entry.entry_id
+    assert e.unique_id == f"{DOMAIN}_{entry_id}_site_output_site-1"
+    assert e.device_info["identifiers"] == {(DOMAIN, f"{entry_id}_site-1")}
     assert e.device_info["name"] == "Ground Array"
-    assert e.device_info["via_device"] == (DOMAIN, "abc123")
+    assert e.device_info["via_device_id"] == main.id
+    assert "via_device" not in e.device_info
+
+
+async def test_site_entity_requires_the_main_device(hass, mock_config_entry):
+    """Setup registers the main device first; without it the link cannot resolve."""
+    mock_config_entry.add_to_hass(hass)
+    with pytest.raises(ValueError):
+        SolcastEnhancedSiteEntity(SimpleNamespace(hass=hass), mock_config_entry, "site-1", "Ground", "site_output")

@@ -17,6 +17,7 @@ from .const import (
     SERVICE_RUN_PV_TUNING,
 )
 from .coordinator import SolcastEnhancedCoordinator
+from .entity import main_device_info
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -181,6 +182,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SolcastEnhancedConfigEnt
 
     entry.runtime_data = coordinator
 
+    # Register the main device up front: each per-array device links to it by
+    # device id (``via_device_id``), which only exists once the device does.
+    dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **main_device_info(entry))
     _async_remove_stale_devices(hass, entry, coordinator)
 
     # No update listener: the options flow reloads the entry itself

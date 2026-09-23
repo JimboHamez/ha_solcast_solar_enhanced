@@ -70,7 +70,7 @@ solcast_solar_enhanced coordinator
         └── push dampening     → base set_dampening service (per-site)
 ```
 
-All forecast data is read in-process from the base integration — its `detailedForecast` sensor attributes, plus a legacy `hass.data["solcast_solar"]` dict on pre-4.6.0 bases — so the external HTTP calls added are the keyless **Open-Meteo** irradiance fetch (default-on) and the optional **OpenWeatherMap** weather fetch. The codebase is linted against HA 2026.5.4 (flake8/pyflakes clean), follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
+All forecast data is read in-process from the base integration — its `detailedForecast` sensor attributes, plus a legacy `hass.data["solcast_solar"]` dict on pre-4.6.0 bases — so the external HTTP calls added are the keyless **Open-Meteo** irradiance fetch (default-on) and the optional **OpenWeatherMap** weather fetch. The codebase requires HA 2026.8.0+ and is tested against current HA (2026.9.3), with ruff and strict mypy clean, follows the current `OptionsFlow` pattern, wraps setup in `ConfigEntryNotReady` and updates in `UpdateFailed`, and uses `DeviceEntryType.SERVICE`.
 
 ---
 

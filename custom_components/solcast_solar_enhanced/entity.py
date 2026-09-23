@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import RestoreSensor, SensorEntity
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -24,6 +25,27 @@ if TYPE_CHECKING:
     from .coordinator import SolcastEnhancedCoordinator
 
 MANUFACTURER = "JimboHamez"
+
+
+def main_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Return the ``DeviceInfo`` of the entry's main integration device.
+
+    Shared by the property-wide entities and by setup, which registers the device
+    before any platform loads so the per-array devices can resolve its id.
+
+    Args:
+        entry: The config entry that owns the device.
+
+    Returns:
+        The device description, keyed on the entry id.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Solcast Solar Enhanced",
+        manufacturer=MANUFACTURER,
+        model="Solcast Solar Enhanced Integration",
+        entry_type=DeviceEntryType.SERVICE,
+    )
 
 
 class SolcastEnhancedEntity(CoordinatorEntity["SolcastEnhancedCoordinator"], SensorEntity):
@@ -43,13 +65,7 @@ class SolcastEnhancedEntity(CoordinatorEntity["SolcastEnhancedCoordinator"], Sen
         self._entry = entry
         self._key = key
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Solcast Solar Enhanced",
-            manufacturer=MANUFACTURER,
-            model="Solcast Solar Enhanced Integration",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = main_device_info(entry)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -97,7 +113,7 @@ class SolcastEnhancedSiteEntity(SolcastEnhancedEntity):
     """Base for per-array entities, each attached to its own per-site HA device.
 
     A distinct ``DeviceInfo`` (keyed on ``entry_id + resource_id``, linked back to
-    the main integration device via ``via_device``) groups every entity for one
+    the main integration device via ``via_device_id``) groups every entity for one
     array onto its own card. Because ``_attr_has_entity_name`` is set, the device
     carries the array name and each entity name is just the bare metric (e.g.
     "Shading"), so HA renders "<Array> Shading" without duplicating the name.
@@ -114,15 +130,16 @@ class SolcastEnhancedSiteEntity(SolcastEnhancedEntity):
         """Set the per-site unique id and attach to that array's own device."""
         super().__init__(coordinator, entry, f"{key}_{site_id}")
         self._site_id = site_id
-        # ``via_device`` is deprecated in favour of ``via_device_id`` (HA 2026.8) and
-        # dropped from the ``DeviceInfo`` type in 2026.9, but HA still honours it
-        # until 2027.8. ``via_device_id`` does not exist on our 2026.5.4 minimum, so
-        # the switch waits for a minimum-version bump.
-        self._attr_device_info = DeviceInfo(  # type: ignore[typeddict-unknown-key]
+        # The main device is registered in ``async_setup_entry`` before any platform
+        # loads, so this lookup cannot miss.
+        main_device_id = dr.async_get_device_id_by_identifier(
+            coordinator.hass, (DOMAIN, entry.entry_id), config_entry_id=entry.entry_id
+        )
+        self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_{site_id}")},
             name=name,
             manufacturer=MANUFACTURER,
             model="Solcast Solar Enhanced Array",
-            via_device=(DOMAIN, entry.entry_id),
+            via_device_id=main_device_id,
             entry_type=DeviceEntryType.SERVICE,
         )

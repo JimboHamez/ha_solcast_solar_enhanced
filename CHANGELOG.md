@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Minimum Home Assistant is now 2026.8.0** (was 2026.5.4). That makes Python 3.14.2 the minimum
+  too, because HA 2026.8 requires it. Each array's device now links to the main integration device
+  by device id (`via_device_id`), which first exists in 2026.8.0. The old identifier-based
+  `via_device` was deprecated in 2026.8, dropped from the `DeviceInfo` type in 2026.9, and stops
+  working in 2027.8. The main device is now registered at setup, before the sensors load, so the
+  arrays can look up its id. Existing devices and entities are kept, and nothing needs redoing.
 - **Home Assistant API currency (checked against the current developer docs).** The config-entry
   update listener is gone. The options flow is now an `OptionsFlowWithReload`, and reconfigure
   already reloads through `async_update_reload_and_abort`. HA 2026.6 deprecated having a listener

@@ -727,8 +727,8 @@ See the [design document](DESIGN_DOCUMENT.md#roadmap) for the full plan and the 
 
 | Component | Version |
 |---|---|
-| Home Assistant | 2026.5.4+ |
-| Python | 3.12+ |
+| Home Assistant | 2026.8.0+ |
+| Python | 3.14.2+ (what Home Assistant 2026.8 requires) |
 | Storage | stdlib `sqlite3` — no install |
 | numpy | PV tuning — 1.21.0+ (ships with Home Assistant) |
 

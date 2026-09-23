@@ -56,6 +56,36 @@ async def test_setup_succeeds_with_base_present(hass, mock_config_entry, mock_ba
     assert DOMAIN not in hass.data
 
 
+async def test_setup_registers_main_device_before_platforms(hass, mock_config_entry, mock_base_coordinator):
+    """Array devices resolve the main device's id while the platform loads.
+
+    ``via_device_id`` lookups raise if the main device does not exist yet, so it
+    must be in the registry by the time the platforms are forwarded, not merely
+    by the end of setup.
+    """
+    mock_config_entry.add_to_hass(hass)
+    mock_coordinator = MagicMock()
+    mock_coordinator.async_setup = AsyncMock()
+    mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+    mock_coordinator.configured_sites_for_entities.return_value = []
+    seen_at_forward: list = []
+
+    async def _forward(entry, platforms):
+        seen_at_forward.append(
+            dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+        )
+
+    with (
+        patch("custom_components.solcast_solar_enhanced.SolcastEnhancedCoordinator", return_value=mock_coordinator),
+        patch.object(hass.config_entries, "async_forward_entry_setups", new=_forward),
+    ):
+        assert await async_setup_entry(hass, mock_config_entry) is True
+
+    assert len(seen_at_forward) == 1
+    assert seen_at_forward[0] is not None
+    assert seen_at_forward[0].name == "Solcast Solar Enhanced"
+
+
 async def test_services_registered_by_async_setup(hass):
     """The three actions register from async_setup, with no config entry involved.
 
