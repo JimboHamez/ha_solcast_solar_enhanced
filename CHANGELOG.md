@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.12.0] - 2026-09-23
 
 ### Changed
 
@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nothing changes for users.
 - **Tests and CI run on Python 3.14 against current Home Assistant (2026.9.3).** HA releases after
   2026.2 require Python 3.14. On 3.13, the test harness quietly resolved to HA 2026.2.3, which is
-  older than our 2026.5.4 minimum. mypy now targets 3.14 too, because HA's own source uses 3.14-only
+  older than the 2026.5.4 minimum of the time. mypy now targets 3.14 too, because HA's own source uses 3.14-only
   syntax.
 
 ## [1.11.1] - 2026-09-17
@@ -1600,6 +1600,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.12.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b7...v1.11.0
 [1.11.0b7]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b5...v1.11.0b7
