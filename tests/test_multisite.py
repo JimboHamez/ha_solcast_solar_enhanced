@@ -490,7 +490,7 @@ async def test_site_tuned_rmse_none_before_tuning(hass, coordinator):
     assert coordinator.site_tuned_rmse("missing") is None
 
 
-async def test_per_site_sensors_use_per_array_device(hass, coordinator):
+async def test_per_site_sensors_use_per_array_device(hass, coordinator, mock_config_entry):
     from custom_components.solcast_solar_enhanced.sensor import (
         SiteAzimuthSensor,
         SiteOutputSensor,
@@ -499,13 +499,18 @@ async def test_per_site_sensors_use_per_array_device(hass, coordinator):
         SiteTuningRmseSensor,
     )
 
-    entry = SimpleNamespace(entry_id="abc123")
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.solcast_solar_enhanced.entity import main_device_info
+
+    entry = mock_config_entry
+    main = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **main_device_info(entry))
     for cls in (SiteOutputSensor, SiteShadingSensor, SiteTunedTiltSensor, SiteAzimuthSensor, SiteTuningRmseSensor):
         sensor = cls(coordinator, entry, "site-a", "Ground")
         # Each per-array sensor lands on its own device (entry_id + resource_id),
-        # linked back to the main integration device via via_device.
-        assert (DOMAIN, "abc123_site-a") in sensor._attr_device_info["identifiers"]
-        assert sensor._attr_device_info["via_device"] == (DOMAIN, "abc123")
+        # linked back to the main integration device by its registry id.
+        assert (DOMAIN, f"{entry.entry_id}_site-a") in sensor._attr_device_info["identifiers"]
+        assert sensor._attr_device_info["via_device_id"] == main.id
         assert sensor._attr_device_info["name"] == "Ground"
 
 
@@ -518,7 +523,15 @@ async def test_property_tuning_sensors_hidden_only_in_multisite(hass, coordinato
         TuningTiltSensor,
     )
 
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.solcast_solar_enhanced.entity import main_device_info
+
     mock_config_entry.runtime_data = coordinator
+    # async_setup_entry in __init__ registers this before the platform loads.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id, **main_device_info(mock_config_entry)
+    )
     captured: list = []
 
     def _add(entities):
