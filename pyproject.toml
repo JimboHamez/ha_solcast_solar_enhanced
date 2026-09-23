@@ -1,7 +1,7 @@
 [tool.mypy]
 # Strict type checking, scoped to the integration package. CLAUDE.md mandates
 # fully-typed, mypy-compliant component code; tests/tools/analysis are exempt.
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -59,6 +59,7 @@ ignore = [
     "PLR0912",# Too many branches
     "PLR0913",# Too many arguments in function definition
     "PLR0915",# Too many statements
+    "PLR0917",# Too many positional arguments (PLR0913's twin; stable from ruff 0.16)
     "PLR2004",# Magic value in comparison (thresholds are clear in context)
     "RUF002", # Ambiguous unicode in docstring (intentional −, ×, °, – glyphs)
     "RUF003", # Ambiguous unicode in comment (intentional −, ×, °, – glyphs)

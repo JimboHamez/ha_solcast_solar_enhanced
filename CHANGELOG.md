@@ -5,6 +5,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Home Assistant API currency (checked against the current developer docs).** The config-entry
+  update listener is gone. The options flow is now an `OptionsFlowWithReload`, and reconfigure
+  already reloads through `async_update_reload_and_abort`. HA 2026.6 deprecated having a listener
+  alongside those reload paths because the entry reloads twice, and it becomes an error in 2026.12.
+  Stale array devices are now deleted with `async_remove_device`, replacing
+  `async_update_device(remove_config_entry_id=…)`, which is deprecated now that a device belongs to
+  a single config entry. The coordinator is handed its config entry explicitly instead of picking
+  it up from a context variable. The sensor platform is typed with `AddConfigEntryEntitiesCallback`.
+  Nothing changes for users.
+- **Tests and CI run on Python 3.14 against current Home Assistant (2026.9.3).** HA releases after
+  2026.2 require Python 3.14. On 3.13, the test harness quietly resolved to HA 2026.2.3, which is
+  older than our 2026.5.4 minimum. mypy now targets 3.14 too, because HA's own source uses 3.14-only
+  syntax.
+
 ## [1.11.1] - 2026-09-17
 
 ### Fixed

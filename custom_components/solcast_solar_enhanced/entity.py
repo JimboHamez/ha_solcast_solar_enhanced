@@ -114,7 +114,11 @@ class SolcastEnhancedSiteEntity(SolcastEnhancedEntity):
         """Set the per-site unique id and attach to that array's own device."""
         super().__init__(coordinator, entry, f"{key}_{site_id}")
         self._site_id = site_id
-        self._attr_device_info = DeviceInfo(
+        # ``via_device`` is deprecated in favour of ``via_device_id`` (HA 2026.8) and
+        # dropped from the ``DeviceInfo`` type in 2026.9, but HA still honours it
+        # until 2027.8. ``via_device_id`` does not exist on our 2026.5.4 minimum, so
+        # the switch waits for a minimum-version bump.
+        self._attr_device_info = DeviceInfo(  # type: ignore[typeddict-unknown-key]
             identifiers={(DOMAIN, f"{entry.entry_id}_{site_id}")},
             name=name,
             manufacturer=MANUFACTURER,
