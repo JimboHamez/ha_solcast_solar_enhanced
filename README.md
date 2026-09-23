@@ -38,7 +38,20 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.11.1
+## 🆕 What's new in v1.12.0
+
+**Requires Home Assistant 2026.8.0 or later** (was 2026.5.4). If you are on an older Home Assistant, HACS will not offer this update until you upgrade, and v1.11.1 keeps working in the meantime. This release keeps the integration current with Home Assistant's own APIs. It adds no features and changes no behaviour.
+
+- **Array devices now link to the main integration device by device id.** Home Assistant deprecated the old identifier-based link in 2026.8, and it stops working in 2027.8. The id-based link only exists from 2026.8.0, which is what sets the new minimum.
+- **Fixed ahead of Home Assistant 2026.12.** From 2026.12, Home Assistant rejects an integration that keeps a separate listener to reload itself after an options change on top of the flow's own reload. The options flow now handles its reload itself.
+- **Other deprecated calls replaced**, before Home Assistant stops accepting them: leftover array devices are removed the current way, and the coordinator is given its config entry directly.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your devices, entities, history and settings are unchanged. Your Solcast base integration does not need updating: base 4.5.2 through 4.6.1 all work with this release.
+
+[CHANGELOG](CHANGELOG.md#1120---2026-09-23) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.12.0)
+
+<details>
+<summary><b>What landed in v1.11.1</b></summary>
 
 **Patch: multi-array systems whose Solcast integration was installed before Home Assistant 2026.4 can now reach the sites step.** If you have two or more arrays and the setup wizard has always treated your property as a single array — never showing you the per-array sites step — this is why ([discussion #65](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/65)).
 
@@ -47,6 +60,8 @@ Site discovery only recognised rooftop sensors whose entity id contained `solcas
 **Who is affected:** only installs where the base Solcast integration was first set up on a core before 2026.4 *and* the property has more than one array. Everyone else was already reaching the sites step and sees no change.
 
 **Upgrading?** Drop-in. Nothing else moves — the code is otherwise identical to v1.11.0. After updating, open **Configure** on a multi-array property and you will be offered the sites step.
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.0</b></summary>
