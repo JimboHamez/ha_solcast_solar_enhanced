@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- **README Troubleshooting: how to share the database.** Disable the integration before copying
+  `solcast_solar_enhanced.db`. The store runs in WAL mode, so a `.db`-only copy taken while it is
+  running can be missing days of recent writes that are still in the `-wal` side-file. Disabling
+  closes the connection, and SQLite merges the side-file into the `.db` when it does
+  ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+
 ## [1.12.0] - 2026-09-23
 
 ### Changed
