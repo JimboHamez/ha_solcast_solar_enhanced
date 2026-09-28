@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running can be missing days of recent writes that are still in the `-wal` side-file. Disabling
   closes the connection, and SQLite merges the side-file into the `.db` when it does
   ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+  Do it just after :00 or :30 and re-enable before :15 or :45: the update that runs on re-enable
+  snaps to the nearest half-hour, so a later one writes the next slot early from partial data.
 
 ## [1.12.0] - 2026-09-23
 
