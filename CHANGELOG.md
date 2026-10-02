@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The test environment is pinned to a stable Home Assistant.** `requirements_test.txt` allowed
+  any 0.13.x of `pytest-homeassistant-custom-component`, and that range resolved to the Home
+  Assistant 2026.10.0b0 beta. That beta types config-flow form schemas as `probatio.Schema`, so
+  strict mypy failed on this integration's voluptuous schemas even though the tests passed. It is
+  now pinned to 0.13.367 (HA 2026.9.4). Nothing changes for users.
+
 ### Documentation
 
 - **README Troubleshooting: how to share the database.** Disable the integration before copying
