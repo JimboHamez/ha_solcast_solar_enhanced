@@ -1,4 +1,7 @@
 pytest>=7.4
 pytest-asyncio>=0.23
-pytest-homeassistant-custom-component>=0.13,<0.14
+# Pinned to the newest release on a stable Home Assistant (0.13.367 = HA 2026.9.4).
+# The open range resolved to 2026.10.0b0, whose form API types data_schema as
+# probatio.Schema, failing strict mypy on our voluptuous schemas. Bump deliberately.
+pytest-homeassistant-custom-component==0.13.367
 pytest-cov>=4.0
