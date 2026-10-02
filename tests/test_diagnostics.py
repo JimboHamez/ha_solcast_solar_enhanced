@@ -82,6 +82,7 @@ def loaded_entry(hass, entry_with_secrets) -> MockConfigEntry:
     }
     coordinator._dampening_table = [{"factor": 0.62, "source": "db_history", "alpha": 0.8} for _ in range(48)]
     coordinator._dampening_pushed = {"aaaa-1111"}
+    coordinator._pushed_factor_count = {"aaaa-1111": 48}
     coordinator._orientation_advisory = True
     coordinator._orientation_advisory_targets = {"bbbb-2222"}
     coordinator._dc_telemetry = {"max_voltage": 412.5}
@@ -140,7 +141,7 @@ async def test_coordinator_state_is_reported(hass, loaded_entry):
 
 
 async def test_dampening_reports_the_half_hour_curve(hass, loaded_entry):
-    """The raw 48-slot curve is included — that is what gets averaged and pushed.
+    """The raw 48-slot curve is included — that is what gets pushed.
 
     The hour-averaged sensor attributes would hide a slot-level asymmetry, which
     is exactly what a "dampening looks wrong" report needs to show.
@@ -152,6 +153,7 @@ async def test_dampening_reports_the_half_hour_curve(hass, loaded_entry):
     assert damp["slots"][0]["factor"] == 0.62
     assert damp["hours_with_db"] == 48
     assert damp["pushed_targets"] == ["aaaa-1111"]
+    assert damp["pushed_factor_count"] == {"aaaa-1111": 48}
     assert damp["orientation_advisory"] is True
     assert damp["orientation_advisory_targets"] == ["bbbb-2222"]
 

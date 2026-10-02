@@ -1,8 +1,9 @@
-"""Tests for the current-hour dampening sensors (property-wide and per-site).
+"""Tests for the Current Hour Dampening sensors (property-wide and per-site).
 
-The state must be the factor the base integration is *really* applying for the
-current local hour: the mean of that hour's two half-hour slots, carrying the same
-[0, 1] clamp and rounding as the push.
+The state must be the factor the base integration is *really* applying right now,
+carrying the same [0, 1] clamp and rounding as the push: the current half-hour slot
+when the target was pushed 48 factors, and the mean of the hour's two slots when it
+was pushed 24 (the global fallback, or matching another site's hourly entries).
 """
 
 from __future__ import annotations
@@ -10,11 +11,17 @@ from __future__ import annotations
 import pytest
 from freezegun import freeze_time
 
-from custom_components.solcast_solar_enhanced.const import DEFAULT_SITE_ID
+from custom_components.solcast_solar_enhanced.const import (
+    DEFAULT_SITE_ID,
+    HOURLY_FACTOR_COUNT,
+    PUSH_FACTOR_COUNT,
+)
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
 
-# 09:30 Melbourne (UTC+10 in July) — local hour 9, so slots 18/19.
+# 09:30 Melbourne (UTC+10 in July) — local half-hour slot 19 (hour 9 spans 18/19).
 MELBOURNE_0930 = "2026-07-14 23:30:00"
+# 09:10 Melbourne — the first half of the same hour, slot 18.
+MELBOURNE_0910 = "2026-07-14 23:10:00"
 
 
 @pytest.fixture
@@ -51,21 +58,54 @@ def _table(**overrides: dict) -> list[dict]:
 
 
 @freeze_time(MELBOURNE_0930)
-async def test_current_dampening_uses_local_hour_slot_pair(coordinator, melbourne):
+async def test_current_dampening_uses_current_half_hour_slot(coordinator, melbourne):
     coordinator._dampening_table = _table()
     coordinator._dampening_pushed = {DEFAULT_SITE_ID}
+    coordinator._pushed_factor_count = {DEFAULT_SITE_ID: PUSH_FACTOR_COUNT}
 
-    # Local hour 9 → mean of slots 18 (0.69) and 19 (0.70).
-    assert coordinator.current_dampening == pytest.approx(0.695)
+    # 09:30 local → slot 19 alone (0.70), not the hour mean (0.695).
+    assert coordinator.current_dampening == pytest.approx(0.70)
 
     attrs = coordinator.current_dampening_attributes
-    assert attrs["hour"] == 9
-    assert attrs["factor_first_half"] == pytest.approx(0.69)
-    assert attrs["factor_second_half"] == pytest.approx(0.70)
-    assert attrs["raw_factor"] == pytest.approx(0.695)
+    assert attrs["period_start"] == "09:30"
+    assert attrs["period_minutes"] == 30
+    assert attrs["raw_factor"] == pytest.approx(0.70)
     assert attrs["clear_sky_basis"] == "kt"
     assert attrs["orientation_diverged"] is False
     assert attrs["pushed"] is True
+
+
+@freeze_time(MELBOURNE_0910)
+async def test_current_dampening_first_half_of_the_hour(coordinator, melbourne):
+    """The other half of the same hour must read the other slot — pins the half index."""
+    coordinator._dampening_table = _table()
+    coordinator._pushed_factor_count = {DEFAULT_SITE_ID: PUSH_FACTOR_COUNT}
+
+    assert coordinator.current_dampening == pytest.approx(0.69)
+    assert coordinator.current_dampening_attributes["period_start"] == "09:00"
+
+
+@freeze_time(MELBOURNE_0930)
+async def test_current_dampening_defaults_to_half_hourly_before_a_push(coordinator, melbourne):
+    """Before any push has recorded a count, read at the resolution we push by default."""
+    coordinator._dampening_table = _table()
+
+    assert coordinator.current_dampening == pytest.approx(0.70)
+
+
+@freeze_time(MELBOURNE_0930)
+async def test_current_dampening_hourly_push_uses_slot_pair(coordinator, melbourne):
+    """A target pushed 24 factors has the hour mean applied, so the sensor must say so."""
+    coordinator._dampening_table = _table()
+    coordinator._dampening_pushed = {DEFAULT_SITE_ID}
+    coordinator._pushed_factor_count = {DEFAULT_SITE_ID: HOURLY_FACTOR_COUNT}
+
+    # Local hour 9 → mean of slots 18 (0.69) and 19 (0.70).
+    assert coordinator.current_dampening == pytest.approx(0.695)
+    attrs = coordinator.current_dampening_attributes
+    assert attrs["period_start"] == "09:00"
+    assert attrs["period_minutes"] == 60
+    assert attrs["raw_factor"] == pytest.approx(0.695)
 
 
 @freeze_time(MELBOURNE_0930)
@@ -79,16 +119,16 @@ async def test_orientation_divergence_is_advisory_only(coordinator, melbourne):
     coordinator._dampening_table = _table()
     coordinator._orientation_advisory_targets = {DEFAULT_SITE_ID}
 
-    assert coordinator.current_dampening == pytest.approx(0.695)
+    assert coordinator.current_dampening == pytest.approx(0.70)
     attrs = coordinator.current_dampening_attributes
     assert attrs["orientation_diverged"] is True
-    assert attrs["raw_factor"] == pytest.approx(0.695)
+    assert attrs["raw_factor"] == pytest.approx(0.70)
 
 
 @freeze_time(MELBOURNE_0930)
 async def test_current_dampening_clamps_like_the_push(coordinator, melbourne):
     """_push_dampening clamps to [0, 1]; the sensor must match the wire value."""
-    coordinator._dampening_table = _table(**{"18": {"factor": 1.6}, "19": {"factor": 1.2}})
+    coordinator._dampening_table = _table(**{"18": {"factor": 0.6}, "19": {"factor": 1.4}})
 
     assert coordinator.current_dampening == 1.0
     assert coordinator.current_dampening_attributes["raw_factor"] == pytest.approx(1.4)
@@ -124,17 +164,19 @@ async def test_site_current_dampening_reads_that_sites_table(coordinator, melbou
         "b": _table(**{"18": {"factor": 0.30}, "19": {"factor": 0.40}}),
     }
     coordinator._dampening_pushed = {"a", "b"}
+    # Site a went out hourly and site b half-hourly: each reads at its own resolution.
+    coordinator._pushed_factor_count = {"a": HOURLY_FACTOR_COUNT, "b": PUSH_FACTOR_COUNT}
     coordinator._orientation_advisory_targets = {"b"}
 
     assert coordinator.site_current_dampening("a") == pytest.approx(0.695)
     # The advisory on site b must not alter site b's factor nor leak onto site a.
-    assert coordinator.site_current_dampening("b") == pytest.approx(0.35)
+    assert coordinator.site_current_dampening("b") == pytest.approx(0.40)
 
     attrs = coordinator.site_current_dampening_attributes("b")
     assert attrs["name"] == "Roof"
     assert attrs["resource_id"] == "b"
     assert attrs["orientation_diverged"] is True
-    assert attrs["raw_factor"] == pytest.approx(0.35)
+    assert attrs["raw_factor"] == pytest.approx(0.40)
     assert coordinator.site_current_dampening_attributes("a")["orientation_diverged"] is False
 
 

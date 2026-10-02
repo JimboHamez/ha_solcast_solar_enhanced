@@ -230,10 +230,14 @@ ISSUE_ORIENTATION_DIVERGED = "orientation_diverged"
 # resource_id, but an "all" entry (which it creates for any 48-factor push with no
 # site) takes precedence over *every* per-site entry in dampen.py::get_factor — so our
 # per-site factors are silently ignored while one exists. Separately, the base discards
-# the entire table if its sites disagree on factor count, so pushing our 24 into a file
-# whose sites hold 48 would turn dampening off for every site.
+# the entire table if its sites disagree on factor count, so pushing 48 into a file
+# whose other sites hold 24 would turn dampening off for every site.
 BASE_GRANULAR_ALL_KEY = "all"
-PUSH_FACTOR_COUNT = 24  # hourly factors per push; must match every other site in the table
+# Half-hourly factors per push — the base's finest grain, matching Solcast's 30-minute
+# periods and our slot grid. Entries we do not manage force the hourly count instead,
+# since every site in the base's table must hold the same number.
+PUSH_FACTOR_COUNT = 48
+HOURLY_FACTOR_COUNT = 24
 ISSUE_GRANULAR_CONFLICT = "granular_dampening_conflict"
 # Legacy repair-issue id, deleted on unload so a pre-1.10.0b8 "dampening gated"
 # issue does not linger in the UI after the gate became advisory.

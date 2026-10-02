@@ -643,6 +643,32 @@ async def test_push_dampening_clamps_factors_to_unit_range(hass, coordinator):
     assert all(0.0 <= v <= 1.0 for v in values)
 
 
+async def test_push_dampening_reports_success_and_failure(hass, coordinator):
+    """Callers record a target as pushed only when the base accepted it."""
+    assert await coordinator._push_dampening([1.0] * 48, site="abcd") is False  # no base service
+
+    calls: list[dict] = []
+
+    async def _handler(call):
+        calls.append(dict(call.data))
+
+    hass.services.async_register("solcast_solar", "set_dampening", _handler)
+    assert await coordinator._push_dampening([0.9] * 48, site="abcd") is True
+    assert calls[0]["site"] == "abcd"
+    assert len(calls[0]["damp_factor"].split(",")) == 48
+
+
+def test_factors_for_push_keeps_slot_identity():
+    """48 must pass every slot through in order; 24 must pair slots 2h/2h+1. Distinct
+    values so a shifted, reversed or averaged-away slot cannot pass."""
+    slots = [{"factor": 0.5 + i / 100} for i in range(48)]
+    assert SolcastEnhancedCoordinator._factors_for_push(slots, 48) == [0.5 + i / 100 for i in range(48)]
+    hourly = SolcastEnhancedCoordinator._factors_for_push(slots, 24)
+    assert hourly == pytest.approx([0.5 + (2 * h + 0.5) / 100 for h in range(24)])
+    # A short table pads to neutral rather than sending a count the base rejects.
+    assert SolcastEnhancedCoordinator._factors_for_push(slots[:10], 48)[10:] == [1.0] * 38
+
+
 # ---------------------------------------------------------------------------
 # Median operating current (dc_imed) and the _total tracker fallback
 # ---------------------------------------------------------------------------

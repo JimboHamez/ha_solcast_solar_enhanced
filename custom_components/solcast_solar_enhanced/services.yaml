@@ -8,9 +8,10 @@ run_pv_tuning:
 run_dampening_update:
   name: Run Dampening Update
   description: >
-    Force an immediate recalculation of all hourly shading dampening factors
-    and push them to the base solcast_solar integration. Works even without
-    a database (falls back to base integration values).
+    Force an immediate recalculation of the half-hourly shading dampening
+    factors and push them to the base solcast_solar integration. Without the
+    database there is no history to learn from, so every factor is a neutral
+    1.0.
 
 fetch_weather:
   name: Fetch Weather
