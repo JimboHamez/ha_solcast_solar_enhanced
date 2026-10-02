@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dampening is pushed half-hourly: 48 factors instead of 24.** The calculation has always run
+  on 48 half-hour slots, but the push averaged each pair into one hourly factor. Nothing recorded
+  why. Averaging halves the contrast at a sharp shading edge that crosses within half an hour, such
+  as a hard morning horizon going from about 10% to 90% of the forecast inside one hour
+  ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)). Every supported base
+  version accepts 48 factors (since 4.1.9).
+- **Every push now names a Solcast site, single-site installs included.** A single-site install
+  used to be dampened through the base's global hourly values (`damp00…23`). It is now pushed per
+  site, like multi-site, so it gets the half-hourly resolution and never creates an `all` entry.
+  An `all` entry would silently override every per-site entry if arrays were configured later.
+  Without site groups, the property-wide curve goes to every Solcast site discovered. If none is
+  discovered, the old global hourly push is kept as a fallback.
+- **The first push after upgrading resets the base's leftover hourly values to 1.0** on a
+  single-site install. They are ignored once the per-site factors take over, but would come back
+  with a stale curve if granular dampening were ever cleared. The reset is made only while the
+  base's granular file is still empty. The base deletes the file from a listener that runs later
+  as a separate task, so on a populated file the reset could delete the per-site factors that
+  follow it.
+- **Factor-count checks ignore our own entries.** The base discards its whole granular file when
+  sites disagree on factor count. Our own 24-factor entries from before this change are about to be
+  overwritten, so they no longer count as a clash. Counting them would have blocked every 48-factor
+  push for good. A site we don't manage that holds 24 (a hand-written entry, say) makes us push 24
+  to match. Only other sites that already disagree among themselves still skip the push.
+- **Current Hour Dampening now reports the current half hour**, matching what the base applies. If
+  a target was pushed hourly (the fallback, or matching another site's entry), it reports the hour
+  as before. The name is unchanged. The `hour`, `factor_first_half` and `factor_second_half`
+  attributes are replaced by `period_start` and `period_minutes`. The *Dampening Hours with DB
+  Data* `hour_NN_*` attributes are unchanged and remain an hourly summary. Diagnostics gain
+  `pushed_factor_count`. A target now counts as pushed only when the base accepted it; a failed
+  call used to be reported as pushed.
+- **Wording to match.** The granular-dampening repair issue now says the factor-count check covers
+  only sites this integration does not manage. That text is still English in every locale, as
+  before. The *Run Dampening Update* action description now says half-hourly. It also no longer
+  claims that without a database the action "falls back to base integration values". It never
+  did: without history every factor is a neutral 1.0.
+
 ### Documentation
 
 - **README Troubleshooting: how to share the database.** Disable the integration before copying

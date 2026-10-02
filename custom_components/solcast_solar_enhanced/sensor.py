@@ -277,7 +277,11 @@ class DampeningSensor(SolcastEnhancedEntity):
 
 
 class CurrentDampeningSensor(SolcastEnhancedEntity):
-    """Diagnostic: the property-wide dampening factor in effect for the current hour.
+    """Diagnostic: the property-wide dampening factor in effect right now.
+
+    The current half hour, or the current hour when the base was given hourly factors
+    (``period_start`` / ``period_minutes`` say which). The name predates half-hourly
+    pushes and is kept so existing dashboards keep their label.
 
     1.0 is no dampening; below 1.0 is the correction currently applied to the Solcast
     forecast. Unlike the Dampening sensor's per-hour attributes this is a plain state,
@@ -487,7 +491,7 @@ class SiteTuningRmseSensor(SolcastEnhancedSiteEntity):
 
 
 class SiteCurrentDampeningSensor(SolcastEnhancedSiteEntity):
-    """Diagnostic: one array's dampening factor in effect for the current hour.
+    """Diagnostic: one array's dampening factor in effect right now (half hour or hour).
 
     The per-array counterpart to ``CurrentDampeningSensor`` — the number actually
     pushed for this array's Solcast site, so differently-shaded arrays can be watched

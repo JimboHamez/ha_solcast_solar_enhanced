@@ -84,6 +84,7 @@ from .const import (
     ENERGY_DT_MIN_FRACTION,
     EXPORT_PEAK_WINDOW_S,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
+    HOURLY_FACTOR_COUNT,
     ISSUE_CAPACITY_LOOKS_DC,
     ISSUE_DAMPENING_GATED_LEGACY,
     ISSUE_GRANULAR_CONFLICT,
@@ -301,10 +302,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # this cycle. Surfaced on the Dampening sensor.
         self._orientation_advisory: bool = False
         # Which targets the last cycle actually pushed, and which of those have a
-        # diverged orientation. A target is DEFAULT_SITE_ID for the global push or a
-        # resource_id for a per-site push. Needed by the current-hour dampening
-        # sensors, which report what the base is really applying.
+        # diverged orientation. A target is DEFAULT_SITE_ID for the property-wide
+        # curve (however many base sites it went to) or a resource_id for a per-site
+        # push. Needed by the current-hour dampening sensors, which report what the
+        # base is really applying — hence also the factor count each target was
+        # last pushed at, since an hourly push applies the mean of two slots.
         self._dampening_pushed: set[str] = set()
+        self._pushed_factor_count: dict[str, int] = {}
         self._orientation_advisory_targets: set[str] = set()
 
         # Discovered Solcast sites (multiple arrays on one property), each:
@@ -1074,88 +1078,131 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         warn_on = opts.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)
         any_diverged = False
         self._dampening_pushed.clear()
+        self._pushed_factor_count.clear()
         self._orientation_advisory_targets.clear()
 
         site_ids = self._configured_site_ids(opts.get(CONF_SITE_GROUPS) or [])
-        if site_ids:
-            # Multi-site: push a dampening set per site (which overrides the base's
-            # global dampening for that site). The conflicting global push is skipped
-            # both so per-site factors are not overwritten and because a global push
-            # clears the base's granular table outright, deleting the file they live in.
-            #
-            # Guard the per-site push against a base granular table that would make it
-            # meaningless or harmful. Either way the user gets a repair issue, because
-            # both failures are otherwise completely silent.
-            conflict = self._granular_conflict(self._read_base_granular_factors())
-            if conflict == "length_mismatch":
-                # Pushing our 24 into a table whose sites hold a different count makes
-                # the base discard the *entire* table and fall back to its traditional
-                # hourly factors — turning dampening off for every site, including ones
-                # we don't manage. Pushing actively causes harm here, so don't.
-                _LOGGER.warning(
-                    "Base granular dampening table has sites with a factor count other "
-                    "than %d; pushing would make the base discard the whole table and "
-                    "disable dampening for every site. Skipping the push — make every "
-                    "site in solcast-dampening.json use the same number of factors.",
-                    PUSH_FACTOR_COUNT,
-                )
-                self._raise_granular_issue()
-                return
-            if conflict == "all_key":
-                # An 'all' entry shadows every per-site entry in the base's lookup, so
-                # our factors are ignored. Still push: it is harmless, and it means the
-                # correct factors are already in place the moment 'all' is removed.
-                _LOGGER.warning(
-                    "Base granular dampening table contains an '%s' entry, which takes "
-                    "precedence over every per-site entry — the per-site factors being "
-                    "pushed are currently ignored by the base. Remove it to let per-site "
-                    "dampening take effect.",
-                    BASE_GRANULAR_ALL_KEY,
-                )
-                self._raise_granular_issue()
-            else:
-                ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
-
-            for site_id in site_ids:
-                slots = await self._compute_dampening_slots(opts, now_epoch, lat, lon, site_id)
-                self._site_dampening_tables[site_id] = slots
-                hourly = average_slot_pairs([s["factor"] for s in slots])
-                if warn_on:
-                    seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
-                    div = self._orientation_diverged(self._site_tuning_results.get(site_id), seed_tilt, seed_az)
-                    if div:
-                        any_diverged = True
-                        self._orientation_advisory_targets.add(site_id)
-                        _LOGGER.warning(
-                            "Tuned tilt for site %s diverges from the configured Solcast "
-                            "orientation (Δtilt %.0f°). Dampening is still being applied; "
-                            "check the Tuned Tilt sensor's fit quality before acting on it.",
-                            site_id,
-                            div["tilt_delta"],
-                        )
-                await self._push_dampening(hourly, site=site_id)
-                self._dampening_pushed.add(site_id)
-        else:
+        # Every push names its site: one per configured array (multi-site), or, with
+        # no site groups, the property-wide curve sent to each Solcast site the base
+        # knows about. A push with no site would land in the base's hourly
+        # damp00..23 options (24 factors) or its 'all' key (48), and an 'all' entry
+        # silently shadows every per-site entry should arrays be configured later.
+        push_ids = site_ids or [s["resource_id"] for s in self._sites if s.get("resource_id")]
+        if not push_ids:
+            # Nothing discovered (auto-discovery off, or no rooftop sensors), so there
+            # is no site to name: fall back to the base's hourly global factors.
+            if warn_on and self._property_orientation_diverged(opts):
+                any_diverged = True
             hourly = average_slot_pairs([s["factor"] for s in self._dampening_table])
+            if await self._push_dampening(hourly):
+                self._dampening_pushed.add(DEFAULT_SITE_ID)
+                self._pushed_factor_count[DEFAULT_SITE_ID] = HOURLY_FACTOR_COUNT
+            self._finish_orientation_advisory(any_diverged)
+            return
+
+        # Guard the push against a base granular table that would make it
+        # meaningless or harmful. Either way the user gets a repair issue, because
+        # both failures are otherwise completely silent.
+        table = self._read_base_granular_factors()
+        conflict = self._granular_conflict(table, push_ids)
+        if conflict == "length_mismatch":
+            # The sites we don't manage already disagree on factor count (or hold a
+            # count the base rejects), so the base will discard the *entire* table and
+            # fall back to its traditional hourly factors — dampening off for every
+            # site. Adding ours cannot help, so don't.
+            _LOGGER.warning(
+                "Base granular dampening table has sites with mismatched factor counts; "
+                "the base will discard the whole table and disable dampening for every "
+                "site. Skipping the push — make every site in solcast-dampening.json "
+                "use the same number of factors (24 or 48)."
+            )
+            self._raise_granular_issue()
+            return
+        if conflict == "all_key":
+            # An 'all' entry shadows every per-site entry in the base's lookup, so
+            # our factors are ignored. Still push: it is harmless, and it means the
+            # correct factors are already in place the moment 'all' is removed.
+            _LOGGER.warning(
+                "Base granular dampening table contains an '%s' entry, which takes "
+                "precedence over every per-site entry — the per-site factors being "
+                "pushed are currently ignored by the base. Remove it to let per-site "
+                "dampening take effect.",
+                BASE_GRANULAR_ALL_KEY,
+            )
+            self._raise_granular_issue()
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
+
+        count = self._push_factor_count(table, push_ids)
+        await self._neutralise_traditional_dampening(table)
+
+        if not site_ids:
+            # Property-wide curve: one table, one orientation check, every base site.
+            if warn_on and self._property_orientation_diverged(opts):
+                any_diverged = True
+            factors = self._factors_for_push(self._dampening_table, count)
+            pushed_any = False
+            for rid in push_ids:
+                pushed_any = await self._push_dampening(factors, site=rid) or pushed_any
+            if pushed_any:
+                self._dampening_pushed.add(DEFAULT_SITE_ID)
+                self._pushed_factor_count[DEFAULT_SITE_ID] = count
+            self._finish_orientation_advisory(any_diverged)
+            return
+
+        # Multi-site: a curve per array. The property-wide '_total' curve is never
+        # pushed alongside, since it would be a second, conflicting set for the same
+        # Solcast sites.
+        for site_id in site_ids:
+            slots = await self._compute_dampening_slots(opts, now_epoch, lat, lon, site_id)
+            self._site_dampening_tables[site_id] = slots
             if warn_on:
-                div = self._orientation_diverged(
-                    self._tuning_result,
-                    float(opts.get(CONF_TILT, 20.0)),
-                    # Compare in the internal frame the tuned result is stored in.
-                    panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
-                )
+                seed_tilt, seed_az = self._site_orientation_seed(site_id, opts)
+                div = self._orientation_diverged(self._site_tuning_results.get(site_id), seed_tilt, seed_az)
                 if div:
                     any_diverged = True
-                    self._orientation_advisory_targets.add(DEFAULT_SITE_ID)
+                    self._orientation_advisory_targets.add(site_id)
                     _LOGGER.warning(
-                        "Tuned tilt diverges from the configured Solcast orientation "
-                        "(Δtilt %.0f°). Dampening is still being applied; check the "
-                        "Tuned Panel Tilt sensor's fit quality before acting on it.",
+                        "Tuned tilt for site %s diverges from the configured Solcast "
+                        "orientation (Δtilt %.0f°). Dampening is still being applied; "
+                        "check the Tuned Tilt sensor's fit quality before acting on it.",
+                        site_id,
                         div["tilt_delta"],
                     )
-            await self._push_dampening(hourly)
-            self._dampening_pushed.add(DEFAULT_SITE_ID)
+            if await self._push_dampening(self._factors_for_push(slots, count), site=site_id):
+                self._dampening_pushed.add(site_id)
+                self._pushed_factor_count[site_id] = count
 
+        self._finish_orientation_advisory(any_diverged)
+
+    def _property_orientation_diverged(self, opts: dict[str, Any]) -> bool:
+        """Check the property-wide tuned orientation against the configured one, and log it.
+
+        Args:
+            opts: Merged entry data and options.
+
+        Returns:
+            True when the advisory fires for the property-wide target.
+        """
+        div = self._orientation_diverged(
+            self._tuning_result,
+            float(opts.get(CONF_TILT, 20.0)),
+            # Compare in the internal frame the tuned result is stored in.
+            panel_azimuth_to_internal(opts.get(CONF_AZIMUTH, 0.0)),
+        )
+        if not div:
+            return False
+        self._orientation_advisory_targets.add(DEFAULT_SITE_ID)
+        _LOGGER.warning(
+            "Tuned tilt diverges from the configured Solcast orientation "
+            "(Δtilt %.0f°). Dampening is still being applied; check the "
+            "Tuned Panel Tilt sensor's fit quality before acting on it.",
+            div["tilt_delta"],
+        )
+        return True
+
+    def _finish_orientation_advisory(self, any_diverged: bool) -> None:
+        """Raise or clear the orientation-divergence repair issue for this cycle."""
         self._orientation_advisory = any_diverged
         if any_diverged:
             ir.async_create_issue(
@@ -1263,26 +1310,34 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
 
         return slot_results
 
-    async def _push_dampening(self, hourly_factors: list[float], site: str | None = None) -> None:
+    async def _push_dampening(self, factors: list[float], site: str | None = None) -> bool:
         """Push factors to the base integration's ``set_dampening`` service.
 
         The base expects ``damp_factor`` as a comma-separated string of 24 (hourly)
         or 48 (half-hourly) values, with an optional ``site`` (resource_id) to
         target a single site.
+
+        Args:
+            factors: 24 or 48 factors, indexed by local hour or half-hour.
+            site: Solcast resource_id to target, or None for the base's global
+                hourly factors.
+
+        Returns:
+            True when the base accepted the push.
         """
         try:
             # The base integration's set_dampening only accepts factors in
             # [0.0, 1.0]: dampening can attenuate a forecast, never boost it. A
             # computed factor > 1.0 means the measured output exceeds the Solcast
-            # forecast for that hour (the forecast under-predicts) — we cannot ask
+            # forecast for that slot (the forecast under-predicts) — we cannot ask
             # Solcast to boost, so clamp to 1.0 (no dampening). The unclamped value
             # is kept in the dampening sensor attributes for diagnostics.
-            clamped = [min(1.0, max(0.0, f)) for f in hourly_factors]
-            n_clamped = sum(1 for c, f in zip(clamped, hourly_factors, strict=True) if c != f)
+            clamped = [min(1.0, max(0.0, f)) for f in factors]
+            n_clamped = sum(1 for c, f in zip(clamped, factors, strict=True) if c != f)
             if n_clamped:
                 _LOGGER.debug(
                     "Clamped %d dampening factor(s) outside [0,1] before push%s "
-                    "(forecast under-/over-shoots those hours)",
+                    "(forecast under-/over-shoots those slots)",
                     n_clamped,
                     f" for site {site}" if site else "",
                 )
@@ -1295,11 +1350,54 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             await self.hass.services.async_call(BASE_DOMAIN, "set_dampening", data, blocking=True)
             _LOGGER.debug(
                 "Pushed %d dampening factors%s",
-                len(hourly_factors),
+                len(factors),
                 f" for site {site}" if site else " (global)",
             )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("Failed to push dampening factors: %s", exc)
+            return False
+        return True
+
+    @staticmethod
+    def _factors_for_push(slots: list[dict[str, Any]], count: int) -> list[float]:
+        """The slot table's factors at the resolution being pushed.
+
+        Args:
+            slots: The 48 half-hour slot results, indexed by local half-hour.
+            count: 48 to push each slot as-is, or 24 to push hourly means.
+
+        Returns:
+            ``count`` factors in the base's local-time indexing.
+        """
+        factors = [float(s.get("factor", 1.0)) for s in slots]
+        if count == HOURLY_FACTOR_COUNT:
+            return average_slot_pairs(factors)
+        return factors + [1.0] * (PUSH_FACTOR_COUNT - len(factors))
+
+    async def _neutralise_traditional_dampening(self, table: dict[str, Any] | None) -> None:
+        """Reset the base's hourly ``damp00..23`` options to 1.0 before a per-site push.
+
+        A single-site install used to be pushed through those options. The per-site
+        push turns granular dampening on, which makes the base ignore them, but they
+        stay stored and come back the moment granular dampening is cleared — the old
+        curve would then apply with nothing left updating it.
+
+        Only done while the base's granular table is empty. A global push also clears
+        a populated table, and the base deletes the file from an options listener that
+        runs as a separate task, so it could land after the per-site push that follows
+        and delete that too. An empty table is the single-site upgrade, the case this
+        is for; an unreadable one (``None``) is left alone.
+
+        Args:
+            table: The base's granular table from :meth:`_read_base_granular_factors`.
+        """
+        if table is None or table:
+            return
+        traditional = self._read_base_traditional_factors()
+        if traditional is None or all(f == 1.0 for f in traditional):
+            return
+        _LOGGER.debug("Resetting the base's hourly dampening options to 1.0 before the per-site push")
+        await self._push_dampening([1.0] * HOURLY_FACTOR_COUNT)
 
     # ------------------------------------------------------------------
     # Forced service methods
@@ -2222,19 +2320,74 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             pass
         return None
 
-    def _granular_conflict(self, factors: dict[str, Any] | None) -> str | None:
+    @staticmethod
+    def _foreign_factor_counts(factors: dict[str, Any] | None, own_ids: list[str]) -> set[int]:
+        """Factor counts held by base granular entries other than the sites we push.
+
+        Our own entries are excluded because the push is about to overwrite them: an
+        install upgrading from hourly pushes holds its own 24-factor entries, and
+        treating those as a clash would block the first 48-factor push for good.
+        Keys are compared the way the base stores them (lowercase, hyphenated).
+        """
+        if not factors:
+            return set()
+        own = {rid.lower().replace("_", "-") for rid in own_ids}
+        return {
+            len(v)
+            for k, v in factors.items()
+            if isinstance(v, (list, tuple)) and str(k).lower().replace("_", "-") not in own
+        }
+
+    def _granular_conflict(self, factors: dict[str, Any] | None, own_ids: list[str] | None = None) -> str | None:
         """Detect a base granular-dampening table that breaks our per-site push.
 
-        Returns ``"all_key"``, ``"length_mismatch"`` or ``None``. See
-        ``BASE_GRANULAR_ALL_KEY`` for why each matters.
+        Args:
+            factors: The base's granular table, or None when unreadable.
+            own_ids: The resource_ids this cycle pushes to.
+
+        Returns:
+            ``"all_key"``, ``"length_mismatch"`` or ``None``. See
+            ``BASE_GRANULAR_ALL_KEY`` for why each matters.
         """
         if not factors:
             return None
         if BASE_GRANULAR_ALL_KEY in factors:
             return "all_key"
-        lengths = {len(v) for v in factors.values() if isinstance(v, (list, tuple))}
-        if lengths and lengths != {PUSH_FACTOR_COUNT}:
+        foreign = self._foreign_factor_counts(factors, own_ids or [])
+        if len(foreign) > 1 or foreign - {HOURLY_FACTOR_COUNT, PUSH_FACTOR_COUNT}:
             return "length_mismatch"
+        return None
+
+    def _push_factor_count(self, factors: dict[str, Any] | None, own_ids: list[str]) -> int:
+        """How many factors to push: 48, unless entries we don't manage hold 24.
+
+        The base discards its whole granular table when sites disagree on count, so a
+        hand-maintained hourly entry for another site forces us to match it.
+
+        Args:
+            factors: The base's granular table, or None when unreadable.
+            own_ids: The resource_ids this cycle pushes to.
+
+        Returns:
+            ``PUSH_FACTOR_COUNT`` or ``HOURLY_FACTOR_COUNT``.
+        """
+        if self._foreign_factor_counts(factors, own_ids) == {HOURLY_FACTOR_COUNT}:
+            return HOURLY_FACTOR_COUNT
+        return PUSH_FACTOR_COUNT
+
+    def _read_base_traditional_factors(self) -> list[float] | None:
+        """The base's hourly ``damp00..23`` options, or ``None`` when they can't be read.
+
+        Read from the base config entry's options, where every supported base version
+        keeps them.
+        """
+        try:
+            for entry in self.hass.config_entries.async_entries(BASE_DOMAIN):
+                values = [entry.options.get(f"damp{h:02d}") for h in range(HOURLY_FACTOR_COUNT)]
+                if None not in values:
+                    return [float(v) for v in values if v is not None]
+        except Exception:  # noqa: BLE001
+            pass
         return None
 
     def _read_base_export_limit(self) -> float | None:
@@ -2664,75 +2817,84 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         factors = [s["factor"] for s in table if s.get("source") != "night"]
         return round(sum(factors) / len(factors), 4) if factors else None
 
-    def _current_hour_slots(self, table: list[dict[str, Any]]) -> tuple[int, dict[str, Any], dict[str, Any]] | None:
-        """Return ``(local_hour, first_half, second_half)`` for the current local hour.
+    def _current_period_slots(
+        self, table: list[dict[str, Any]], target: str
+    ) -> tuple[str, int, list[dict[str, Any]]] | None:
+        """Return ``(period_start, period_minutes, slots)`` for the period in effect now.
 
         Slot index ``i`` of a dampening table maps to local half-hour ``i`` (see
-        ``_compute_dampening_slots``), which is the same indexing the base integration
-        applies ``damp_factor`` on — so hour ``h`` is the mean of slots ``2h``/``2h+1``.
-        Resolved at read time rather than at compute time, so the value tracks the wall
-        clock even though the table itself is only rebuilt every 6 hours.
+        ``_compute_dampening_slots``), the same indexing the base applies a 48-factor
+        ``damp_factor`` on, so a half-hourly push applies the current slot alone. An
+        hourly push (the global fallback, or matching another site's 24 entries)
+        applies the mean of slots ``2h``/``2h+1``. Resolved at read time rather than
+        at compute time, so the value tracks the wall clock even though the table
+        itself is only rebuilt every 6 hours.
         """
         if not table:
             return None
         tz = dt_util.get_time_zone(self.hass.config.time_zone) or UTC
-        hour = dt_util.now(tz).hour
-        if 2 * hour + 1 >= len(table):
+        now = dt_util.now(tz)
+        if self._pushed_factor_count.get(target, PUSH_FACTOR_COUNT) == HOURLY_FACTOR_COUNT:
+            indices = [2 * now.hour, 2 * now.hour + 1]
+            start, minutes = f"{now.hour:02d}:00", 60
+        else:
+            half = 1 if now.minute >= 30 else 0
+            indices = [2 * now.hour + half]
+            start, minutes = f"{now.hour:02d}:{30 * half:02d}", 30
+        if indices[-1] >= len(table):
             return None
-        return hour, table[2 * hour], table[2 * hour + 1]
+        return start, minutes, [table[i] for i in indices]
 
     def _current_dampening(self, table: list[dict[str, Any]], target: str) -> float | None:
-        """Dampening factor the base is applying to ``target`` for the current local hour.
+        """Dampening factor the base is applying to ``target`` for the current period.
 
         Carries the same ``[0, 1]`` clamp and rounding as ``_push_dampening``, so it
         matches the number on the wire rather than the raw computed one (available as
         ``raw_factor`` in the attributes). Orientation divergence is advisory and does
         not alter what is pushed, so it does not alter this either.
         """
-        slots = self._current_hour_slots(table)
-        if slots is None:
+        period = self._current_period_slots(table, target)
+        if period is None:
             return None
-        _, slot_a, slot_b = slots
-        factor = (float(slot_a.get("factor", 1.0)) + float(slot_b.get("factor", 1.0))) / 2.0
+        _, _, slots = period
+        factor = sum(float(s.get("factor", 1.0)) for s in slots) / len(slots)
         return round(min(1.0, max(0.0, factor)), 4)
 
     def _current_dampening_attributes(self, table: list[dict[str, Any]], target: str) -> dict[str, Any]:
-        """Diagnostics for a current-hour dampening sensor.
+        """Diagnostics for a current-period dampening sensor.
 
         ``alpha`` and ``source`` are the important ones to read alongside the state: a
         factor near 1.0 means "no shading measured" only when alpha is high — at low
         alpha it means "not enough records yet", and the two are indistinguishable from
         the state alone.
         """
-        slots = self._current_hour_slots(table)
-        if slots is None:
+        period = self._current_period_slots(table, target)
+        if period is None:
             return {"pushed": target in self._dampening_pushed}
-        hour, slot_a, slot_b = slots
-        f_a = slot_a.get("factor", 1.0)
-        f_b = slot_b.get("factor", 1.0)
+        start, minutes, slots = period
+        n = len(slots)
         return {
-            "hour": hour,
-            # Both halves of the hour, because the pushed value is their mean and the
-            # two can differ sharply (morning shading clearing mid-hour, say).
-            "factor_first_half": round(f_a, 4),
-            "factor_second_half": round(f_b, 4),
-            "raw_factor": round((f_a + f_b) / 2, 4),
-            "alpha": round((slot_a.get("alpha", 0.0) + slot_b.get("alpha", 0.0)) / 2, 4),
-            "source": slot_a.get("source", "night"),
-            "quality_records": round((slot_a.get("quality_records", 0.0) + slot_b.get("quality_records", 0.0)) / 2, 2),
-            "clear_sky_basis": slot_a.get("clear_sky_basis", "cloud"),
+            # The local period the state applies to: a half hour when the base was
+            # given 48 factors, the whole hour when it was given 24.
+            "period_start": start,
+            "period_minutes": minutes,
+            "raw_factor": round(sum(s.get("factor", 1.0) for s in slots) / n, 4),
+            "alpha": round(sum(s.get("alpha", 0.0) for s in slots) / n, 4),
+            "source": slots[0].get("source", "night"),
+            "quality_records": round(sum(s.get("quality_records", 0.0) for s in slots) / n, 2),
+            "clear_sky_basis": slots[0].get("clear_sky_basis", "cloud"),
             # Advisory: this target's tuned orientation disagrees with the configured
             # one. Does not suppress the push — see _run_dampening.
             "orientation_diverged": target in self._orientation_advisory_targets,
             # False when the last cycle sent nothing for this target — the base's auto
-            # dampening was on, or (property-wide, multi-site) the global push is
-            # deliberately skipped so per-site factors are not overwritten.
+            # dampening was on, or (property-wide, multi-site) the property curve is
+            # deliberately not pushed so per-site factors are not overwritten.
             "pushed": target in self._dampening_pushed,
         }
 
     @property
     def current_dampening(self) -> float | None:
-        """Property-wide dampening factor in effect for the current local hour."""
+        """Property-wide dampening factor in effect for the current local period."""
         return self._current_dampening(self._dampening_table, DEFAULT_SITE_ID)
 
     @property
@@ -2741,7 +2903,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         return self._current_dampening_attributes(self._dampening_table, DEFAULT_SITE_ID)
 
     def site_current_dampening(self, site_id: str) -> float | None:
-        """Dampening factor in effect for one array for the current local hour."""
+        """Dampening factor in effect for one array for the current local period."""
         return self._current_dampening(self._site_dampening_tables.get(site_id) or [], site_id)
 
     def site_current_dampening_attributes(self, site_id: str) -> dict[str, Any]:
@@ -2963,6 +3125,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "hours_with_db": self.dampening_hours_with_db,
                 "current_factor": self.current_dampening,
                 "pushed_targets": sorted(self._dampening_pushed),
+                # 48 (half-hourly) or 24 (hourly fallback / matching a foreign entry).
+                "pushed_factor_count": dict(sorted(self._pushed_factor_count.items())),
                 "orientation_advisory": self._orientation_advisory,
                 "orientation_advisory_targets": sorted(self._orientation_advisory_targets),
                 "base_auto_dampening": self._read_base_auto_dampen(),
