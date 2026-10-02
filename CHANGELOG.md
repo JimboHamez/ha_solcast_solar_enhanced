@@ -5,7 +5,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.13.0b1] - 2026-10-02
+
+> Beta. Dampening factors are pushed to Solcast **half-hourly** (48 a day) instead of
+> hourly (24), and every push now names a Solcast site, single-site installs included.
+> Nothing needs reconfiguring.
+>
+> Checked before release with a walk-forward replay of 74 days of a live two-array
+> store. Each day's factors were rebuilt from earlier history only and scored against
+> measured output. Half-hourly is never worse than hourly. The overall gain is small
+> (0.4% on the shaded array). In the hours where the two half-hours genuinely differ
+> it is about 6%. The measured shading curve is still fairly smooth between
+> neighbouring half-hours, so this mainly removes a ceiling that a sharper shading
+> estimate would otherwise hit.
 
 ### Changed
 
@@ -1655,6 +1667,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.13.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.12.0...v1.13.0b1
 [1.12.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0b7...v1.11.0

@@ -38,7 +38,20 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.12.0
+## 🆕 What's new in v1.13.0b1
+
+**Beta: dampening is sent to Solcast half-hourly instead of hourly.** The shading correction has always been worked out for each half hour, but it was then averaged into hourly values before being sent to Solcast. When shading starts or clears partway through an hour, that averaging blurred the change: a morning that is shaded until 8:30 and in full sun after it got one in-between value for the whole hour. All 48 half-hourly values are now sent, which Solcast's own forecast periods match exactly.
+
+- **Single-site installs are now handled the same way as multi-site.** Previously a single-site install's correction went into the Solcast integration's own hourly dampening settings. It now goes to your Solcast site directly, so it gets the half-hourly resolution too. On the first run after upgrading, the old hourly settings are reset to 1.0 so they can't come back with a stale curve later. You don't need to change anything in either integration.
+- **Current Hour Dampening** (diagnostic, off by default) now shows the value for the current half hour. Its name is unchanged. Its `hour`, `factor_first_half` and `factor_second_half` attributes are replaced by `period_start` and `period_minutes`, so update any template that reads them.
+- **Expect a modest effect for now.** A replay of 74 days of real data found half-hourly never worse than hourly, and about 6% better in the hours where the two halves genuinely differ. The measured shading curve is still fairly smooth from one half hour to the next, so most of the benefit arrives with sharper shading estimates in later releases.
+
+**Upgrading?** Drop-in. Your settings, history and entities are unchanged, and no Solcast base update is needed: base 4.5.2 through 4.6.1 all accept half-hourly factors. This is a beta, so HACS only offers it if you have enabled beta versions for this integration.
+
+[CHANGELOG](CHANGELOG.md#1130b1---2026-10-02) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.0b1)
+
+<details>
+<summary><b>What landed in v1.12.0</b></summary>
 
 **Requires Home Assistant 2026.8.0 or later** (was 2026.5.4). If you are on an older Home Assistant, HACS will not offer this update until you upgrade, and v1.11.1 keeps working in the meantime. This release keeps the integration current with Home Assistant's own APIs. It adds no features and changes no behaviour.
 
@@ -49,6 +62,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your devices, entities, history and settings are unchanged. Your Solcast base integration does not need updating: base 4.5.2 through 4.6.1 all work with this release.
 
 [CHANGELOG](CHANGELOG.md#1120---2026-09-23) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.12.0)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.11.1</b></summary>
