@@ -38,7 +38,21 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.13.0b1
+## 🆕 What's new in v1.13.0
+
+**Stable: dampening is sent to Solcast half-hourly instead of hourly.** The code is identical to `v1.13.0b1`; if you have been running the beta there is nothing new here.
+
+- **Half-hourly, not hourly.** The shading correction has always been worked out for each half hour, then averaged into hourly values before being sent to Solcast. All 48 half-hourly values are now sent, so a morning that is shaded until 8:30 and in full sun after it no longer gets one in-between value for the whole hour.
+- **Single-site installs are handled the same way as multi-site**: the correction goes to your Solcast site directly, and the Solcast integration's old hourly dampening settings are reset to 1.0 once on upgrade.
+- **Current Hour Dampening** (diagnostic, off by default) shows the current half hour. Its `hour`, `factor_first_half` and `factor_second_half` attributes are replaced by `period_start` and `period_minutes`, so update any template that reads them.
+- **Checked on a live install.** Six days on a two-array system confirmed that Solcast applied all 48 values per array, exactly as sent, including across the daylight-saving change. Expect a modest effect for now: most of the benefit arrives with sharper shading estimates in later releases.
+
+**Upgrading from 1.12.0?** Drop-in. Your settings, history and entities are unchanged, and no Solcast base update is needed: base 4.5.2 through 4.6.1 all accept half-hourly factors.
+
+[CHANGELOG](CHANGELOG.md#1130---2026-10-08) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.0)
+
+<details>
+<summary><b>What landed in v1.13.0b1</b></summary>
 
 **Beta: dampening is sent to Solcast half-hourly instead of hourly.** The shading correction has always been worked out for each half hour, but it was then averaged into hourly values before being sent to Solcast. When shading starts or clears partway through an hour, that averaging blurred the change: a morning that is shaded until 8:30 and in full sun after it got one in-between value for the whole hour. All 48 half-hourly values are now sent, which Solcast's own forecast periods match exactly.
 
@@ -49,6 +63,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in. Your settings, history and entities are unchanged, and no Solcast base update is needed: base 4.5.2 through 4.6.1 all accept half-hourly factors. This is a beta, so HACS only offers it if you have enabled beta versions for this integration.
 
 [CHANGELOG](CHANGELOG.md#1130b1---2026-10-02) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.0b1)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.12.0</b></summary>
