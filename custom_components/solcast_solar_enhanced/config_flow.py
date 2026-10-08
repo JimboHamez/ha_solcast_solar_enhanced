@@ -5,6 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+# From HA 2026.10 `async_show_form` types `data_schema` as `probatio.Schema`. At runtime HA aliases `voluptuous` to
+# probatio's shim, so these schemas already are probatio schemas. Only the static types disagree, which is why each
+# `data_schema=` carries `# type: ignore[arg-type, unused-ignore]` (the `unused-ignore` keeps older cores passing).
+# Switch to `import probatio as vol` and drop the ignores once the minimum HA is 2026.9 or later, where probatio ships.
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -693,7 +697,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_database()
 
         schema = _build_site_schema(self._data, single_site=self._is_single_site())
-        return self.async_show_form(step_id="site", data_schema=schema, errors={})
+        return self.async_show_form(step_id="site", data_schema=schema, errors={})  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 2 — Storage. Built-in SQLite store, on by default; no setup needed."""
@@ -701,7 +705,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_weather()
 
-        return self.async_show_form(step_id="database", data_schema=_build_database_schema(self._data))
+        return self.async_show_form(step_id="database", data_schema=_build_database_schema(self._data))  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 3 — Weather & irradiance.
@@ -718,7 +722,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_battery()
 
         current = {**self._data, **(user_input or {})}
-        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (optional)."""
@@ -726,7 +730,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_tuning()
 
-        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(self._data))
+        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(self._data))  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening."""
@@ -734,7 +738,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._data.update(user_input)
             return await self.async_step_sites()
 
-        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(self._data))
+        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(self._data))  # type: ignore[arg-type, unused-ignore]
 
     def _show_sites_form(
         self,
@@ -749,7 +753,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
         return self.async_show_form(
             step_id="sites",
-            data_schema=schema,
+            data_schema=schema,  # type: ignore[arg-type, unused-ignore]
             errors=errors or {},
             description_placeholders={"count": str(len(discovered))},
         )
@@ -821,7 +825,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
 
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = _build_site_schema(current, single_site=self._is_single_site())
-        return self.async_show_form(step_id="site", data_schema=schema)
+        return self.async_show_form(step_id="site", data_schema=schema)  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 2 — Storage (options flow)."""
@@ -830,7 +834,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
             return await self.async_step_weather()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="database", data_schema=_build_database_schema(current))
+        return self.async_show_form(step_id="database", data_schema=_build_database_schema(current))  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 3 — Weather & Irradiance (options flow). Tests an enabled OWM key."""
@@ -843,7 +847,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
                 return await self.async_step_battery()
             current = {**current, **user_input}
 
-        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)
+        return self.async_show_form(step_id="weather", data_schema=_build_weather_schema(current), errors=errors)  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (options flow)."""
@@ -852,7 +856,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
             return await self.async_step_tuning()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(current))
+        return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(current))  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 5 — PV Tuning & Dampening (options flow)."""
@@ -861,7 +865,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
             return await self.async_step_sites()
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(current))
+        return self.async_show_form(step_id="tuning", data_schema=_build_tuning_schema(current))  # type: ignore[arg-type, unused-ignore]
 
     def _show_sites_form(
         self,
@@ -876,7 +880,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
         schema, _ = _build_sites_schema(discovered, assignments, default_ac=default_ac, mode=mode)
         return self.async_show_form(
             step_id="sites",
-            data_schema=schema,
+            data_schema=schema,  # type: ignore[arg-type, unused-ignore]
             errors=errors or {},
             description_placeholders={"count": str(len(discovered))},
         )

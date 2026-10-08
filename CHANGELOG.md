@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Tested against Home Assistant 2026.10.0.** The test harness pin moves to
+  `pytest-homeassistant-custom-component` 0.13.371 (HA 2026.10.0) from 0.13.367 (HA 2026.9.4).
+  2026.10 types config-flow form schemas as `probatio.Schema`. Our voluptuous schemas are already
+  probatio schemas at runtime, because HA aliases `voluptuous` to probatio, so the config-flow
+  form calls only needed a type-checker annotation. The minimum stays HA 2026.8.0. Nothing changes
+  for users.
+
 ## [1.13.0] - 2026-10-08
 
 > Stable. Promotes `1.13.0b1` unchanged: the code is the beta with the version string bumped.
