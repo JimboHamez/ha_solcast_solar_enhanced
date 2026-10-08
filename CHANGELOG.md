@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-10-08
+
+> Stable. Promotes `1.13.0b1` unchanged: the code is the beta with the version string bumped.
+> Dampening factors are pushed to Solcast **half-hourly** (48 a day) instead of hourly (24),
+> and every push names a Solcast site, single-site installs included. Nothing needs
+> reconfiguring.
+
+Everything below shipped in `1.13.0b1`; that entry is kept intact underneath and has the full
+detail. This entry is the summary for anyone upgrading from **1.12.0**.
+
+- **Dampening is pushed half-hourly: 48 factors instead of 24.** The calculation has always run on
+  48 half-hour slots; the push no longer averages each pair into one hourly factor, which blurred a
+  shading edge that crosses partway through an hour
+  ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+- **Every push names a Solcast site, single-site installs included.** Single-site installs move off
+  the base's global hourly values, which are reset to 1.0 once on upgrade. The global hourly push
+  remains only as a fallback when no Solcast site is discovered.
+- **Factor-count checks ignore our own entries**, so pre-upgrade 24-factor entries cannot block the
+  first 48-factor push. A site we don't manage that holds 24 makes us push 24 to match.
+- **Current Hour Dampening reports the current half hour.** Its `hour`, `factor_first_half` and
+  `factor_second_half` attributes are replaced by `period_start` and `period_minutes`; update any
+  template that reads them. Diagnostics gain `pushed_factor_count`.
+
+**Soak.** Run for six days (2–8 Oct) on a live two-array install, on base 4.5.2 and Home
+Assistant 2026.9.4. The base's applied factor — its forecast divided by its undampened forecast,
+both stored per half hour — shows identical half-hour pairs up to the upgrade and distinct ones from
+the first dampened slot after it, on both arrays. It changed daily with no reversion to 1.0, so
+the base never discarded its dampening file. The two arrays always differed, so no `all` entry was
+shadowing them. The base's `solcast-dampening.json` held exactly the 48 factors per site that the
+diagnostics report as pushed, slot for slot. Across the daylight-saving change on 4 Oct, the
+curve moved about an hour later on the clock, as it should. No warnings or errors were logged. The
+single-site reset of the base's hourly values was not exercised live (the soak install has two
+arrays); it is covered by tests.
+
+**Upgrading from 1.12.0?** Drop-in. Settings, history and entities are unchanged, and base 4.5.2
+through 4.6.1 all accept half-hourly factors.
+
 ## [1.13.0b1] - 2026-10-02
 
 > Beta. Dampening factors are pushed to Solcast **half-hourly** (48 a day) instead of
@@ -1667,6 +1704,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.13.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0b1...v1.13.0
 [1.13.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.12.0...v1.13.0b1
 [1.12.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.11.0...v1.11.1
