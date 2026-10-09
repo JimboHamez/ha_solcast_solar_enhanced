@@ -1,6 +1,8 @@
 """Test the 5-step config flow and options flow."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -96,6 +98,24 @@ STEP_TUNING = {
 }
 
 
+@asynccontextmanager
+async def _stubbed_entry_setup(hass) -> AsyncIterator[None]:
+    """Stub entry setup and unload, and unload every entry before the stubs lift.
+
+    The stubbed setup reports success without building a coordinator, so the entry
+    is LOADED with no ``runtime_data``. Left loaded, the ``hass`` fixture unloads it
+    at teardown, after the patch has gone, and the real ``async_unload_entry`` then
+    logs an ``AttributeError`` on the missing coordinator.
+    """
+    with (
+        patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True),
+        patch("custom_components.solcast_solar_enhanced.async_unload_entry", return_value=True),
+    ):
+        yield
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def _run_full_flow(hass) -> dict:
     """Helper: walk through all 5 steps and return the final result."""
     result = await hass.config_entries.flow.async_init(
@@ -152,10 +172,7 @@ async def test_single_config_entry_enforced(hass, mock_config_entry):
 
 async def test_full_flow_creates_entry(hass):
     """Completing all 5 steps creates a config entry."""
-    with patch(
-        "custom_components.solcast_solar_enhanced.async_setup_entry",
-        return_value=True,
-    ):
+    async with _stubbed_entry_setup(hass):
         result = await _run_full_flow(hass)
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -995,7 +1012,7 @@ async def test_reconfigure_updates_entry_in_place(hass, mock_config_entry):
     """Finishing updates the existing entry and reloads it — no second entry."""
     mock_config_entry.add_to_hass(hass)
 
-    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+    async with _stubbed_entry_setup(hass):
         result = await _run_reconfigure(hass, mock_config_entry, tuning={**STEP_TUNING, CONF_CLOUD_THRESHOLD: 37})
 
     assert result["type"] == FlowResultType.ABORT
@@ -1020,7 +1037,7 @@ async def test_reconfigure_is_not_shadowed_by_stale_options(hass):
     )
     entry.add_to_hass(hass)
 
-    with patch("custom_components.solcast_solar_enhanced.async_setup_entry", return_value=True):
+    async with _stubbed_entry_setup(hass):
         await _run_reconfigure(hass, entry)
 
     merged = {**entry.data, **entry.options}
