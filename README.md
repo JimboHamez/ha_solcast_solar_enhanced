@@ -38,7 +38,18 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.13.0
+## 🆕 What's new in v1.13.1
+
+**Patch: tested against Home Assistant 2026.10.0.** Nothing changes in how the integration behaves, and the minimum stays Home Assistant 2026.8.0.
+
+- **Ready for Home Assistant's new form validation.** Home Assistant 2026.9 replaced the library that checks setup and options forms (voluptuous) with a compatible one called probatio, and 2026.10 is the first release whose type checks require it. This integration's forms already run on probatio, because Home Assistant redirects the old library to the new one, so the only change is a type-checking note in the code. The full test suite, strict type checking and Home Assistant's own integration checks all pass on 2026.10.0.
+
+**Upgrading from 1.13.0?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. If you are staying on an older Home Assistant for now, 1.13.0 keeps working just as well.
+
+[CHANGELOG](CHANGELOG.md#1131---2026-10-09) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.1)
+
+<details>
+<summary><b>What landed in v1.13.0</b></summary>
 
 **Stable: dampening is sent to Solcast half-hourly instead of hourly.** The code is identical to `v1.13.0b1`; if you have been running the beta there is nothing new here.
 
@@ -50,6 +61,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading from 1.12.0?** Drop-in. Your settings, history and entities are unchanged, and no Solcast base update is needed: base 4.5.2 through 4.6.1 all accept half-hourly factors.
 
 [CHANGELOG](CHANGELOG.md#1130---2026-10-08) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.0)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.13.0b1</b></summary>
