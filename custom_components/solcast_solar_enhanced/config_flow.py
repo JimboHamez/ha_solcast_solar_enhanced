@@ -61,6 +61,7 @@ from .const import (
     CONF_PV_EXPORT_SENSOR,
     CONF_SITE_GROUPS,
     CONF_SITE_TOPOLOGY,
+    CONF_SUNPOS_DAMPENING,
     CONF_TILT,
     DEFAULT_AUTO_DAMPENING,
     DEFAULT_AUTO_TUNING,
@@ -79,6 +80,7 @@ from .const import (
     DEFAULT_OPENMETEO_ENABLED,
     DEFAULT_PV_INPUT_MODE,
     DEFAULT_SITE_TOPOLOGY,
+    DEFAULT_SUNPOS_DAMPENING,
     DEFAULT_TILT,
     DOMAIN,
     PV_INPUT_MODES,
@@ -158,6 +160,9 @@ def _build_tuning_schema(current: dict[str, Any]) -> vol.Schema:
             ): BooleanSelector(),
             vol.Required(
                 CONF_DAMPENING_GATE, default=current.get(CONF_DAMPENING_GATE, DEFAULT_DAMPENING_GATE)
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_SUNPOS_DAMPENING, default=current.get(CONF_SUNPOS_DAMPENING, DEFAULT_SUNPOS_DAMPENING)
             ): BooleanSelector(),
             vol.Required(
                 CONF_CLOUD_THRESHOLD, default=current.get(CONF_CLOUD_THRESHOLD, DEFAULT_CLOUD_THRESHOLD)

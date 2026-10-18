@@ -6,7 +6,7 @@ import logging
 import math
 from typing import Any
 
-from .const import KT_GHI_CS_FLOOR
+from .const import KT_GHI_CS_FLOOR, SUNPOS_MIN_COVERAGE_KW, SUNPOS_PRIOR_KW, SUNPOS_SIGMA_AZIM, SUNPOS_SIGMA_ELEV
 from .pv_tuning import clearsky_ghi
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,6 +74,102 @@ def _geometry_weight(
     return z_w * a_w
 
 
+def _record_estimate(r: dict[str, Any]) -> tuple[float, bool]:
+    """Return a record's forecast denominator and whether it is the undampened one.
+
+    The denominator must be the forecast *before* our own dampening. ``pv_estimate``
+    is read back from the base's detailedForecast, which the base has already
+    multiplied by the factors we pushed, so measuring against it closes a feedback
+    loop that settles at sqrt(ratio) rather than the true ratio (issue #50). A 0
+    means the base could not supply an undampened value (rows written before
+    1.10.0b6, or a base too old to answer), so fall back to the dampened figure — a
+    slightly biased record still beats no record.
+    """
+    pv_est_raw = float(r.get("pv_estimate_undampened", 0) or 0)
+    if pv_est_raw > 0:
+        return pv_est_raw, True
+    return float(r.get("pv_estimate", 0) or 0), False
+
+
+def _clearness(
+    r: dict[str, Any], zenith: float, cloud_threshold: int, kt_threshold: float | None
+) -> tuple[float | None, int, bool]:
+    """Return a record's clearness index, cloud cover and whether its sky counts as clear.
+
+    Prefer the measured clearness index ``Kt = ghi / clearsky_ghi(zenith)`` when
+    Open-Meteo irradiance is available (``kt_threshold`` set): the model cloud field
+    is biased high and false-overcasts clear days, so it over-rejects exactly the
+    clear records a shading ratio needs. Kt is judged only where the clear-sky
+    reference is meaningful — near-horizon sun gives a tiny, noisy denominator — so
+    such records get no Kt and drop out of the Kt path. Falls back to the cloud bands
+    when Open-Meteo is disabled.
+    """
+    # Distinguish a genuine 0% (clearest sky — the highest-quality records for a
+    # shading ratio) from a missing value. A bare `or 100` would coerce a falsy 0 to
+    # 100, so `_cloud_weight` would score the clearest sky in its lowest/zero band
+    # and drop or under-weight exactly the best data.
+    raw_clouds = r.get("clouds")
+    clouds = 100 if raw_clouds is None else int(raw_clouds)
+    kt: float | None = None
+    if kt_threshold is not None:
+        ghi = float(r.get("ghi", 0) or 0)
+        cs = clearsky_ghi(zenith)
+        if ghi > 0 and cs >= KT_GHI_CS_FLOOR:
+            kt = ghi / cs
+        return kt, clouds, kt is not None and kt >= kt_threshold
+    return kt, clouds, clouds < cloud_threshold
+
+
+def _export_ceiling(
+    r: dict[str, Any],
+    total_pv: float,
+    pv_est: float,
+    export_limit_kw: float,
+    clipping_threshold: float,
+) -> tuple[float, bool, bool]:
+    """Clip a record's forecast to what export curtailment allowed.
+
+    Returns ``(effective_estimate, forecast_clipped, export_capped)``. When grid
+    export is pegged at the limit the inverter holds total output below pv_estimate,
+    so the raw actual/estimate ratio reads spuriously low — curtailment
+    masquerading as shading. Clip the forecast to the achievable ceiling so a
+    curtailed clear-sky record contributes a valid ~1.0 ratio instead of a false
+    penalty. The clip only ever lowers the forecast, never below the delivered output
+    (so ratio <= 1.0), and is a no-op when export_limit_kw <= 0.
+
+    Which ceiling depends on whether the interval was capped at any point, which
+    only the stored PEAK export can answer (issue #86):
+
+    - **Peak below the limit — nothing was capped.** The mean headroom
+      ``export_limit_kw - pv_export`` is then the right figure and is exact: for a
+      slot that is capped for a fraction c, mean headroom works out to
+      ``L - mean_export`` regardless of c, so the arithmetic was never the problem.
+    - **Peak at the limit — the interval was capped.** The problem is that headroom
+      is not *fungible across time*: the surplus generation the forecast expects
+      would have arrived in exactly the minutes the inverter was already pinned, and
+      export headroom that existed twenty minutes later could not have carried it.
+      The only defensible ceiling is the delivered output itself, so the record
+      contributes a neutral 1.0 rather than a shading penalty it did not earn.
+      Recovering the capped fraction and clipping proportionally would need an
+      at-limit *duty cycle* stored per row, which bakes today's limit into the data
+      (see the column note in sqlite_store) — the conservative ceiling needs no such
+      assumption and errs toward under-dampening, the safe direction here.
+
+    ``pv_export_max`` is 0 on rows written before the column existed, which falls
+    into the first branch and preserves the previous behaviour exactly.
+    """
+    if export_limit_kw <= 0:
+        return pv_est, False, False
+    pv_export = float(r.get("pv_export", 0) or 0)
+    pv_export_peak = float(r.get("pv_export_max", 0) or 0)
+    capped = pv_export_peak >= export_limit_kw * clipping_threshold
+    ceiling = total_pv if capped else total_pv + (export_limit_kw - pv_export)
+    clipped = max(total_pv, min(pv_est, ceiling))
+    if clipped < pv_est - 1e-9:
+        return clipped, True, capped
+    return pv_est, False, capped
+
+
 def compute_dampening(
     records: list[dict[str, Any]],
     capacity_kw: float,
@@ -138,48 +234,14 @@ def compute_dampening(
     for r in records:
         pv_actual = float(r.get("pv_actual", 0) or 0)
         total_pv = pv_actual  # inverter AC output already includes export and battery
-        # Denominator must be the forecast *before* our own dampening. ``pv_estimate``
-        # is read back from the base's detailedForecast, which the base has already
-        # multiplied by the factors we pushed, so measuring against it closes a
-        # feedback loop that settles at sqrt(ratio) rather than the true ratio
-        # (issue #50). A 0 means the base could not supply an undampened value (rows
-        # written before 1.10.0b6, or a base too old to answer), so fall back to the
-        # dampened figure — a slightly biased record still beats no record.
-        pv_est_raw = float(r.get("pv_estimate_undampened", 0) or 0)
-        used_undampened = pv_est_raw > 0
-        pv_est = pv_est_raw if used_undampened else float(r.get("pv_estimate", 0) or 0)
-        pv_export = float(r.get("pv_export", 0) or 0)
-        # Interval peak export; 0 on rows predating the column (issue #86).
-        pv_export_peak = float(r.get("pv_export_max", 0) or 0)
-        # Distinguish a genuine 0% (clearest sky — the highest-quality records for
-        # a shading ratio) from a missing value. A bare `or 100` would coerce a
-        # falsy 0 to 100, so `_cloud_weight` would score the clearest sky in its
-        # lowest/zero band and drop or under-weight exactly the best data.
-        raw_clouds = r.get("clouds")
-        clouds = 100 if raw_clouds is None else int(raw_clouds)
+        pv_est, used_undampened = _record_estimate(r)
         zenith = float(r.get("zenith", 90) or 90)
         azimuth = float(r.get("azimuth", 0) or 0)
 
         if pv_est <= 0:
             continue
 
-        # Clear-sky basis. Prefer the measured clearness index
-        # ``Kt = ghi / clearsky_ghi(zenith)`` when Open-Meteo irradiance is available
-        # (``kt_threshold`` set): the model cloud field is biased high and
-        # false-overcasts clear days, so it over-rejects exactly the clear records a
-        # shading ratio needs. Kt is judged only where the clear-sky reference is
-        # meaningful — near-horizon sun gives a tiny, noisy denominator — so such
-        # records get no Kt and drop out of the Kt path. Falls back to the cloud
-        # bands when Open-Meteo is disabled.
-        kt: float | None = None
-        if kt_threshold is not None:
-            ghi = float(r.get("ghi", 0) or 0)
-            cs = clearsky_ghi(zenith)
-            if ghi > 0 and cs >= KT_GHI_CS_FLOOR:
-                kt = ghi / cs
-            is_clear = kt is not None and kt >= kt_threshold
-        else:
-            is_clear = clouds < cloud_threshold
+        kt, clouds, is_clear = _clearness(r, zenith, cloud_threshold, kt_threshold)
 
         # Clipping exclusion — a clear-sky slot whose actual and forecast both pin
         # the clip ceiling is curtailment, not shading.
@@ -199,47 +261,13 @@ def compute_dampening(
         if combined < 1e-6:
             continue
 
-        # Export-curtailment forecast clipping. When grid export is pegged at the
-        # limit the inverter holds total output below pv_estimate, so the raw
-        # actual/estimate ratio reads spuriously low — curtailment masquerading as
-        # shading. Clip the forecast to the achievable ceiling so a curtailed
-        # clear-sky record contributes a valid ~1.0 ratio instead of a false
-        # penalty. The clip only ever lowers the forecast, never below the delivered
-        # output (so ratio <= 1.0), and is a no-op when export_limit_kw <= 0.
-        #
-        # Which ceiling depends on whether the interval was capped at any point,
-        # which only the stored PEAK export can answer (issue #86):
-        #
-        # - **Peak below the limit — nothing was capped.** The mean headroom
-        #   ``export_limit_kw - pv_export`` is then the right figure and is exact:
-        #   for a slot that is capped for a fraction c, mean headroom works out to
-        #   ``L - mean_export`` regardless of c, so the arithmetic was never the
-        #   problem.
-        # - **Peak at the limit — the interval was capped.** The problem is that
-        #   headroom is not *fungible across time*: the surplus generation the
-        #   forecast expects would have arrived in exactly the minutes the inverter
-        #   was already pinned, and export headroom that existed twenty minutes
-        #   later could not have carried it. The only defensible ceiling is the
-        #   delivered output itself, so the record contributes a neutral 1.0 rather
-        #   than a shading penalty it did not earn. Recovering the capped fraction
-        #   and clipping proportionally would need an at-limit *duty cycle* stored
-        #   per row, which bakes today's limit into the data (see the column note in
-        #   sqlite_store) — the conservative ceiling needs no such assumption and
-        #   errs toward under-dampening, the safe direction here.
-        #
-        # ``pv_export_max`` is 0 on rows written before the column existed, which
-        # falls into the first branch and preserves the previous behaviour exactly.
-        effective_est = pv_est
-        if export_limit_kw > 0:
-            if pv_export_peak >= export_limit_kw * clipping_threshold:
-                ceiling = total_pv
-                export_capped += 1
-            else:
-                ceiling = total_pv + (export_limit_kw - pv_export)
-            clipped = max(total_pv, min(pv_est, ceiling))
-            if clipped < pv_est - 1e-9:
-                effective_est = clipped
-                forecast_clipped += 1
+        # Export-curtailment forecast clipping, so curtailment is not booked as
+        # shading — see ``_export_ceiling`` for the mean-vs-peak reasoning (issue #86).
+        effective_est, was_clipped, was_capped = _export_ceiling(
+            r, total_pv, pv_est, export_limit_kw, clipping_threshold
+        )
+        export_capped += was_capped
+        forecast_clipped += was_clipped
 
         # Accumulate the *energy* either side of the ratio rather than each record's
         # own ratio. db_factor is Σ(w·actual)/Σ(w·estimate), not the weighted mean of
@@ -318,6 +346,117 @@ def compute_dampening(
         "forecast_clipped": forecast_clipped,
         "export_capped": export_capped,
         "undampened_records": n_undampened,
+    }
+
+
+def _sunpos_weight(rec_zenith: float, rec_azimuth: float, target_zenith: float, target_azimuth: float) -> float:
+    """Narrow sun-position kernel for the sun-position estimator."""
+    dz = rec_zenith - target_zenith
+    da = (rec_azimuth - target_azimuth + 180.0) % 360.0 - 180.0
+    return math.exp(-0.5 * ((dz / SUNPOS_SIGMA_ELEV) ** 2 + (da / SUNPOS_SIGMA_AZIM) ** 2))
+
+
+def compute_sunpos_dampening(
+    records: list[dict[str, Any]],
+    capacity_kw: float,
+    cloud_threshold: int,
+    cloud_max_include: int,
+    clipping_threshold: float,
+    target_zenith: float,
+    target_azimuth: float,
+    export_limit_kw: float = 0.0,
+    kt_threshold: float | None = None,
+) -> dict[str, Any] | None:
+    """Compute a half-hour slot's factor from records taken with the sun in nearly the same place.
+
+    The opt-in alternative to ``compute_dampening`` for a sharp, hard horizon (issue
+    #91). Shading is a function of where the sun is, and against a hard edge output
+    goes from almost nothing to almost everything across 3–4° of elevation. The
+    standard estimator cannot follow that: its geometry kernel is ten degrees wide,
+    so records taken after the sun cleared the obstruction dilute the ones taken
+    behind it, and its confidence blend holds the factor near 1.0 (no deeper than
+    0.85 while α < 0.5) long after the measurement is clear.
+
+    This estimator differs in three ways, each fixed by the walk-forward replay:
+
+    - A narrow kernel (``SUNPOS_SIGMA_ELEV`` × ``SUNPOS_SIGMA_AZIM``).
+    - **All weather.** One factor is applied to every day, so it should be fitted to
+      every day. Clear-sky gating measures the clear mornings only, while the factor
+      is also applied to the cloudy ones. The clear-sky weight is still computed, but
+      only to report ``avg_quality``.
+    - **No confidence blend.** In its place, a small pseudo-energy prior
+      (``SUNPOS_PRIOR_KW``) on both sides of the ratio pulls thin coverage toward
+      neutral.
+
+    The ratio is the same energy-weighted aggregate as the standard estimator
+    (issue #52), and the clipping exclusion and export-curtailment ceiling are
+    shared with it.
+
+    Returns ``None`` when the geometry-weighted forecast is below
+    ``SUNPOS_MIN_COVERAGE_KW``: that sun position has not been seen often enough,
+    and the caller falls back to ``compute_dampening``. Otherwise it returns the
+    same keys as ``compute_dampening``, with ``source`` ``"sun_position"``. Its
+    ``alpha`` is the weight the measurement carries against the prior,
+    ``Σw·estimate / (Σw·estimate + prior)``, and ``coverage_kw`` is that
+    ``Σw·estimate``.
+    """
+    clip_kw = capacity_kw * clipping_threshold
+    basis = "kt" if kt_threshold is not None else "cloud"
+    weighted_actual_sum = 0.0
+    weighted_est_sum = 0.0
+    geometry_weight_sum = 0.0
+    quality_weight_sum = 0.0
+    clipped_excluded = 0
+    forecast_clipped = 0
+    export_capped = 0
+    n_undampened = 0
+
+    for r in records:
+        total_pv = float(r.get("pv_actual", 0) or 0)
+        pv_est, used_undampened = _record_estimate(r)
+        if pv_est <= 0:
+            continue
+        zenith = float(r.get("zenith", 90) or 90)
+        azimuth = float(r.get("azimuth", 0) or 0)
+        kt, clouds, is_clear = _clearness(r, zenith, cloud_threshold, kt_threshold)
+        if total_pv >= clip_kw and pv_est >= clip_kw and is_clear:
+            clipped_excluded += 1
+            continue
+        gw = _sunpos_weight(zenith, azimuth, target_zenith, target_azimuth)
+        if gw < 1e-6:
+            continue
+        effective_est, was_clipped, was_capped = _export_ceiling(
+            r, total_pv, pv_est, export_limit_kw, clipping_threshold
+        )
+        forecast_clipped += was_clipped
+        export_capped += was_capped
+        if kt_threshold is not None:
+            cw = _kt_weight(kt, kt_threshold) if kt is not None else 0.0
+        else:
+            cw = _cloud_weight(clouds, cloud_threshold, cloud_max_include)
+        weighted_actual_sum += gw * total_pv
+        weighted_est_sum += gw * effective_est
+        geometry_weight_sum += gw
+        quality_weight_sum += gw * cw
+        if used_undampened:
+            n_undampened += 1
+
+    if weighted_est_sum < SUNPOS_MIN_COVERAGE_KW:
+        return None
+
+    factor = (weighted_actual_sum + SUNPOS_PRIOR_KW) / (weighted_est_sum + SUNPOS_PRIOR_KW)
+    return {
+        "factor": round(factor, 4),
+        "alpha": round(weighted_est_sum / (weighted_est_sum + SUNPOS_PRIOR_KW), 4),
+        "source": "sun_position",
+        "clear_sky_basis": basis,
+        "quality_records": round(geometry_weight_sum, 2),
+        "avg_quality": round(quality_weight_sum / geometry_weight_sum, 3),
+        "clipped_excluded": clipped_excluded,
+        "forecast_clipped": forecast_clipped,
+        "export_capped": export_capped,
+        "undampened_records": n_undampened,
+        "coverage_kw": round(weighted_est_sum, 2),
     }
 
 

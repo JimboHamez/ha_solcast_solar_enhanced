@@ -54,11 +54,15 @@
           "auto_tuning": "Automatische PV-afstemming",
           "auto_dampening": "Automatische demping",
           "dampening_gate": "Waarschuwen wanneer de afstemming afwijkt van de Solcast-oriëntatie",
+          "sunpos_dampening": "Demping op zonnestand (scherpe horizon, bèta)",
           "cloud_threshold": "Bewolkingsdrempel (%)",
           "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
           "kt_threshold": "Drempel helderheidsindex (heldere hemel)",
           "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Bepaalt de factor van elk halfuur uit eerdere metingen met de zon op bijna dezelfde plek, bij elk weer. Bedoeld voor een harde horizon, zoals een gebouw of bomenrij die de lage zon tegenhoudt. Laat uit voor een onbeschaduwd of licht beschaduwd paneelveld."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Automatische PV-afstemming",
           "auto_dampening": "Automatische demping",
           "dampening_gate": "Waarschuwen wanneer de afstemming afwijkt van de Solcast-oriëntatie",
+          "sunpos_dampening": "Demping op zonnestand (scherpe horizon, bèta)",
           "cloud_threshold": "Bewolkingsdrempel (%)",
           "cloud_max_include": "Maximale bewolking om mee te nemen (%)",
           "kt_threshold": "Drempel helderheidsindex (heldere hemel)",
           "clipping_threshold": "Clippingdrempel (fractie van het vermogen)",
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Bepaalt de factor van elk halfuur uit eerdere metingen met de zon op bijna dezelfde plek, bij elk weer. Bedoeld voor een harde horizon, zoals een gebouw of bomenrij die de lage zon tegenhoudt. Laat uit voor een onbeschaduwd of licht beschaduwd paneelveld."
         }
       },
       "sites": {

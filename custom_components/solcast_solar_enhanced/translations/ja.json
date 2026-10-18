@@ -54,11 +54,15 @@
           "auto_tuning": "自動 PV チューニング",
           "auto_dampening": "自動ダンピング",
           "dampening_gate": "チューニングが Solcast の向きと異なる場合に警告する",
+          "sunpos_dampening": "太陽位置ベースの減衰（鋭い地平線、ベータ）",
           "cloud_threshold": "雲量しきい値 (%)",
           "cloud_max_include": "含める最大雲量 (%)",
           "kt_threshold": "晴天指数のしきい値（快晴）",
           "clipping_threshold": "クリッピングしきい値（容量に対する割合）",
           "export_limit_kw": "系統への売電上限 (kW、0 = 無効)"
+        },
+        "data_description": {
+          "sunpos_dampening": "各30分の係数を、天候を問わず太陽がほぼ同じ位置にあったときの過去の記録から算出します。低い太陽を遮る建物や木立など、はっきりした地平線の遮蔽向けです。日陰のない、または影が緩やかなアレイではオフのままにしてください。"
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "自動 PV チューニング",
           "auto_dampening": "自動ダンピング",
           "dampening_gate": "チューニングが Solcast の向きと異なる場合に警告する",
+          "sunpos_dampening": "太陽位置ベースの減衰（鋭い地平線、ベータ）",
           "cloud_threshold": "雲量しきい値 (%)",
           "cloud_max_include": "含める最大雲量 (%)",
           "kt_threshold": "晴天指数のしきい値（快晴）",
           "clipping_threshold": "クリッピングしきい値（容量に対する割合）",
           "export_limit_kw": "系統への売電上限 (kW、0 = 無効)"
+        },
+        "data_description": {
+          "sunpos_dampening": "各30分の係数を、天候を問わず太陽がほぼ同じ位置にあったときの過去の記録から算出します。低い太陽を遮る建物や木立など、はっきりした地平線の遮蔽向けです。日陰のない、または影が緩やかなアレイではオフのままにしてください。"
         }
       },
       "sites": {

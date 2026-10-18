@@ -54,11 +54,15 @@
           "auto_tuning": "Automatické ladenie FV",
           "auto_dampening": "Automatické tlmenie",
           "dampening_gate": "Upozorniť, keď sa ladenie nezhoduje s orientáciou Solcast",
+          "sunpos_dampening": "Tlmenie podľa polohy slnka (ostrý horizont, beta)",
           "cloud_threshold": "Prah oblačnosti (%)",
           "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
           "kt_threshold": "Prah indexu jasnosti (jasná obloha)",
           "clipping_threshold": "Prah orezania (zlomok výkonu)",
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Vypočíta faktor každej polhodiny z predchádzajúcich meraní pri takmer rovnakej polohe slnka, za každého počasia. Určené pre ostrý horizont, napríklad budovu alebo rad stromov, ktoré zakrývajú nízke slnko. Pri nezatienenom alebo mierne zatienenom poli nechajte vypnuté."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Automatické ladenie FV",
           "auto_dampening": "Automatické tlmenie",
           "dampening_gate": "Upozorniť, keď sa ladenie nezhoduje s orientáciou Solcast",
+          "sunpos_dampening": "Tlmenie podľa polohy slnka (ostrý horizont, beta)",
           "cloud_threshold": "Prah oblačnosti (%)",
           "cloud_max_include": "Maximálna oblačnosť na zahrnutie (%)",
           "kt_threshold": "Prah indexu jasnosti (jasná obloha)",
           "clipping_threshold": "Prah orezania (zlomok výkonu)",
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Vypočíta faktor každej polhodiny z predchádzajúcich meraní pri takmer rovnakej polohe slnka, za každého počasia. Určené pre ostrý horizont, napríklad budovu alebo rad stromov, ktoré zakrývajú nízke slnko. Pri nezatienenom alebo mierne zatienenom poli nechajte vypnuté."
         }
       },
       "sites": {

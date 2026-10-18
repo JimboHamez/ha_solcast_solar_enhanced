@@ -54,11 +54,15 @@
           "auto_tuning": "Réglage PV automatique",
           "auto_dampening": "Atténuation automatique",
           "dampening_gate": "Avertir lorsque le réglage diffère de l'orientation Solcast",
+          "sunpos_dampening": "Atténuation par position du soleil (horizon net, bêta)",
           "cloud_threshold": "Seuil de nébulosité (%)",
           "cloud_max_include": "Nébulosité maximale à inclure (%)",
           "kt_threshold": "Seuil d'indice de clarté (ciel clair)",
           "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcule le facteur de chaque demi-heure à partir des relevés passés pris avec le soleil presque au même endroit, par tous les temps. Conçu pour un horizon franc, comme un bâtiment ou une rangée d'arbres qui masque le soleil bas. Laissez désactivé pour un champ sans ombrage ou faiblement ombragé."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Réglage PV automatique",
           "auto_dampening": "Atténuation automatique",
           "dampening_gate": "Avertir lorsque le réglage diffère de l'orientation Solcast",
+          "sunpos_dampening": "Atténuation par position du soleil (horizon net, bêta)",
           "cloud_threshold": "Seuil de nébulosité (%)",
           "cloud_max_include": "Nébulosité maximale à inclure (%)",
           "kt_threshold": "Seuil d'indice de clarté (ciel clair)",
           "clipping_threshold": "Seuil d'écrêtage (fraction de la puissance)",
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcule le facteur de chaque demi-heure à partir des relevés passés pris avec le soleil presque au même endroit, par tous les temps. Conçu pour un horizon franc, comme un bâtiment ou une rangée d'arbres qui masque le soleil bas. Laissez désactivé pour un champ sans ombrage ou faiblement ombragé."
         }
       },
       "sites": {

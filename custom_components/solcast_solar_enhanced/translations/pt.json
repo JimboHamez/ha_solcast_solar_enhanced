@@ -54,11 +54,15 @@
           "auto_tuning": "Ajuste FV automático",
           "auto_dampening": "Atenuação automática",
           "dampening_gate": "Avisar quando o ajuste não corresponder à orientação do Solcast",
+          "sunpos_dampening": "Atenuação por posição do sol (horizonte nítido, beta)",
           "cloud_threshold": "Limite de nuvens (%)",
           "cloud_max_include": "Nebulosidade máxima a incluir (%)",
           "kt_threshold": "Limiar do índice de clareza (céu limpo)",
           "clipping_threshold": "Limite de clipping (fração da capacidade)",
           "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcula o fator de cada meia hora a partir de registos anteriores feitos com o sol quase na mesma posição, com qualquer tempo. Pensado para um horizonte rígido, como um edifício ou uma fila de árvores que tapa o sol baixo. Deixe desligado para um painel sem sombra ou com sombra ligeira."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Ajuste FV automático",
           "auto_dampening": "Atenuação automática",
           "dampening_gate": "Avisar quando o ajuste não corresponder à orientação do Solcast",
+          "sunpos_dampening": "Atenuação por posição do sol (horizonte nítido, beta)",
           "cloud_threshold": "Limite de nuvens (%)",
           "cloud_max_include": "Nebulosidade máxima a incluir (%)",
           "kt_threshold": "Limiar do índice de clareza (céu limpo)",
           "clipping_threshold": "Limite de clipping (fração da capacidade)",
           "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcula o fator de cada meia hora a partir de registos anteriores feitos com o sol quase na mesma posição, com qualquer tempo. Pensado para um horizonte rígido, como um edifício ou uma fila de árvores que tapa o sol baixo. Deixe desligado para um painel sem sombra ou com sombra ligeira."
         }
       },
       "sites": {

@@ -23,6 +23,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_DAMPENING_GATE,
     CONF_OWM_API_KEY,
     CONF_OWM_ENABLED,
+    CONF_SUNPOS_DAMPENING,
     DAMPENING_GATE_MIN_RECORDS,
     DOMAIN,
     ISSUE_ORIENTATION_DIVERGED,
@@ -435,6 +436,97 @@ async def test_dampening_slots_fetch_records_once(hass, coordinator):
     await coordinator._compute_dampening_slots({}, now_epoch, -37.81, 144.96, "_total")
 
     assert db.async_get_records_for_dampening.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Opt-in sun-position dampening estimator (issue #91)
+# ---------------------------------------------------------------------------
+
+_SUNPOS_NOW = 1718452800  # 2024-06-15T12:00:00Z = Melbourne 22:00
+_SUNPOS_NOON = 1718416800  # 2024-06-15T02:00:00Z = Melbourne 12:00, slot 24
+
+
+def _noon_records(ratio: float) -> list[dict]:
+    """Shaded records taken with the sun exactly where it is in the noon slot."""
+    from custom_components.solcast_solar_enhanced.pv_tuning import clearsky_ghi, solar_position
+
+    azimuth, zenith = solar_position(_SUNPOS_NOON + 900, -37.81, 144.96)
+    return [
+        {
+            "pv_actual": 3.0 * ratio,
+            "pv_estimate": 3.0,
+            "pv_estimate_undampened": 3.0,
+            "pv_export": 0.0,
+            "zenith": zenith,
+            "azimuth": azimuth,
+            "ghi": 0.9 * clearsky_ghi(zenith),
+            "clouds": 0,
+        }
+    ] * 10
+
+
+async def _slots(hass, coordinator, opts, records):
+    from unittest.mock import MagicMock
+
+    await hass.config.async_set_time_zone("Australia/Melbourne")
+    db = MagicMock()
+    db.async_get_records_for_dampening = AsyncMock(return_value=records)
+    coordinator._db = db
+    return await coordinator._compute_dampening_slots(opts, _SUNPOS_NOW, -37.81, 144.96, "_total")
+
+
+async def test_sunpos_option_drives_covered_slots_and_falls_back_elsewhere(hass, coordinator):
+    """Covered sun positions use the new estimator; the rest keep the standard one."""
+    slots = await _slots(hass, coordinator, {CONF_SUNPOS_DAMPENING: True}, _noon_records(0.2))
+
+    assert slots[24]["source"] == "sun_position"
+    assert slots[24]["factor"] < 0.3
+    # Mid-morning has no record within the narrow kernel, so it falls back. The
+    # standard estimator still sees the noon records through its wide kernel.
+    assert slots[19]["source"] != "sun_position"
+    assert slots[19]["source"] != "night"
+    assert slots[0]["source"] == "night"
+
+
+async def test_sunpos_option_off_keeps_the_standard_estimator(hass, coordinator):
+    """Default off: no slot is built by the sun-position estimator."""
+    slots = await _slots(hass, coordinator, {}, _noon_records(0.2))
+
+    assert all(s["source"] != "sun_position" for s in slots)
+    # The confidence blend holds ten records near neutral — the issue #91 symptom.
+    assert slots[24]["factor"] >= 0.85
+
+
+async def test_dampening_attributes_report_the_estimator(hass, coordinator):
+    """The sensor says which estimator ran and how many slots it actually drove."""
+    coordinator._dampening_table = await _slots(
+        hass, coordinator, {CONF_SUNPOS_DAMPENING: True}, _noon_records(0.2)
+    )
+    coordinator._sunpos_enabled = True
+    attrs = coordinator.dampening_attributes
+    assert attrs["estimator"] == "sun_position"
+    assert attrs["sun_position_slots"] == sum(
+        1 for s in coordinator._dampening_table if s["source"] == "sun_position"
+    )
+    assert attrs["sun_position_slots"] >= 1
+
+    coordinator._sunpos_enabled = False
+    attrs = coordinator.dampening_attributes
+    assert attrs["estimator"] == "standard"
+    assert "sun_position_slots" not in attrs
+
+
+async def test_run_dampening_records_the_estimator_choice(hass, coordinator):
+    """_run_dampening sets the flag the attributes and diagnostics read."""
+    with (
+        patch.object(coordinator, "_compute_dampening_slots", AsyncMock(return_value=[])),
+        patch.object(coordinator, "_read_base_auto_dampen", return_value=True),
+    ):
+        await coordinator._run_dampening({CONF_SUNPOS_DAMPENING: True}, _SUNPOS_NOW, -37.81, 144.96)
+        assert coordinator._sunpos_enabled is True
+        assert coordinator.diagnostics_snapshot()["dampening"]["estimator"] == "sun_position"
+        await coordinator._run_dampening({}, _SUNPOS_NOW, -37.81, 144.96)
+        assert coordinator._sunpos_enabled is False
 
 
 # ---------------------------------------------------------------------------

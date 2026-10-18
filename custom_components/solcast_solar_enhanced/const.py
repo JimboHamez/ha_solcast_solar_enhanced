@@ -95,6 +95,11 @@ CONF_KT_THRESHOLD = "kt_threshold"
 CONF_CLIPPING_THRESHOLD = "clipping_threshold"
 CONF_EXPORT_LIMIT_KW = "export_limit_kw"
 CONF_DAMPENING_GATE = "dampening_gate"
+# Opt-in sun-position dampening estimator (issue #91): for a sharp, hard horizon the
+# standard estimator's broad geometry kernel and confidence blend smear the shadow
+# edge. Off by default, since on an unshaded array the narrow, unblended estimate
+# chases noise the standard one smooths out.
+CONF_SUNPOS_DAMPENING = "sunpos_dampening"
 
 # Defaults
 DEFAULT_LATITUDE = -37.9
@@ -129,6 +134,7 @@ DEFAULT_EXPORT_LIMIT_KW = 0.0
 # the detector exists to correct.
 EXPORT_PEAK_WINDOW_S = 300
 DEFAULT_DAMPENING_GATE = True
+DEFAULT_SUNPOS_DAMPENING = False
 # Max shortest-arc azimuth spread (degrees) across configured arrays for which the
 # property-wide forecast may be capacity-apportioned to each site. Beyond it the
 # arrays peak at different times, so a per-slot capacity split would invent phantom
@@ -266,6 +272,19 @@ DAMPENING_WINDOW_FORWARD_DAYS = 14
 DAMPENING_GATE_MIN_RECORDS = 50  # tuning confidence before the advisory may fire
 DAMPENING_GATE_TILT_TOL = 15.0  # ° tilt divergence that raises the advisory
 DAMPENING_GATE_AZIMUTH_TOL = 25.0  # ° azimuth divergence that raises the advisory
+# Sun-position estimator (CONF_SUNPOS_DAMPENING). Fixed in advance from the issue #91
+# walk-forward replay (σ 3°/12°, prior 0.5): −20% half-hourly error against the
+# standard estimator on a hard-horizon array, −5% on a soft-shaded one, +1.3% on an
+# unshaded one. Changing them needs a fresh replay, not a guess.
+SUNPOS_SIGMA_ELEV = 3.0  # ° elevation kernel width
+SUNPOS_SIGMA_AZIM = 12.0  # ° azimuth kernel width
+# Pseudo-energy (kW, half-hour mean) added to both sides of the ratio, so a sparsely
+# covered sun position leans toward neutral instead of trusting one or two records.
+SUNPOS_PRIOR_KW = 0.5
+# Below this geometry-weighted forecast (kW) the sun position has not been seen often
+# enough to measure — the slot falls back to the standard estimator. At high
+# latitudes this is the winter case: the sun sinks below anything recorded so far.
+SUNPOS_MIN_COVERAGE_KW = 2.0
 
 # Sensor keys
 SENSOR_FORECAST_NOW = "forecast_now"

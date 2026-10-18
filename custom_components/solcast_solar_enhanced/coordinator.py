@@ -58,6 +58,7 @@ from .const import (
     CONF_SITE_AUTODISCOVER,
     CONF_SITE_GROUPS,
     CONF_SITE_TOPOLOGY,
+    CONF_SUNPOS_DAMPENING,
     CONF_TILT,
     DAMPENING_GATE_AZIMUTH_TOL,
     DAMPENING_GATE_MIN_RECORDS,
@@ -79,6 +80,7 @@ from .const import (
     DEFAULT_PV_INPUT_MODE,
     DEFAULT_SITE_AUTODISCOVER,
     DEFAULT_SITE_ID,
+    DEFAULT_SUNPOS_DAMPENING,
     DOMAIN,
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
@@ -101,7 +103,7 @@ from .const import (
 )
 from .load_advisory import CONFIDENCE_HORIZON_HOURS, RECENT_BIAS_LOOKBACK_S, compute_confidence
 from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
-from .shading_dampening import average_slot_pairs, compute_dampening
+from .shading_dampening import average_slot_pairs, compute_dampening, compute_sunpos_dampening
 from .shading_geometry import analyse_shading
 from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SqliteStore
@@ -222,6 +224,19 @@ def discover_sites(hass: HomeAssistant) -> list[dict[str, Any]]:
     return sites
 
 
+def _estimator_attributes(sunpos_enabled: bool, table: list[dict[str, Any]]) -> dict[str, Any]:
+    """Say which dampening estimator built a slot table, and how much of it.
+
+    With the sun-position estimator on, a slot the history does not cover yet falls
+    back to the standard estimate, so ``sun_position_slots`` is how many of the
+    daytime slots it actually drove.
+    """
+    attrs: dict[str, Any] = {"estimator": "sun_position" if sunpos_enabled else "standard"}
+    if sunpos_enabled:
+        attrs["sun_position_slots"] = sum(1 for s in table if s.get("source") == "sun_position")
+    return attrs
+
+
 class SolcastEnhancedCoordinator(DataUpdateCoordinator):
     """Coordinator that orchestrates all enhanced features."""
 
@@ -301,6 +316,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # warning and the repair issue. Per-site aware: set if *any* target diverges
         # this cycle. Surfaced on the Dampening sensor.
         self._orientation_advisory: bool = False
+        # Which dampening estimator the last cycle ran (CONF_SUNPOS_DAMPENING).
+        self._sunpos_enabled: bool = False
         # Which targets the last cycle actually pushed, and which of those have a
         # diverged orientation. A target is DEFAULT_SITE_ID for the property-wide
         # curve (however many base sites it went to) or a resource_id for a per-site
@@ -1041,6 +1058,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # conflict check, and for the same reason: the failure is otherwise silent.
         self._check_capacity_is_ac(opts)
 
+        self._sunpos_enabled = bool(opts.get(CONF_SUNPOS_DAMPENING, DEFAULT_SUNPOS_DAMPENING))
         # Aggregate table (drives the dampening sensors) — property-wide '_total' rows.
         self._dampening_table = await self._compute_dampening_slots(opts, now_epoch, lat, lon, DEFAULT_SITE_ID)
 
@@ -1249,6 +1267,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         use_kt = bool(opts.get(CONF_OPENMETEO_ENABLED, DEFAULT_OPENMETEO_ENABLED))
         kt_threshold = float(opts.get(CONF_KT_THRESHOLD, DEFAULT_KT_THRESHOLD)) if use_kt else None
         clear_sky_basis = "kt" if use_kt else "cloud"
+        use_sunpos = bool(opts.get(CONF_SUNPOS_DAMPENING, DEFAULT_SUNPOS_DAMPENING))
         # Export limit for curtailment-aware forecast clipping — prefer the base's
         # site_export_limit, fall back to the manual option (0 = disabled). Same
         # source the tuner uses, so dampening and tuning agree on the ceiling.
@@ -1295,17 +1314,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 )
                 continue
 
-            slot_result = compute_dampening(
-                records=records,
-                capacity_kw=capacity_kw,
-                cloud_threshold=cloud_threshold,
-                cloud_max_include=cloud_max_include,
-                clipping_threshold=clipping_threshold,
-                target_zenith=zen_slot,
-                target_azimuth=az_slot,
-                export_limit_kw=export_limit,
-                kt_threshold=kt_threshold,
-            )
+            slot_kwargs: dict[str, Any] = {
+                "records": records,
+                "capacity_kw": capacity_kw,
+                "cloud_threshold": cloud_threshold,
+                "cloud_max_include": cloud_max_include,
+                "clipping_threshold": clipping_threshold,
+                "target_zenith": zen_slot,
+                "target_azimuth": az_slot,
+                "export_limit_kw": export_limit,
+                "kt_threshold": kt_threshold,
+            }
+            # Opt-in sun-position estimator (issue #91). It returns None where this
+            # sun position has not been seen often enough, and that slot keeps the
+            # standard estimate — so the winter sun sinking below anything recorded
+            # degrades to today's behaviour rather than to no dampening at all.
+            slot_result = compute_sunpos_dampening(**slot_kwargs) if use_sunpos else None
+            if slot_result is None:
+                slot_result = compute_dampening(**slot_kwargs)
             slot_results.append(slot_result)
 
         return slot_results
@@ -3012,6 +3038,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             "tuned_tilt": round(tuning["tilt"], 1) if tuning.get("tilt") is not None else None,
             "tuning_rmse_kw": round(tuning["rmse_kw"], 4) if tuning.get("rmse_kw") is not None else None,
             "tuning_records": tuning.get("n_records"),
+            **_estimator_attributes(self._sunpos_enabled, table),
         }
 
     @property
@@ -3066,6 +3093,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         # (see repair issue). Dampening is still applied — this only flags that the
         # site's configured geometry may be wrong.
         attrs["orientation_diverged"] = self._orientation_advisory
+        attrs.update(_estimator_attributes(self._sunpos_enabled, self._dampening_table))
         return attrs
 
     def diagnostics_snapshot(self) -> dict[str, Any]:
@@ -3124,6 +3152,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
                 "per_site_slots": self._site_dampening_tables,
                 "hours_with_db": self.dampening_hours_with_db,
                 "current_factor": self.current_dampening,
+                "estimator": "sun_position" if self._sunpos_enabled else "standard",
                 "pushed_targets": sorted(self._dampening_pushed),
                 # 48 (half-hourly) or 24 (hourly fallback / matching a foreign entry).
                 "pushed_factor_count": dict(sorted(self._pushed_factor_count.items())),

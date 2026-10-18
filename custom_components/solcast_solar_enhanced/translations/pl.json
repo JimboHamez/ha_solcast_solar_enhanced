@@ -54,11 +54,15 @@
           "auto_tuning": "Automatyczne strojenie PV",
           "auto_dampening": "Automatyczne tłumienie",
           "dampening_gate": "Ostrzegaj, gdy strojenie nie zgadza się z orientacją Solcast",
+          "sunpos_dampening": "Tłumienie według położenia słońca (ostry horyzont, beta)",
           "cloud_threshold": "Próg zachmurzenia (%)",
           "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
           "kt_threshold": "Próg wskaźnika przejrzystości (czyste niebo)",
           "clipping_threshold": "Próg przycinania (ułamek mocy)",
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Wyznacza współczynnik każdego półgodzinnego okresu z wcześniejszych pomiarów przy niemal tym samym położeniu słońca, przy każdej pogodzie. Przeznaczone dla wyraźnego horyzontu, np. budynku lub linii drzew zasłaniającej nisko stojące słońce. Pozostaw wyłączone dla instalacji niezacienionej lub słabo zacienionej."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Automatyczne strojenie PV",
           "auto_dampening": "Automatyczne tłumienie",
           "dampening_gate": "Ostrzegaj, gdy strojenie nie zgadza się z orientacją Solcast",
+          "sunpos_dampening": "Tłumienie według położenia słońca (ostry horyzont, beta)",
           "cloud_threshold": "Próg zachmurzenia (%)",
           "cloud_max_include": "Maksymalne zachmurzenie do uwzględnienia (%)",
           "kt_threshold": "Próg wskaźnika przejrzystości (czyste niebo)",
           "clipping_threshold": "Próg przycinania (ułamek mocy)",
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Wyznacza współczynnik każdego półgodzinnego okresu z wcześniejszych pomiarów przy niemal tym samym położeniu słońca, przy każdej pogodzie. Przeznaczone dla wyraźnego horyzontu, np. budynku lub linii drzew zasłaniającej nisko stojące słońce. Pozostaw wyłączone dla instalacji niezacienionej lub słabo zacienionej."
         }
       },
       "sites": {
