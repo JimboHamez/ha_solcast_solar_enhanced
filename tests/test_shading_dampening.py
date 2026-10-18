@@ -655,3 +655,157 @@ def test_worst_case_partial_curtailment_penalty_is_pinned():
     assert before["forecast_clipped"] == 0  # mean headroom hides it entirely
     assert before["factor"] == pytest.approx(0.73, abs=0.005)
     assert after["factor"] == pytest.approx(1.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# compute_sunpos_dampening — the opt-in sun-position estimator (issue #91)
+# ---------------------------------------------------------------------------
+
+from custom_components.solcast_solar_enhanced.const import (  # noqa: E402
+    SUNPOS_MIN_COVERAGE_KW,
+    SUNPOS_PRIOR_KW,
+)
+from custom_components.solcast_solar_enhanced.shading_dampening import (  # noqa: E402
+    compute_sunpos_dampening,
+)
+
+_TZ_ZEN = 82.0  # sun 8 deg up, the low-sun case the estimator exists for
+_TZ_AZ = 110.0
+
+
+def _rec(actual, estimate, zenith=_TZ_ZEN, azimuth=_TZ_AZ, kt=0.9, **extra):
+    rec = {
+        "pv_actual": actual,
+        "pv_estimate": estimate,
+        "pv_estimate_undampened": estimate,
+        "pv_export": 0.0,
+        "zenith": zenith,
+        "azimuth": azimuth,
+        "ghi": kt * clearsky_ghi(zenith),
+        "clouds": 0,
+    }
+    rec.update(extra)
+    return rec
+
+
+def _sunpos(records, **kw):
+    args = dict(
+        capacity_kw=10.0, cloud_threshold=20, cloud_max_include=60, clipping_threshold=0.95,
+        target_zenith=_TZ_ZEN, target_azimuth=_TZ_AZ, export_limit_kw=0.0, kt_threshold=0.75,
+    )
+    args.update(kw)
+    return compute_sunpos_dampening(records, **args)
+
+
+def test_sunpos_resolves_a_sharp_horizon_the_standard_estimator_smears():
+    """Behind the edge the array makes 10%; 8 deg higher, after the sun clears, 100%.
+
+    The standard kernel (sigma 10 deg) weights the cleared records at ~0.7 and the
+    confidence blend pulls further toward 1.0, so it cannot get near 0.1. A
+    sun-position kernel 3 deg wide gives the cleared records ~0.03 weight.
+    """
+    behind = [_rec(0.3, 3.0, zenith=_TZ_ZEN + dz) for dz in (-0.5, 0.0, 0.5)] * 4
+    cleared = [_rec(5.0, 5.0, zenith=_TZ_ZEN - 8.0)] * 12
+    records = behind + cleared
+
+    sunpos = _sunpos(records)
+    standard = compute_dampening(records, 10.0, 20, 60, 0.95, _TZ_ZEN, _TZ_AZ, 0.0, 0.75)
+
+    assert sunpos is not None
+    assert sunpos["source"] == "sun_position"
+    assert sunpos["factor"] < 0.2
+    assert standard["factor"] > 0.5
+
+
+def test_sunpos_uses_all_weather_where_the_standard_estimator_drops_overcast():
+    """One factor is applied to every day, so overcast records must count.
+
+    Kt 0.2 is below the standard estimator's lowest band: it drops every record
+    here and stays neutral. The sun-position estimator measures them.
+    """
+    records = [_rec(1.5, 3.0, kt=0.2)] * 6
+
+    sunpos = _sunpos(records)
+    standard = compute_dampening(records, 10.0, 20, 60, 0.95, _TZ_ZEN, _TZ_AZ, 0.0, 0.75)
+
+    assert standard["source"] == "no_data"
+    assert sunpos is not None
+    assert sunpos["factor"] == pytest.approx((9.0 + SUNPOS_PRIOR_KW) / (18.0 + SUNPOS_PRIOR_KW), abs=1e-4)
+    assert sunpos["avg_quality"] == 0.0  # still reported, as the clear-sky weight
+
+
+def test_sunpos_is_the_energy_weighted_aggregate_with_prior_not_a_mean_of_ratios():
+    """A tiny-forecast record that over-produced must not dominate (issue #52).
+
+    Mean of ratios here: (5.0 + 0.2 + 0.2) / 3 = 1.8. The aggregate is
+    (1.0 + 0.6 + 0.6 + p) / (0.2 + 3 + 3 + p).
+    """
+    records = [_rec(1.0, 0.2), _rec(0.6, 3.0), _rec(0.6, 3.0)]
+    result = _sunpos(records)
+    expected = (2.2 + SUNPOS_PRIOR_KW) / (6.2 + SUNPOS_PRIOR_KW)
+    assert result is not None
+    assert result["factor"] == pytest.approx(expected, abs=1e-4)
+    assert result["alpha"] == pytest.approx(6.2 / (6.2 + SUNPOS_PRIOR_KW), abs=1e-4)
+    assert result["coverage_kw"] == pytest.approx(6.2, abs=1e-2)
+
+
+def test_sunpos_prefers_the_undampened_denominator():
+    """The ratio must be against the forecast before our own factors (issue #50)."""
+    rec = _rec(1.0, 2.0)
+    rec["pv_estimate"] = 1.0  # already dampened by a pushed 0.5
+    result = _sunpos([rec] * 3)
+    assert result is not None
+    assert result["factor"] == pytest.approx((3.0 + SUNPOS_PRIOR_KW) / (6.0 + SUNPOS_PRIOR_KW), abs=1e-4)
+    assert result["undampened_records"] == 3
+
+
+def test_sunpos_returns_none_below_coverage_so_the_caller_falls_back():
+    """An unseen sun position is unknown, not unshaded: no factor at all."""
+    just_short = [_rec(0.0, (SUNPOS_MIN_COVERAGE_KW - 0.01) / 2)] * 2
+    assert _sunpos(just_short) is None
+    enough = [_rec(0.0, SUNPOS_MIN_COVERAGE_KW / 2)] * 2
+    assert _sunpos(enough) is not None
+
+
+def test_sunpos_ignores_records_far_from_the_target_position():
+    """Plenty of history, but none of it near this sun position."""
+    far_elevation = [_rec(0.0, 5.0, zenith=_TZ_ZEN - 20.0)] * 20
+    far_azimuth = [_rec(0.0, 5.0, azimuth=_TZ_AZ + 60.0)] * 20
+    assert _sunpos(far_elevation + far_azimuth) is None
+
+
+def test_sunpos_kernel_wraps_azimuth_across_north():
+    """Azimuth 359 and 1 are 2 deg apart, not 358."""
+    records = [_rec(1.0, 3.0, azimuth=1.0)] * 3
+    result = _sunpos(records, target_azimuth=359.0)
+    assert result is not None
+    assert result["factor"] < 0.5
+
+
+def test_sunpos_kernel_is_narrower_in_elevation_than_azimuth():
+    """A 6 deg elevation offset is two sigmas; the same azimuth offset is half of one."""
+    by_elev = _sunpos([_rec(0.0, 10.0, zenith=_TZ_ZEN - 6.0)] * 2)
+    by_azim = _sunpos([_rec(0.0, 10.0, azimuth=_TZ_AZ + 6.0)] * 2)
+    assert by_elev is not None and by_azim is not None
+    assert by_azim["coverage_kw"] > 5 * by_elev["coverage_kw"]
+
+
+def test_sunpos_applies_the_shared_export_curtailment_ceiling():
+    """A capped interval contributes a neutral 1.0, not a shading penalty (issue #86)."""
+    capped = _rec(4.0, 8.0, pv_export=4.0, pv_export_max=5.0)
+    result = _sunpos([capped] * 3, export_limit_kw=5.0)
+    assert result is not None
+    assert result["factor"] == pytest.approx(1.0, abs=1e-4)
+    assert result["export_capped"] == 3
+    uncapped = _sunpos([capped] * 3, export_limit_kw=0.0)
+    assert uncapped is not None and uncapped["factor"] < 0.6
+
+
+def test_sunpos_excludes_inverter_clipping_on_clear_records():
+    """Actual and forecast both at the clip ceiling on a clear sky is clipping."""
+    clipped = _rec(9.8, 9.9)
+    shaded = _rec(0.5, 5.0)
+    result = _sunpos([clipped] * 5 + [shaded] * 2)
+    assert result is not None
+    assert result["clipped_excluded"] == 5
+    assert result["factor"] == pytest.approx((1.0 + SUNPOS_PRIOR_KW) / (10.0 + SUNPOS_PRIOR_KW), abs=1e-4)

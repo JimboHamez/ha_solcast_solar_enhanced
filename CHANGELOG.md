@@ -5,6 +5,49 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0b1] - 2026-10-18
+
+> Beta, published for one install in particular
+> ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)): a single array behind a
+> hard horizon, where the shading edge is sharp. Adds an **opt-in** sun-position dampening estimator.
+> It is **off by default**, and nothing changes until you switch it on.
+
+### Added
+
+- **Sun-position dampening** (*PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)*,
+  off by default). It builds each half-hour's factor from past records taken with the sun in nearly
+  the same place: within about 3° of elevation and 12° of azimuth, against the standard estimator's
+  10° and 20°. It differs from the standard estimator in three ways:
+  - **All weather.** One factor is applied to every day, so it is fitted to every day. It does not
+    measure only the clear ones.
+  - **No confidence blend.** The standard estimator holds a factor near 1.0, and no lower than 0.85,
+    until it has seen enough clear records. In its place, a small prior pulls a thinly covered sun
+    position toward neutral.
+  - **Same safeguards.** It uses the same energy-weighted ratio against the undampened forecast,
+    with the same clipping and export-curtailment exclusions.
+
+  A sun position the history has not covered yet keeps the standard estimate. At high latitudes in
+  winter the sun drops below anything recorded so far, and this keeps it at least as good as today.
+  The **Shading Dampening** sensor and each array's shading sensor gain `estimator` and
+  `sun_position_slots` attributes, and diagnostics carry `estimator`.
+
+  Checked with a walk-forward replay. Each day's factors were rebuilt from earlier history only and
+  scored against measured output:
+
+  | Array | Half-hourly error vs standard | Daily-total error vs standard |
+  |---|---|---|
+  | Hard horizon (#91, 38 days, 60°N) | **−18.5%**, 95% CI excludes zero, 31/38 days better | **−36.5%** |
+  | Soft morning shading (85 days) | −4.8%, CI excludes zero | −9.0% |
+  | Unshaded (85 days) | +0.9%, CI spans zero | +2.1% |
+
+  On an unshaded array it chases noise the confidence blend would smooth out, which is why it is
+  opt-in. Turn it on only if an array has a sharp obstruction such as a building or a tree line.
+
+### Changed
+
+- The per-record clipping, clear-sky and export-curtailment logic in `shading_dampening.py` moved
+  into shared helpers used by both estimators. The standard estimator's behaviour is unchanged.
+
 ## [1.13.1] - 2026-10-09
 
 > Patch. Tested against Home Assistant **2026.10.0**. Nothing changes in how the integration
@@ -1718,6 +1761,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.14.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.1...v1.14.0b1
 [1.13.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0b1...v1.13.0
 [1.13.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.12.0...v1.13.0b1

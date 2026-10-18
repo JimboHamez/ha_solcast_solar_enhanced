@@ -54,11 +54,15 @@
           "auto_tuning": "Regolazione FV automatica",
           "auto_dampening": "Smorzamento automatico",
           "dampening_gate": "Avvisa quando la regolazione non concorda con l'orientamento Solcast",
+          "sunpos_dampening": "Attenuazione per posizione del sole (orizzonte netto, beta)",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
           "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
           "clipping_threshold": "Soglia di clipping (frazione della potenza)",
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcola il fattore di ogni mezz'ora dai dati passati registrati con il sole quasi nella stessa posizione, con qualsiasi tempo. Pensato per un orizzonte netto, come un edificio o una fila di alberi che copre il sole basso. Lascialo disattivato per un impianto non ombreggiato o poco ombreggiato."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Regolazione FV automatica",
           "auto_dampening": "Smorzamento automatico",
           "dampening_gate": "Avvisa quando la regolazione non concorda con l'orientamento Solcast",
+          "sunpos_dampening": "Attenuazione per posizione del sole (orizzonte netto, beta)",
           "cloud_threshold": "Soglia nuvolosità (%)",
           "cloud_max_include": "Nuvolosità massima da includere (%)",
           "kt_threshold": "Soglia dell'indice di limpidezza (cielo sereno)",
           "clipping_threshold": "Soglia di clipping (frazione della potenza)",
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcola il fattore di ogni mezz'ora dai dati passati registrati con il sole quasi nella stessa posizione, con qualsiasi tempo. Pensato per un orizzonte netto, come un edificio o una fila di alberi che copre il sole basso. Lascialo disattivato per un impianto non ombreggiato o poco ombreggiato."
         }
       },
       "sites": {

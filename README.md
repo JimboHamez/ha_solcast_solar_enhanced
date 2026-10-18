@@ -38,7 +38,25 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
-## 🆕 What's new in v1.13.1
+## 🆕 What's new in v1.14.0b1
+
+**Beta: an opt-in sun-position dampening mode for arrays behind a hard horizon.** It is off by default, and nothing changes until you switch it on. It was built for one install in particular ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)): a single array whose morning sun is cut off by buildings and trees, where output goes from almost nothing to almost everything as the sun climbs 3–4°.
+
+The standard dampening can't follow an edge that sharp. It matches each half hour against records taken with the sun up to about 10° higher or lower. Records from after the sun has cleared the obstruction therefore dilute the ones from behind it. It also holds the factor near 1.0, and no lower than 0.85, until it has seen enough clear-sky records. On that install it pushed 0.85 for half hours that really produce close to nothing.
+
+- **Sun-position dampening** (*PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)*) builds each half-hour's factor from past records taken with the sun within a few degrees of the same place, in all weather, without the confidence hold-back.
+- **Where history doesn't cover the sun's position yet, the standard factor is used.** At high latitudes in winter the sun drops below anything recorded so far, so the mode is never worse than the standard one there. The **Shading Dampening** sensor's `sun_position_slots` attribute shows how many half hours the new mode is actually driving.
+- **Checked against real history.** Each day's factors were rebuilt from earlier days only and compared with what the panels actually produced:
+  - On the hard-horizon install, the daily total was 36% closer than with standard dampening, better on 32 of 38 days.
+  - On an array with soft morning shading it was 9% closer.
+  - On an unshaded array it was about 2% worse, because it chases noise the standard mode smooths out. That's why it is opt-in.
+
+**Turn it on only if an array has a sharp obstruction**, such as a building, a roofline or a tree line that blocks the low sun. This is a beta, so HACS only offers it if you have enabled beta versions for this integration. Your settings, history and entities are unchanged.
+
+[CHANGELOG](CHANGELOG.md#1140b1---2026-10-18) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0b1)
+
+<details>
+<summary><b>What landed in v1.13.1</b></summary>
 
 **Patch: tested against Home Assistant 2026.10.0.** Nothing changes in how the integration behaves, and the minimum stays Home Assistant 2026.8.0.
 
@@ -47,6 +65,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading from 1.13.0?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. If you are staying on an older Home Assistant for now, 1.13.0 keeps working just as well.
 
 [CHANGELOG](CHANGELOG.md#1131---2026-10-09) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.13.1)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.13.0</b></summary>
@@ -503,6 +523,7 @@ A fallback for systems without a battery sensor mapped in Step 1.
 |---|---|---|
 | Auto PV tuning | On | Run tilt/azimuth optimisation daily |
 | Auto dampening | On | Recalculate and push dampening every 6 hours |
+| Sun-position dampening (sharp horizon, beta) | Off | Build each half-hour's factor from records taken with the sun in nearly the same place, in all weather. For an array behind a sharp obstruction such as a building or tree line. Leave off for an unshaded or softly shaded array, where it is slightly worse than the standard estimator |
 | Cloud threshold % | 20 | OWM-cloud clear-sky gate: records below this count as clear-sky (used only when Open-Meteo is off) |
 | Max cloud % to include | 60 | Records above this are excluded |
 | Clearness index threshold | 0.75 | Clear-sky gate when Open-Meteo is on (the default): a half-hour counts as clear when `Kt = GHI ÷ clear-sky GHI` is at or above this. More reliable than total cloud %, which over-rejects clear slots with harmless high/mid cloud |

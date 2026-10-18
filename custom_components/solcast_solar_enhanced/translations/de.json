@@ -54,11 +54,15 @@
           "auto_tuning": "Automatische PV-Abstimmung",
           "auto_dampening": "Automatische Dämpfung",
           "dampening_gate": "Warnen, wenn die Abstimmung von der Solcast-Ausrichtung abweicht",
+          "sunpos_dampening": "Sonnenstand-Dämpfung (scharfer Horizont, Beta)",
           "cloud_threshold": "Wolkenschwelle (%)",
           "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
           "kt_threshold": "Schwellenwert Klarheitsindex (klarer Himmel)",
           "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Berechnet den Faktor jeder halben Stunde aus früheren Messungen bei nahezu gleichem Sonnenstand, bei jedem Wetter. Gedacht für einen harten Horizont, etwa ein Gebäude oder eine Baumreihe, die die tiefe Sonne verdeckt. Bei unverschatteten oder nur leicht verschatteten Anlagen ausgeschaltet lassen."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Automatische PV-Abstimmung",
           "auto_dampening": "Automatische Dämpfung",
           "dampening_gate": "Warnen, wenn die Abstimmung von der Solcast-Ausrichtung abweicht",
+          "sunpos_dampening": "Sonnenstand-Dämpfung (scharfer Horizont, Beta)",
           "cloud_threshold": "Wolkenschwelle (%)",
           "cloud_max_include": "Maximal einzubeziehende Bewölkung (%)",
           "kt_threshold": "Schwellenwert Klarheitsindex (klarer Himmel)",
           "clipping_threshold": "Clipping-Schwelle (Anteil der Leistung)",
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Berechnet den Faktor jeder halben Stunde aus früheren Messungen bei nahezu gleichem Sonnenstand, bei jedem Wetter. Gedacht für einen harten Horizont, etwa ein Gebäude oder eine Baumreihe, die die tiefe Sonne verdeckt. Bei unverschatteten oder nur leicht verschatteten Anlagen ausgeschaltet lassen."
         }
       },
       "sites": {

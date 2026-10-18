@@ -54,11 +54,15 @@
           "auto_tuning": "Ajuste FV automático",
           "auto_dampening": "Atenuación automática",
           "dampening_gate": "Avisar cuando el ajuste no coincida con la orientación de Solcast",
+          "sunpos_dampening": "Atenuación por posición solar (horizonte nítido, beta)",
           "cloud_threshold": "Umbral de nubes (%)",
           "cloud_max_include": "Nubosidad máxima a incluir (%)",
           "kt_threshold": "Umbral del índice de claridad (cielo despejado)",
           "clipping_threshold": "Umbral de recorte (fracción de la capacidad)",
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcula el factor de cada media hora a partir de registros anteriores tomados con el sol casi en la misma posición, con cualquier tiempo. Pensado para un horizonte duro, como un edificio o una hilera de árboles que tapa el sol bajo. Déjelo desactivado si el campo no tiene sombras o solo sombras suaves."
         }
       },
       "sites": {
@@ -148,11 +152,15 @@
           "auto_tuning": "Ajuste FV automático",
           "auto_dampening": "Atenuación automática",
           "dampening_gate": "Avisar cuando el ajuste no coincida con la orientación de Solcast",
+          "sunpos_dampening": "Atenuación por posición solar (horizonte nítido, beta)",
           "cloud_threshold": "Umbral de nubes (%)",
           "cloud_max_include": "Nubosidad máxima a incluir (%)",
           "kt_threshold": "Umbral del índice de claridad (cielo despejado)",
           "clipping_threshold": "Umbral de recorte (fracción de la capacidad)",
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Calcula el factor de cada media hora a partir de registros anteriores tomados con el sol casi en la misma posición, con cualquier tiempo. Pensado para un horizonte duro, como un edificio o una hilera de árboles que tapa el sol bajo. Déjelo desactivado si el campo no tiene sombras o solo sombras suaves."
         }
       },
       "sites": {

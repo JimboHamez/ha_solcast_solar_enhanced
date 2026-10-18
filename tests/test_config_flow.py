@@ -1042,3 +1042,40 @@ async def test_reconfigure_is_not_shadowed_by_stale_options(hass):
 
     merged = {**entry.data, **entry.options}
     assert merged[CONF_TILT] == pytest.approx(STEP_SITE[CONF_TILT])
+
+
+# ---------------------------------------------------------------------------
+# Sun-position dampening option (issue #91)
+# ---------------------------------------------------------------------------
+
+
+def _schema_default(schema: vol.Schema, key: str):
+    for marker in schema.schema:
+        if marker == key:
+            return marker.default()
+    raise AssertionError(f"{key} not in schema")
+
+
+def test_tuning_schema_offers_sunpos_dampening_off_by_default():
+    """Opt-in: a fresh install, and an entry predating the option, get the standard estimator."""
+    from custom_components.solcast_solar_enhanced.config_flow import _build_tuning_schema
+    from custom_components.solcast_solar_enhanced.const import CONF_SUNPOS_DAMPENING
+
+    assert _schema_default(_build_tuning_schema({}), CONF_SUNPOS_DAMPENING) is False
+    assert _schema_default(_build_tuning_schema({CONF_SUNPOS_DAMPENING: True}), CONF_SUNPOS_DAMPENING) is True
+
+
+def test_sunpos_dampening_is_labelled_and_described_in_every_locale():
+    """The field is opt-in with a real trade-off, so every locale must explain it."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "custom_components" / "solcast_solar_enhanced"
+    files = [root / "strings.json", *sorted((root / "translations").glob("*.json"))]
+    assert len(files) == 12
+    for path in files:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for flow in ("config", "options"):
+            step = data[flow]["step"]["tuning"]
+            assert step["data"].get("sunpos_dampening"), f"{path.name} {flow}: no label"
+            assert step["data_description"].get("sunpos_dampening"), f"{path.name} {flow}: no description"

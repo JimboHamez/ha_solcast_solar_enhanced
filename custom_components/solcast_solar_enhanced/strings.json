@@ -66,11 +66,15 @@
           "auto_tuning": "Auto PV tuning",
           "auto_dampening": "Auto dampening",
           "dampening_gate": "Warn when tuning disagrees with Solcast orientation",
+          "sunpos_dampening": "Sun-position dampening (sharp horizon, beta)",
           "cloud_threshold": "Cloud threshold (%)",
           "cloud_max_include": "Max cloud cover to include (%)",
           "kt_threshold": "Clearness index threshold (clear-sky)",
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Builds each half-hour's factor from past records taken with the sun in nearly the same place, in all weather. Meant for a hard horizon, such as a building or tree line that blocks the low sun. Leave off for an unshaded or softly shaded array."
         }
       },
       "sites": {
@@ -160,11 +164,15 @@
           "auto_tuning": "Auto PV tuning",
           "auto_dampening": "Auto dampening",
           "dampening_gate": "Warn when tuning disagrees with Solcast orientation",
+          "sunpos_dampening": "Sun-position dampening (sharp horizon, beta)",
           "cloud_threshold": "Cloud threshold (%)",
           "cloud_max_include": "Max cloud cover to include (%)",
           "kt_threshold": "Clearness index threshold (clear-sky)",
           "clipping_threshold": "Clipping threshold (fraction of capacity)",
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
+        },
+        "data_description": {
+          "sunpos_dampening": "Builds each half-hour's factor from past records taken with the sun in nearly the same place, in all weather. Meant for a hard horizon, such as a building or tree line that blocks the low sun. Leave off for an unshaded or softly shaded array."
         }
       },
       "sites": {
