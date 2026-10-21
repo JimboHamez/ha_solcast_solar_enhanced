@@ -62,6 +62,7 @@
           "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
         },
         "data_description": {
+          "auto_dampening": "A cada 6 horas, envia ao Solcast PV Forecast uma curva de sombreamento medida a partir do seu próprio histórico. Isto assume o controlo da atenuação do Solcast PV Forecast, incluindo os valores horários: ativa a atenuação granular (por local) e substitui os fatores de cada local, pelo que a atenuação definida manualmente no Solcast PV Forecast deixa de ser aplicada enquanto esta opção estiver ativa. Se não for encontrado nenhum local Solcast, escreve em vez disso os valores horários. Ignorado enquanto a atenuação automática do próprio Solcast PV Forecast estiver ativa.",
           "sunpos_dampening": "Calcula o fator de cada meia hora a partir de registos anteriores feitos com o sol quase na mesma posição, com qualquer tempo. Pensado para um horizonte rígido, como um edifício ou uma fila de árvores que tapa o sol baixo. Deixe desligado para um painel sem sombra ou com sombra ligeira."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Limite de exportação para a rede (kW, 0 = desativado)"
         },
         "data_description": {
+          "auto_dampening": "A cada 6 horas, envia ao Solcast PV Forecast uma curva de sombreamento medida a partir do seu próprio histórico. Isto assume o controlo da atenuação do Solcast PV Forecast, incluindo os valores horários: ativa a atenuação granular (por local) e substitui os fatores de cada local, pelo que a atenuação definida manualmente no Solcast PV Forecast deixa de ser aplicada enquanto esta opção estiver ativa. Se não for encontrado nenhum local Solcast, escreve em vez disso os valores horários. Ignorado enquanto a atenuação automática do próprio Solcast PV Forecast estiver ativa.",
           "sunpos_dampening": "Calcula o fator de cada meia hora a partir de registos anteriores feitos com o sol quase na mesma posição, com qualquer tempo. Pensado para um horizonte rígido, como um edifício ou uma fila de árvores que tapa o sol baixo. Deixe desligado para um painel sem sombra ou com sombra ligeira."
         }
       },

@@ -62,6 +62,7 @@
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
         },
         "data_description": {
+          "auto_dampening": "Ogni 6 ore invia a Solcast PV Forecast una curva di ombreggiamento misurata dal tuo storico. In questo modo assume il controllo dello smorzamento di Solcast PV Forecast, valori orari compresi: attiva lo smorzamento granulare (per sito) e sostituisce i fattori di ogni sito, quindi lo smorzamento impostato manualmente in Solcast PV Forecast smette di essere applicato finché questa opzione è attiva. Se non viene trovato alcun sito Solcast, scrive invece i valori orari. Viene saltato finché è attivo lo smorzamento automatico di Solcast PV Forecast.",
           "sunpos_dampening": "Calcola il fattore di ogni mezz'ora dai dati passati registrati con il sole quasi nella stessa posizione, con qualsiasi tempo. Pensato per un orizzonte netto, come un edificio o una fila di alberi che copre il sole basso. Lascialo disattivato per un impianto non ombreggiato o poco ombreggiato."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Limite di immissione in rete (kW, 0 = disabilitato)"
         },
         "data_description": {
+          "auto_dampening": "Ogni 6 ore invia a Solcast PV Forecast una curva di ombreggiamento misurata dal tuo storico. In questo modo assume il controllo dello smorzamento di Solcast PV Forecast, valori orari compresi: attiva lo smorzamento granulare (per sito) e sostituisce i fattori di ogni sito, quindi lo smorzamento impostato manualmente in Solcast PV Forecast smette di essere applicato finché questa opzione è attiva. Se non viene trovato alcun sito Solcast, scrive invece i valori orari. Viene saltato finché è attivo lo smorzamento automatico di Solcast PV Forecast.",
           "sunpos_dampening": "Calcola il fattore di ogni mezz'ora dai dati passati registrati con il sole quasi nella stessa posizione, con qualsiasi tempo. Pensato per un orizzonte netto, come un edificio o una fila di alberi che copre il sole basso. Lascialo disattivato per un impianto non ombreggiato o poco ombreggiato."
         }
       },

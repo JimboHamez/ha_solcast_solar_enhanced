@@ -62,6 +62,7 @@
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
         },
         "data_description": {
+          "auto_dampening": "Každých 6 hodín odošle do Solcast PV Forecast krivku zatienenia nameranú z vašej vlastnej histórie. Tým preberá tlmenie Solcast PV Forecast vrátane hodinových hodnôt: zapne podrobné tlmenie (pre každú lokalitu) a nahradí faktory každej lokality, takže tlmenie, ktoré ste tam nastavili ručne, sa prestane uplatňovať, kým je táto možnosť zapnutá. Ak sa nenájde žiadna lokalita Solcast, zapíše namiesto toho hodinové hodnoty. Preskočí sa, kým je zapnuté vlastné automatické tlmenie Solcast PV Forecast.",
           "sunpos_dampening": "Vypočíta faktor každej polhodiny z predchádzajúcich meraní pri takmer rovnakej polohe slnka, za každého počasia. Určené pre ostrý horizont, napríklad budovu alebo rad stromov, ktoré zakrývajú nízke slnko. Pri nezatienenom alebo mierne zatienenom poli nechajte vypnuté."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Limit dodávky do siete (kW, 0 = vypnuté)"
         },
         "data_description": {
+          "auto_dampening": "Každých 6 hodín odošle do Solcast PV Forecast krivku zatienenia nameranú z vašej vlastnej histórie. Tým preberá tlmenie Solcast PV Forecast vrátane hodinových hodnôt: zapne podrobné tlmenie (pre každú lokalitu) a nahradí faktory každej lokality, takže tlmenie, ktoré ste tam nastavili ručne, sa prestane uplatňovať, kým je táto možnosť zapnutá. Ak sa nenájde žiadna lokalita Solcast, zapíše namiesto toho hodinové hodnoty. Preskočí sa, kým je zapnuté vlastné automatické tlmenie Solcast PV Forecast.",
           "sunpos_dampening": "Vypočíta faktor každej polhodiny z predchádzajúcich meraní pri takmer rovnakej polohe slnka, za každého počasia. Určené pre ostrý horizont, napríklad budovu alebo rad stromov, ktoré zakrývajú nízke slnko. Pri nezatienenom alebo mierne zatienenom poli nechajte vypnuté."
         }
       },

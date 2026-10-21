@@ -62,6 +62,7 @@
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
         },
         "data_description": {
+          "auto_dampening": "Toutes les 6 heures, envoie à Solcast PV Forecast une courbe d'ombrage mesurée à partir de votre propre historique. Cette option prend le contrôle de l'atténuation de Solcast PV Forecast, valeurs horaires comprises : elle active l'atténuation granulaire (par site) et remplace les facteurs de chaque site, de sorte que l'atténuation réglée manuellement dans Solcast PV Forecast cesse de s'appliquer tant qu'elle est active. Si aucun site Solcast n'est trouvé, ce sont les valeurs horaires qui sont écrites. Ignorée tant que l'atténuation automatique propre à Solcast PV Forecast est activée.",
           "sunpos_dampening": "Calcule le facteur de chaque demi-heure à partir des relevés passés pris avec le soleil presque au même endroit, par tous les temps. Conçu pour un horizon franc, comme un bâtiment ou une rangée d'arbres qui masque le soleil bas. Laissez désactivé pour un champ sans ombrage ou faiblement ombragé."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Limite d'injection réseau (kW, 0 = désactivé)"
         },
         "data_description": {
+          "auto_dampening": "Toutes les 6 heures, envoie à Solcast PV Forecast une courbe d'ombrage mesurée à partir de votre propre historique. Cette option prend le contrôle de l'atténuation de Solcast PV Forecast, valeurs horaires comprises : elle active l'atténuation granulaire (par site) et remplace les facteurs de chaque site, de sorte que l'atténuation réglée manuellement dans Solcast PV Forecast cesse de s'appliquer tant qu'elle est active. Si aucun site Solcast n'est trouvé, ce sont les valeurs horaires qui sont écrites. Ignorée tant que l'atténuation automatique propre à Solcast PV Forecast est activée.",
           "sunpos_dampening": "Calcule le facteur de chaque demi-heure à partir des relevés passés pris avec le soleil presque au même endroit, par tous les temps. Conçu pour un horizon franc, comme un bâtiment ou une rangée d'arbres qui masque le soleil bas. Laissez désactivé pour un champ sans ombrage ou faiblement ombragé."
         }
       },

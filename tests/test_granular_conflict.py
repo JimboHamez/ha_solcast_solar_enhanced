@@ -15,8 +15,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.helpers import issue_registry as ir
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.solcast_solar_enhanced.const import (
+    BASE_DOMAIN,
     CONF_DAMPENING_GATE,
     CONF_SITE_GROUPS,
     DEFAULT_SITE_ID,
@@ -111,12 +113,11 @@ async def test_read_base_granular_factors_survives_missing_attrs(hass, coordinat
 # ---------------------------------------------------------------------------
 
 
-async def _run(hass, coordinator, factors, *, multi_site=True, sites=None, traditional=None, push_ok=True):
+async def _run(hass, coordinator, factors, *, multi_site=True, sites=None, push_ok=True):
     """Drive _run_dampening, returning ``(site, factors)`` for every push in order.
 
     ``multi_site`` configures two site groups; without it the property-wide curve is
-    pushed to each discovered site in ``sites``. ``traditional`` stands in for the
-    base's damp00..23 options.
+    pushed to each discovered site in ``sites``.
     """
     opts = {CONF_DAMPENING_GATE: False}
     if multi_site:
@@ -138,7 +139,6 @@ async def _run(hass, coordinator, factors, *, multi_site=True, sites=None, tradi
         patch.object(coordinator, "_compute_dampening_slots", AsyncMock(return_value=slots)),
         patch.object(coordinator, "_read_base_auto_dampen", return_value=False),
         patch.object(coordinator, "_read_base_granular_factors", return_value=factors),
-        patch.object(coordinator, "_read_base_traditional_factors", return_value=traditional),
         patch.object(coordinator, "_push_dampening", side_effect=fake_push),
     ):
         await coordinator._run_dampening(opts, int(time.time()), -37.9, 145.0)
@@ -220,7 +220,7 @@ async def test_no_groups_pushes_property_curve_to_every_discovered_site(hass, co
     """Single-site, or several Solcast sites behind one meter: every push names a site
     and carries all 48 slots. A site-less push would land in damp00..23 (hourly) or
     'all' (which shadows per-site entries if arrays are configured later)."""
-    pushed = await _run(hass, coordinator, {}, multi_site=False, sites=[RID_A, RID_B], traditional=[1.0] * 24)
+    pushed = await _run(hass, coordinator, {}, multi_site=False, sites=[RID_A, RID_B])
 
     assert _sites(pushed) == [RID_A, RID_B]
     assert all(factors == SLOTS for _, factors in pushed)
@@ -246,45 +246,20 @@ async def test_failed_push_is_not_reported_as_pushed(hass, coordinator):
 
 
 # ---------------------------------------------------------------------------
-# Resetting the base's leftover hourly options before the first per-site push
+# The base's hourly damp00..23 options are the user's, not ours
 # ---------------------------------------------------------------------------
 
 
-async def test_single_site_upgrade_neutralises_leftover_hourly_options_first(hass, coordinator):
-    """A single-site install's old curve sits in damp00..23. It is ignored once
-    granular dampening is on, but returns if that is ever cleared — so reset it, and
-    before the per-site push, since the global push is what clears granular."""
-    old_curve = [1.0] * 7 + [0.5] * 10 + [1.0] * 7
-    pushed = await _run(hass, coordinator, {}, multi_site=False, sites=[RID_A], traditional=old_curve)
+@pytest.mark.parametrize("multi_site", [False, True])
+async def test_per_site_push_never_writes_hourly_options(hass, coordinator, multi_site):
+    """A site-less push lands in the base's damp00..23 options, which may hold values
+    tuned by hand. With a site to name, every push must name it, so they are never
+    overwritten. 1.13 reset them to 1.0 on an empty granular table and could not tell
+    its own leftovers from a user's."""
+    hand_tuned = {f"damp{h:02d}": 0.5 for h in range(HOURLY_FACTOR_COUNT)}
+    MockConfigEntry(domain=BASE_DOMAIN, options=hand_tuned).add_to_hass(hass)
 
-    assert _sites(pushed) == [None, RID_A]
-    assert pushed[0][1] == [1.0] * 24
+    pushed = await _run(hass, coordinator, {}, multi_site=multi_site, sites=[RID_A])
 
-
-@pytest.mark.parametrize(
-    ("table", "traditional"),
-    [
-        # Already neutral — nothing to do.
-        ({}, [1.0] * 24),
-        # Populated table: a global push would clear it, and the base deletes the
-        # file from a listener that can land after our per-site push. Leave it.
-        ({RID_A: [0.9] * 24}, [0.5] * 24),
-        # Base internals unreadable — no basis to act on.
-        (None, [0.5] * 24),
-        # Options unreadable.
-        ({}, None),
-    ],
-)
-async def test_leftover_hourly_options_left_alone(hass, coordinator, table, traditional):
-    pushed = await _run(hass, coordinator, table, multi_site=False, sites=[RID_A], traditional=traditional)
-
-    assert _sites(pushed) == [RID_A]
-
-
-async def test_read_base_traditional_factors(hass, coordinator):
-    entry = SimpleNamespace(options={f"damp{h:02d}": 0.5 + h / 100 for h in range(24)})
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]):
-        assert coordinator._read_base_traditional_factors() == [0.5 + h / 100 for h in range(24)]
-    partial = SimpleNamespace(options={"damp00": 0.5})
-    with patch.object(hass.config_entries, "async_entries", return_value=[partial]):
-        assert coordinator._read_base_traditional_factors() is None
+    assert pushed
+    assert None not in _sites(pushed)

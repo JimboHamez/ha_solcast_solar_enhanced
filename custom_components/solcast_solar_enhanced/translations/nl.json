@@ -62,6 +62,7 @@
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
         },
         "data_description": {
+          "auto_dampening": "Stuurt elke 6 uur een uit je eigen geschiedenis gemeten schaduwcurve naar Solcast PV Forecast. Hiermee neemt deze integratie de demping van Solcast PV Forecast over, inclusief de waarden per uur: granulaire (per-site) demping wordt ingeschakeld en de factoren van elke site worden vervangen, zodat demping die je daar handmatig hebt ingesteld niet meer wordt toegepast zolang dit aan staat. Als er geen Solcast-site wordt gevonden, worden in plaats daarvan de waarden per uur geschreven. Wordt overgeslagen zolang de eigen automatische demping van Solcast PV Forecast aan staat.",
           "sunpos_dampening": "Bepaalt de factor van elk halfuur uit eerdere metingen met de zon op bijna dezelfde plek, bij elk weer. Bedoeld voor een harde horizon, zoals een gebouw of bomenrij die de lage zon tegenhoudt. Laat uit voor een onbeschaduwd of licht beschaduwd paneelveld."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Teruglevergrens (kW, 0 = uitgeschakeld)"
         },
         "data_description": {
+          "auto_dampening": "Stuurt elke 6 uur een uit je eigen geschiedenis gemeten schaduwcurve naar Solcast PV Forecast. Hiermee neemt deze integratie de demping van Solcast PV Forecast over, inclusief de waarden per uur: granulaire (per-site) demping wordt ingeschakeld en de factoren van elke site worden vervangen, zodat demping die je daar handmatig hebt ingesteld niet meer wordt toegepast zolang dit aan staat. Als er geen Solcast-site wordt gevonden, worden in plaats daarvan de waarden per uur geschreven. Wordt overgeslagen zolang de eigen automatische demping van Solcast PV Forecast aan staat.",
           "sunpos_dampening": "Bepaalt de factor van elk halfuur uit eerdere metingen met de zon op bijna dezelfde plek, bij elk weer. Bedoeld voor een harde horizon, zoals een gebouw of bomenrij die de lage zon tegenhoudt. Laat uit voor een onbeschaduwd of licht beschaduwd paneelveld."
         }
       },

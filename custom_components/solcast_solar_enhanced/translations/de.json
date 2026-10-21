@@ -62,6 +62,7 @@
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
         },
         "data_description": {
+          "auto_dampening": "Überträgt alle 6 Stunden eine aus Ihrem eigenen Verlauf gemessene Verschattungskurve an Solcast PV Forecast. Damit übernimmt diese Integration die Dämpfung von Solcast PV Forecast, einschließlich der stündlichen Werte: Sie schaltet die granulare (standortbezogene) Dämpfung ein und ersetzt die Faktoren jedes Standorts, sodass dort von Hand eingestellte Dämpfung nicht mehr angewendet wird, solange diese Option aktiv ist. Wird kein Solcast-Standort gefunden, schreibt sie stattdessen die stündlichen Werte. Wird ausgesetzt, solange die eigene automatische Dämpfung von Solcast PV Forecast aktiv ist.",
           "sunpos_dampening": "Berechnet den Faktor jeder halben Stunde aus früheren Messungen bei nahezu gleichem Sonnenstand, bei jedem Wetter. Gedacht für einen harten Horizont, etwa ein Gebäude oder eine Baumreihe, die die tiefe Sonne verdeckt. Bei unverschatteten oder nur leicht verschatteten Anlagen ausgeschaltet lassen."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Netzeinspeiselimit (kW, 0 = deaktiviert)"
         },
         "data_description": {
+          "auto_dampening": "Überträgt alle 6 Stunden eine aus Ihrem eigenen Verlauf gemessene Verschattungskurve an Solcast PV Forecast. Damit übernimmt diese Integration die Dämpfung von Solcast PV Forecast, einschließlich der stündlichen Werte: Sie schaltet die granulare (standortbezogene) Dämpfung ein und ersetzt die Faktoren jedes Standorts, sodass dort von Hand eingestellte Dämpfung nicht mehr angewendet wird, solange diese Option aktiv ist. Wird kein Solcast-Standort gefunden, schreibt sie stattdessen die stündlichen Werte. Wird ausgesetzt, solange die eigene automatische Dämpfung von Solcast PV Forecast aktiv ist.",
           "sunpos_dampening": "Berechnet den Faktor jeder halben Stunde aus früheren Messungen bei nahezu gleichem Sonnenstand, bei jedem Wetter. Gedacht für einen harten Horizont, etwa ein Gebäude oder eine Baumreihe, die die tiefe Sonne verdeckt. Bei unverschatteten oder nur leicht verschatteten Anlagen ausgeschaltet lassen."
         }
       },
