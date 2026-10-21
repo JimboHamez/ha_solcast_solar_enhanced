@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto dampening now explains what it takes over.** The field description says that it turns on
   Solcast PV Forecast's granular dampening and replaces each site's factors. Dampening set by hand
   there, hourly values included, stops applying while it is on. Translated into all 11 languages.
+- **Now in the HACS default catalog.** The README's install steps no longer add a custom repository
+  first. They cover HACS on Home Assistant 2026.10 and earlier, and the Marketplace that replaces it
+  from 2026.11. Existing installs from the custom repository need no change.
 
 ## [1.14.0b1] - 2026-10-18
 

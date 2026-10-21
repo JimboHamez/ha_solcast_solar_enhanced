@@ -1,6 +1,6 @@
 # Solcast Solar Enhanced
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://hacs.xyz/)
 ![GitHub Release](https://img.shields.io/github/v/release/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
 [![hacs_downloads](https://img.shields.io/github/downloads/JimboHamez/ha_solcast_solar_enhanced/latest/total?style=for-the-badge)](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/latest)
 ![GitHub License](https://img.shields.io/github/license/JimboHamez/ha_solcast_solar_enhanced?style=for-the-badge)
@@ -418,15 +418,43 @@ Tuning and dampening only learn from *clear-sky* periods (cloudy ones tell you n
   <a href="images/dashboard.png"><img width="700" alt="Solcast Solar Enhanced sensors in Home Assistant" src="images/dashboard.png"></a>
 </p>
 
-### HACS (recommended)
+Set up the [Solcast PV Forecast](#1-base-integration) integration first: Home Assistant won't load this one without it.
 
-1. Add this repository as a custom repository in HACS.
-2. Install **Solcast Solar Enhanced**.
-3. Restart Home Assistant.
+### HACS or Marketplace (recommended)
+
+Solcast Solar Enhanced is in the HACS default catalog, so there is no repository to add first. From Home Assistant 2026.11, HACS is built into Home Assistant as the **Marketplace**. It uses the same catalog, so use whichever your Home Assistant has.
+
+**Home Assistant 2026.11 or later (Marketplace)**
+
+1. Go to **Settings → Marketplace**. The first time you open it, read and accept its warning.
+2. Search for **Solcast Solar Enhanced** and open it.
+3. Select **Install**, check the version shown, then select **Install** again.
+4. If **Settings → System → Repairs** asks for a restart, use it to restart Home Assistant.
+5. Carry on at [Configuration](#configuration).
+
+**Home Assistant 2026.10 or earlier (HACS)**
+
+If you don't have HACS yet, [install it](https://hacs.xyz/docs/use/) first. The quickest way in is this button, which opens the integration's page in your own HACS. The first time you use one of these buttons, it asks for your Home Assistant URL.
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JimboHamez&repository=ha_solcast_solar_enhanced&category=integration)
+
+Or find it yourself:
+
+1. Open **HACS** from the Home Assistant sidebar.
+2. Search for **Solcast Solar Enhanced** and open it.
+3. Click **Download** (bottom right), then **Download** again to confirm.
+4. Restart Home Assistant. A **Restart required** repair appears under **Settings**, and submitting it restarts for you.
+5. Carry on at [Configuration](#configuration).
+
+**Beta versions** are offered only if you ask for them. Go to **Settings → Devices & services → HACS** (or **Marketplace**) and open the **Solcast Solar Enhanced** device. Its **Pre-release** entity is disabled by default: enable it, then turn the switch on.
+
+**Already installed from the custom repository?** You don't need to do anything. It is the same repository, so your install, settings, history and updates carry on. Upgrading Home Assistant to 2026.11 also carries it over to the Marketplace.
 
 ### Manual
 
-1. Copy `custom_components/solcast_solar_enhanced` into your HA `config/custom_components/` directory.
+Use HACS unless you have a reason not to: a manual install gets no update notifications.
+
+1. Download the [latest release](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/latest) and copy its `custom_components/solcast_solar_enhanced` folder into your Home Assistant `config/custom_components/` directory. Create `custom_components` if it doesn't exist.
 2. Restart Home Assistant.
 
 Storage uses the Python standard library, so there's nothing to install. PV tuning uses **numpy**, which Home Assistant already ships (and which runs on a Raspberry Pi) — so a normal HA install needs nothing extra.
@@ -434,7 +462,7 @@ Storage uses the Python standard library, so there's nothing to install. PV tuni
 ### Removing the integration
 
 1. Go to **Settings → Devices & Services**, find **Solcast Solar Enhanced**, open the ⋮ menu on the entry and choose **Delete**. This removes the config entry along with every device and entity it created.
-2. If you installed via HACS, open HACS → **Solcast Solar Enhanced** → ⋮ → **Remove**. For a manual install, delete `config/custom_components/solcast_solar_enhanced/`.
+2. If you installed from the Marketplace, open **Settings → Marketplace → Solcast Solar Enhanced** → ⋮ → **Uninstall**. From HACS, open HACS → **Solcast Solar Enhanced** → ⋮ → **Remove**. For a manual install, delete `config/custom_components/solcast_solar_enhanced/`.
 3. Restart Home Assistant.
 
 Two things are deliberately left behind, because deleting them is not reversible:
