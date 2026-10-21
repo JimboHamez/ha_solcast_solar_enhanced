@@ -5,7 +5,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.0b2] - 2026-10-21
+
+> Beta, following the integration's acceptance into the HACS default catalog. Solcast PV Forecast's
+> hourly dampening values are no longer reset, and the README covers installing from HACS or from
+> Home Assistant's new Marketplace. The opt-in sun-position dampening from 1.14.0b1 is unchanged.
 
 ### Changed
 
@@ -1784,7 +1788,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
-[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...HEAD
+[1.14.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...v1.14.0b2
 [1.14.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.1...v1.14.0b1
 [1.13.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0b1...v1.13.0
