@@ -5,6 +5,29 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Your Solcast PV Forecast hourly dampening values are no longer reset.** From 1.13.0, the first
+  cycle reset the base's hourly values (`damp00…23`) to 1.0 whenever its granular dampening file was
+  still empty. That was meant to clear the curve a single-site install was pushed through before
+  1.13.0. But it could not tell that curve from values tuned by hand, so it overwrote those too,
+  without saying so. The reset is removed, and this integration now writes the hourly values only in
+  the fallback where it finds no Solcast site to push to. Values already reset by 1.13.0 to 1.14.0b1
+  cannot be recovered by this release. Thanks to @frenck for spotting it in the HACS review.
+- **Auto dampening now explains what it takes over.** The field description says that it turns on
+  Solcast PV Forecast's granular dampening and replaces each site's factors. Dampening set by hand
+  there, hourly values included, stops applying while it is on. Translated into all 11 languages.
+- **Now in the HACS default catalog.** The README's install steps no longer add a custom repository
+  first. They cover HACS on Home Assistant 2026.10 and earlier, and the Marketplace that replaces it
+  from 2026.11. Existing installs from the custom repository need no change.
+- **README corrected and given a table of contents.** It now says tuning fits tilt only, and how
+  many records each stage needs: 10 to run, 50 for the orientation warning, and no fixed number to
+  report a tilt. Tuned Tilt is described as reading *unknown*, not *unavailable*, and the sensor
+  that carries `sun_position_slots` is named correctly. The README also lists the orientation-warning
+  option and the third multi-site topology.
+
 ## [1.14.0b1] - 2026-10-18
 
 > Beta, published for one install in particular
@@ -1761,6 +1784,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[Unreleased]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...HEAD
 [1.14.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.1...v1.14.0b1
 [1.13.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0b1...v1.13.0

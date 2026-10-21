@@ -62,6 +62,7 @@
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
         },
         "data_description": {
+          "auto_dampening": "Co 6 godzin przesyła do Solcast PV Forecast krzywą zacienienia zmierzoną na podstawie Twojej własnej historii. Przejmuje w ten sposób tłumienie Solcast PV Forecast, łącznie z wartościami godzinowymi: włącza tłumienie szczegółowe (dla każdej lokalizacji) i zastępuje współczynniki każdej lokalizacji, więc tłumienie ustawione tam ręcznie przestaje działać, dopóki ta opcja jest włączona. Jeśli nie zostanie znaleziona żadna lokalizacja Solcast, zapisuje zamiast tego wartości godzinowe. Pomijane, dopóki włączone jest własne automatyczne tłumienie Solcast PV Forecast.",
           "sunpos_dampening": "Wyznacza współczynnik każdego półgodzinnego okresu z wcześniejszych pomiarów przy niemal tym samym położeniu słońca, przy każdej pogodzie. Przeznaczone dla wyraźnego horyzontu, np. budynku lub linii drzew zasłaniającej nisko stojące słońce. Pozostaw wyłączone dla instalacji niezacienionej lub słabo zacienionej."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Limit oddawania do sieci (kW, 0 = wyłączone)"
         },
         "data_description": {
+          "auto_dampening": "Co 6 godzin przesyła do Solcast PV Forecast krzywą zacienienia zmierzoną na podstawie Twojej własnej historii. Przejmuje w ten sposób tłumienie Solcast PV Forecast, łącznie z wartościami godzinowymi: włącza tłumienie szczegółowe (dla każdej lokalizacji) i zastępuje współczynniki każdej lokalizacji, więc tłumienie ustawione tam ręcznie przestaje działać, dopóki ta opcja jest włączona. Jeśli nie zostanie znaleziona żadna lokalizacja Solcast, zapisuje zamiast tego wartości godzinowe. Pomijane, dopóki włączone jest własne automatyczne tłumienie Solcast PV Forecast.",
           "sunpos_dampening": "Wyznacza współczynnik każdego półgodzinnego okresu z wcześniejszych pomiarów przy niemal tym samym położeniu słońca, przy każdej pogodzie. Przeznaczone dla wyraźnego horyzontu, np. budynku lub linii drzew zasłaniającej nisko stojące słońce. Pozostaw wyłączone dla instalacji niezacienionej lub słabo zacienionej."
         }
       },

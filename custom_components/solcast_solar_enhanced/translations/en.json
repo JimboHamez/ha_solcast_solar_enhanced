@@ -74,6 +74,7 @@
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         },
         "data_description": {
+          "auto_dampening": "Every 6 hours, pushes a shading curve measured from your own history to Solcast PV Forecast. This takes over Solcast PV Forecast's dampening, hourly values included: it switches on granular (per-site) dampening and replaces each site's factors, so dampening you set there by hand stops applying while this is on. If no Solcast site is found, it writes the hourly values instead. Skipped while Solcast PV Forecast's own automatic dampening is on.",
           "sunpos_dampening": "Builds each half-hour's factor from past records taken with the sun in nearly the same place, in all weather. Meant for a hard horizon, such as a building or tree line that blocks the low sun. Leave off for an unshaded or softly shaded array."
         }
       },
@@ -172,6 +173,7 @@
           "export_limit_kw": "Grid export limit (kW, 0 = disabled)"
         },
         "data_description": {
+          "auto_dampening": "Every 6 hours, pushes a shading curve measured from your own history to Solcast PV Forecast. This takes over Solcast PV Forecast's dampening, hourly values included: it switches on granular (per-site) dampening and replaces each site's factors, so dampening you set there by hand stops applying while this is on. If no Solcast site is found, it writes the hourly values instead. Skipped while Solcast PV Forecast's own automatic dampening is on.",
           "sunpos_dampening": "Builds each half-hour's factor from past records taken with the sun in nearly the same place, in all weather. Meant for a hard horizon, such as a building or tree line that blocks the low sun. Leave off for an unshaded or softly shaded array."
         }
       },

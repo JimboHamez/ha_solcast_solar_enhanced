@@ -1152,7 +1152,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
 
         count = self._push_factor_count(table, push_ids)
-        await self._neutralise_traditional_dampening(table)
 
         if not site_ids:
             # Property-wide curve: one table, one orientation check, every base site.
@@ -1399,31 +1398,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if count == HOURLY_FACTOR_COUNT:
             return average_slot_pairs(factors)
         return factors + [1.0] * (PUSH_FACTOR_COUNT - len(factors))
-
-    async def _neutralise_traditional_dampening(self, table: dict[str, Any] | None) -> None:
-        """Reset the base's hourly ``damp00..23`` options to 1.0 before a per-site push.
-
-        A single-site install used to be pushed through those options. The per-site
-        push turns granular dampening on, which makes the base ignore them, but they
-        stay stored and come back the moment granular dampening is cleared — the old
-        curve would then apply with nothing left updating it.
-
-        Only done while the base's granular table is empty. A global push also clears
-        a populated table, and the base deletes the file from an options listener that
-        runs as a separate task, so it could land after the per-site push that follows
-        and delete that too. An empty table is the single-site upgrade, the case this
-        is for; an unreadable one (``None``) is left alone.
-
-        Args:
-            table: The base's granular table from :meth:`_read_base_granular_factors`.
-        """
-        if table is None or table:
-            return
-        traditional = self._read_base_traditional_factors()
-        if traditional is None or all(f == 1.0 for f in traditional):
-            return
-        _LOGGER.debug("Resetting the base's hourly dampening options to 1.0 before the per-site push")
-        await self._push_dampening([1.0] * HOURLY_FACTOR_COUNT)
 
     # ------------------------------------------------------------------
     # Forced service methods
@@ -2400,21 +2374,6 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator):
         if self._foreign_factor_counts(factors, own_ids) == {HOURLY_FACTOR_COUNT}:
             return HOURLY_FACTOR_COUNT
         return PUSH_FACTOR_COUNT
-
-    def _read_base_traditional_factors(self) -> list[float] | None:
-        """The base's hourly ``damp00..23`` options, or ``None`` when they can't be read.
-
-        Read from the base config entry's options, where every supported base version
-        keeps them.
-        """
-        try:
-            for entry in self.hass.config_entries.async_entries(BASE_DOMAIN):
-                values = [entry.options.get(f"damp{h:02d}") for h in range(HOURLY_FACTOR_COUNT)]
-                if None not in values:
-                    return [float(v) for v in values if v is not None]
-        except Exception:  # noqa: BLE001
-            pass
-        return None
 
     def _read_base_export_limit(self) -> float | None:
         """Property-wide export limit in kW from the base config entry, or None.

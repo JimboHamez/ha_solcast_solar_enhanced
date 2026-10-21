@@ -62,6 +62,7 @@
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
         },
         "data_description": {
+          "auto_dampening": "Cada 6 horas envía a Solcast PV Forecast una curva de sombreado medida a partir de su propio historial. Esto toma el control de la atenuación de Solcast PV Forecast, incluidos los valores horarios: activa la atenuación granular (por sitio) y reemplaza los factores de cada sitio, por lo que la atenuación que haya configurado allí manualmente deja de aplicarse mientras esta opción esté activada. Si no se encuentra ningún sitio de Solcast, escribe en su lugar los valores horarios. Se omite mientras la atenuación automática propia de Solcast PV Forecast esté activada.",
           "sunpos_dampening": "Calcula el factor de cada media hora a partir de registros anteriores tomados con el sol casi en la misma posición, con cualquier tiempo. Pensado para un horizonte duro, como un edificio o una hilera de árboles que tapa el sol bajo. Déjelo desactivado si el campo no tiene sombras o solo sombras suaves."
         }
       },
@@ -160,6 +161,7 @@
           "export_limit_kw": "Límite de exportación a la red (kW, 0 = desactivado)"
         },
         "data_description": {
+          "auto_dampening": "Cada 6 horas envía a Solcast PV Forecast una curva de sombreado medida a partir de su propio historial. Esto toma el control de la atenuación de Solcast PV Forecast, incluidos los valores horarios: activa la atenuación granular (por sitio) y reemplaza los factores de cada sitio, por lo que la atenuación que haya configurado allí manualmente deja de aplicarse mientras esta opción esté activada. Si no se encuentra ningún sitio de Solcast, escribe en su lugar los valores horarios. Se omite mientras la atenuación automática propia de Solcast PV Forecast esté activada.",
           "sunpos_dampening": "Calcula el factor de cada media hora a partir de registros anteriores tomados con el sol casi en la misma posición, con cualquier tiempo. Pensado para un horizonte duro, como un edificio o una hilera de árboles que tapa el sol bajo. Déjelo desactivado si el campo no tiene sombras o solo sombras suaves."
         }
       },
