@@ -84,7 +84,21 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.14.0b1
+## 🆕 What's new in v1.14.0b2
+
+**Beta: your Solcast PV Forecast hourly dampening values are no longer reset, and the integration is now in the HACS default catalog.** The opt-in sun-position dampening from v1.14.0b1 is unchanged.
+
+- **Hourly dampening you set by hand is kept.** From 1.13.0, the first cycle reset Solcast PV Forecast's hourly dampening values to 1.0 whenever its granular dampening file was still empty. That was meant to clear the curve older releases had pushed there, but it could not tell that curve from values you had tuned yourself, so it overwrote those too, without saying so. The reset is gone. Values already reset by 1.13.0 to 1.14.0b1 can't be brought back by this release. See [granular dampening](#about-the-base-integrations-granular-dampening-setting) for how the two sets of values interact.
+- **Auto dampening says what it takes over.** Its field description now explains that it turns on Solcast PV Forecast's granular dampening and replaces each site's factors, so dampening set by hand there stops applying while it is on. Translated into all 11 languages.
+- **Install from HACS without adding a repository.** The [install steps](#hacs-or-marketplace-recommended) cover HACS on Home Assistant 2026.10 and earlier, and the **Marketplace** that replaces HACS from 2026.11. If you installed from the custom repository, you don't need to do anything.
+- **README corrected, with a table of contents.** It now says tuning fits tilt only, and how many records each stage needs before you see a result. It also fixes several sensor and attribute names.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a beta, so HACS only offers it if you have turned on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1140b2---2026-10-21) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0b2)
+
+<details>
+<summary><b>What landed in v1.14.0b1</b></summary>
 
 **Beta: an opt-in sun-position dampening mode for arrays behind a hard horizon.** It is off by default, and nothing changes until you switch it on. It was built for one install in particular ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)): a single array whose morning sun is cut off by buildings and trees, where output goes from almost nothing to almost everything as the sun climbs 3–4°.
 
@@ -100,6 +114,8 @@ The standard dampening can't follow an edge that sharp. It matches each half hou
 **Turn it on only if an array has a sharp obstruction**, such as a building, a roofline or a tree line that blocks the low sun. This is a beta, so HACS only offers it if you have enabled beta versions for this integration. Your settings, history and entities are unchanged.
 
 [CHANGELOG](CHANGELOG.md#1140b1---2026-10-18) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0b1)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.13.1</b></summary>
