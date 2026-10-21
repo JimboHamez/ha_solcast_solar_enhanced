@@ -20,13 +20,30 @@ A companion to [BJReplay/ha-solcast-solar](https://github.com/BJReplay/ha-solcas
 It adds:
 
 - **History storage** — keeps your PV, forecast, weather and battery data in a built-in SQLite file. No server, no setup.
-- **Automatic panel tuning** — works out your real panel tilt and azimuth from generation data and corrects the forecast geometry.
+- **Automatic panel tuning** — estimates your real panel tilt from generation data and reports it when the data can pin it down, so you can check the tilt Solcast has. Azimuth stays at your configured value, and nothing is changed in Solcast.
 - **Adaptive dampening** — learns where your forecast runs high or low (shading, local conditions) and pushes a correction back to Solcast. Starts neutral and gets stronger as it gathers data.
 - **Multi-site** — handles multiple rooftop arrays on one property, discovered automatically.
 - **Flexible inputs** — reads energy counters (recommended) or power sensors, with auto-detection.
 - **Curtailment-aware** — knows when your inverter is export-limited so curtailed output isn't mistaken for shading.
 
 **No extra Solcast API calls** — it reads forecast data straight from the base integration.
+
+---
+
+## Contents
+
+- [Why this exists](#why-this-exists) · [What's new](#whats-new)
+- [Prerequisites](#prerequisites): [base integration](#1-base-integration), [generation and export sensors](#2-generation--export-sensors), [history storage](#3-history-storage), [weather and irradiance](#4-weather--irradiance-open-meteo--keyless-on-by-default)
+- [Installation](#installation): [HACS or Marketplace](#hacs-or-marketplace-recommended), [manual](#manual), [removing the integration](#removing-the-integration)
+- [Configuration](#configuration): [1 Site & System](#step-1--site--system), [2 Storage](#step-2--storage), [3 Weather & Irradiance](#step-3--weather--irradiance), [4 Battery](#step-4--battery-storage), [5 PV Tuning & Dampening](#step-5--pv-tuning--dampening), [6 Per-site mapping](#step-6--per-site-sensor-mapping-multi-site-only)
+- [How it works](#how-it-works): [granular dampening](#about-the-base-integrations-granular-dampening-setting), [multi-site](#multi-site)
+- [Sensors](#sensors): [per-site sensors](#per-site-sensors-multi-site-only)
+- [Services](#services)
+- [Examples](#examples): [run a heavy load](#run-a-heavy-load-when-the-forecast-is-being-trusted), [re-tune](#re-tune-after-you-change-something-physical), [current dampening](#see-what-dampening-is-actually-being-applied-right-now), [orientation alert](#get-told-when-the-tuned-orientation-disagrees-with-solcast), [debug logging](#turn-on-debug-logging)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Standalone tools](#standalone-tools): [backfill irradiance](#backfill-irradiance)
+- [Roadmap](#roadmap) · [Compatibility](#compatibility) · [Quality scale](#home-assistant-quality-scale) · [Unavailable vs unknown](#where-entities-read-unavailable-vs-unknown) · [License](#license)
 
 ---
 
@@ -38,6 +55,8 @@ This integration brings that back, on your own hardware. It records your actual-
 
 ---
 
+<a id="whats-new"></a>
+
 ## 🆕 What's new in v1.14.0b1
 
 **Beta: an opt-in sun-position dampening mode for arrays behind a hard horizon.** It is off by default, and nothing changes until you switch it on. It was built for one install in particular ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)): a single array whose morning sun is cut off by buildings and trees, where output goes from almost nothing to almost everything as the sun climbs 3–4°.
@@ -45,7 +64,7 @@ This integration brings that back, on your own hardware. It records your actual-
 The standard dampening can't follow an edge that sharp. It matches each half hour against records taken with the sun up to about 10° higher or lower. Records from after the sun has cleared the obstruction therefore dilute the ones from behind it. It also holds the factor near 1.0, and no lower than 0.85, until it has seen enough clear-sky records. On that install it pushed 0.85 for half hours that really produce close to nothing.
 
 - **Sun-position dampening** (*PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)*) builds each half-hour's factor from past records taken with the sun within a few degrees of the same place, in all weather, without the confidence hold-back.
-- **Where history doesn't cover the sun's position yet, the standard factor is used.** At high latitudes in winter the sun drops below anything recorded so far, so the mode is never worse than the standard one there. The **Shading Dampening** sensor's `sun_position_slots` attribute shows how many half hours the new mode is actually driving.
+- **Where history doesn't cover the sun's position yet, the standard factor is used.** At high latitudes in winter the sun drops below anything recorded so far, so the mode is never worse than the standard one there. The `sun_position_slots` attribute on the **Dampening Hours with DB Data** sensor, and on each array's **Shading** sensor, shows how many half hours the new mode is actually driving.
 - **Checked against real history.** Each day's factors were rebuilt from earlier days only and compared with what the panels actually produced:
   - On the hard-horizon install, the daily total was 36% closer than with standard dampening, better on 32 of 38 days.
   - On an array with soft morning shading it was 9% closer.
@@ -404,7 +423,7 @@ Powers dampening and tuning, and needs nothing — a built-in SQLite file (`conf
 
 ### 4. Weather & irradiance (Open-Meteo — keyless, on by default)
 
-Tuning and dampening only learn from *clear-sky* periods (cloudy ones tell you nothing about your panels), and PV tilt tuning additionally needs solar **irradiance**. Both now come from [**Open-Meteo**](https://open-meteo.com/), which is **free and needs no API key** — it's enabled by default, so there's nothing to set up. It supplies the irradiance components (GHI/DNI/DHI) plus cloud cover and temperature.
+Tuning and the standard dampening learn mainly from *clear-sky* periods, because cloudy ones say little about your panels. PV tilt tuning also needs solar **irradiance**, and without it tuning does not run. Both now come from [**Open-Meteo**](https://open-meteo.com/), which is **free and needs no API key** — it's enabled by default, so there's nothing to set up. It supplies the irradiance components (GHI/DNI/DHI) plus cloud cover and temperature.
 
 > **OpenWeatherMap is now optional (legacy).** If you'd rather use OWM for cloud/temperature, enable it in setup **Step 3** and paste a free key — it then takes precedence for cloud/temperature, while irradiance still comes from Open-Meteo. A repair issue appears only if you disable Open-Meteo *and* don't configure OWM, leaving no weather source at all.
 
@@ -549,14 +568,15 @@ A fallback for systems without a battery sensor mapped in Step 1.
 
 | Field | Default | Description |
 |---|---|---|
-| Auto PV tuning | On | Run tilt/azimuth optimisation daily |
-| Auto dampening | On | Recalculate and push dampening every 6 hours |
+| Auto PV tuning | On | Run tilt optimisation daily (azimuth is held at your configured value) |
+| Auto dampening | On | Recalculate and push dampening every 6 hours. This takes over Solcast PV Forecast's dampening: see [granular dampening](#about-the-base-integrations-granular-dampening-setting) |
+| Warn when tuning disagrees with Solcast orientation | On | Raise a repair issue when the tuned tilt differs from the Solcast tilt by more than 15°. Advisory only: dampening is applied either way. See [the example](#get-told-when-the-tuned-orientation-disagrees-with-solcast) for when it can fire |
 | Sun-position dampening (sharp horizon, beta) | Off | Build each half-hour's factor from records taken with the sun in nearly the same place, in all weather. For an array behind a sharp obstruction such as a building or tree line. Leave off for an unshaded or softly shaded array, where it is slightly worse than the standard estimator |
 | Cloud threshold % | 20 | OWM-cloud clear-sky gate: records below this count as clear-sky (used only when Open-Meteo is off) |
-| Max cloud % to include | 60 | Records above this are excluded |
+| Max cloud % to include | 60 | Dampening ignores records above this (used only when Open-Meteo is off) |
 | Clearness index threshold | 0.75 | Clear-sky gate when Open-Meteo is on (the default): a half-hour counts as clear when `Kt = GHI ÷ clear-sky GHI` is at or above this. More reliable than total cloud %, which over-rejects clear slots with harmless high/mid cloud |
 | Clipping threshold | 0.95 | Fraction of capacity at which clipping is assumed |
-| Grid export limit (kW) | 0 | Exclude records pegged at this ceiling; 0 = disabled. Read automatically from the base integration if set. Detection uses the **peak** export within each half hour, not its average, so a slot that was capped for only part of the interval is still recognised — this needs your export sensor to be kept in the recorder (it is, unless you have excluded it) |
+| Grid export limit (kW) | 0 | Tuning excludes records capped at this limit, and dampening scores them neutral rather than as shading; 0 = disabled. Read automatically from the base integration if set. Detection uses the **peak** export within each half hour, not its average, so a slot that was capped for only part of the interval is still recognised — this needs your export sensor to be kept in the recorder (it is, unless you have excluded it) |
 
 ### Step 6 — Per-site sensor mapping (multi-site only)
 
@@ -568,7 +588,7 @@ This page appears only for multi-array systems — a single-array system relies 
 
 - **Each array has its own generation sensor** (microinverters, e.g. Enphase, or one inverter per array): map each array's own AC/generation sensor; there's no DC field. Each array's field starts **empty** — the same sensor on two arrays would record the whole property's output on each, so that is flagged with an error rather than accepted.
 - **One shared inverter, split by DC** (a single multi-string inverter, e.g. Fronius, Sigenergy): put the *same* whole-system AC sensor on every array and give each its **DC/MPPT sensor(s)**, so the shared AC is split between arrays by DC share. Here the AC field *is* pre-filled with Step 1's system-wide PV Generation sensor, since every row carries that same entity. The DC field takes **more than one entity per array** — if an array is wired across several MPPTs (say 4 MPPTs grouped into 2 Solcast sites), select all of that array's trackers and they are summed before the share is taken. Only the ratio is used, so this is exact rather than an approximation. Leaving an array with no DC sensor, or using different AC sensors, is flagged with an error rather than silently dropped.
-- **One combined meter, no per-array data** (e.g. a **Tesla Powerwall 3**, or any single revenue meter): choose this when one sensor reports the whole system and no per-string DC is exposed. Nothing is mapped, the step needs no other input, and the property is tracked as one system. This is not a limitation of the integration but of the measurement: per-array output cannot be recovered from a single summed reading, and splitting it by forecast share would only re-label the property-wide figure. You still get full adaptive dampening — the curve is **per hour**, so an east array dominating the morning and a west one dominating the afternoon are captured naturally; what you don't get are the per-array sensors and per-array tuning.
+- **One combined meter, no per-array data** (e.g. a **Tesla Powerwall 3**, or any single revenue meter): choose this when one sensor reports the whole system and no per-string DC is exposed. Nothing is mapped, the step needs no other input, and the property is tracked as one system. This is not a limitation of the integration but of the measurement: per-array output cannot be recovered from a single summed reading, and splitting it by forecast share would only re-label the property-wide figure. You still get full adaptive dampening — the curve is **per half hour**, so an east array dominating the morning and a west one dominating the afternoon are captured naturally; what you don't get are the per-array sensors and per-array tuning.
 - The per-site **MPPT voltage/current** fields are the per-array home for MPPT trackers (diagnostics). For multi-array systems they live *here only* — Step 1 hides its MPPT fields. If you're upgrading from an older version that had MPPT entities on Step 1, they're suggested on the first two arrays here for you to confirm (and cleared from Step 1 on save).
 
 See [Multi-site](#multi-site) for how shared inverters are split between arrays.
@@ -581,9 +601,14 @@ See [Multi-site](#multi-site) for how shared inverters are split between arrays.
 
 ## How it works
 
-- **PV tuning** runs daily: it searches for the panel tilt and azimuth that best explain your clear-sky generation, and reports them on the **Tuned Panel Tilt/Azimuth** sensors. Needs at least ~10 clear-sky, non-clipped records. Clear-sky half-hours are selected by a measured **clearness index** (`Kt = GHI ÷ clear-sky GHI`) when Open-Meteo is on — avoiding total cloud %'s habit of rejecting genuinely clear slots that had harmless high/mid cloud (in cloudy winters that gate can reject *every* clear record, starving the optimiser).
+- **PV tuning** runs daily: it searches for the panel tilt that best explains your clear-sky generation, holding azimuth at your configured value, and reports it on the **Tuned Panel Tilt** sensor. How many records it needs:
+  - **10 to run.** A run needs at least 10 usable clear-sky half hours that carry Open-Meteo irradiance and are not clipped or export-capped. It uses the most recent 2,000.
+  - **No fixed number to report a tilt.** A tilt is shown only when the fit actually pins it down. That depends on how tight the fit is, not on how many records there are, so Tuned Tilt can read *unknown* for weeks or months on a real roof (see [Known limitations](#known-limitations)). The attributes always show the tilt the fit produced and why it was withheld.
+  - **50 for the orientation warning.** The repair issue for a tuned tilt that disagrees with Solcast needs at least 50 records in the run, as well as a tilt that was pinned down.
+
+  Clear-sky half-hours are selected by a measured **clearness index** (`Kt = GHI ÷ clear-sky GHI`) when Open-Meteo is on — avoiding total cloud %'s habit of rejecting genuinely clear slots that had harmless high/mid cloud (in cloudy winters that gate can reject *every* clear record, starving the optimiser). Backfilling irradiance with [`tools/backfill_irradiance.py`](#backfill-irradiance) lets existing history count straight away.
 - **Adaptive dampening** compares your actual output to the forecast across a seasonal day-of-year window (28 days back, 14 forward), weighting each record by how clear the sky was and how close the sun was to the same position. It starts at a neutral no-op and ramps toward the measured correction as data builds, then pushes 48 half-hourly factors to Solcast via `set_dampening`, one set per Solcast site. The base integration's own dampening factors are never read into this — the correction is learned purely from your history.
-- **Curtailment** — when your inverter is export-limited, that capped output is detected and handled so it doesn't look like shading: tuning excludes it, and dampening clips it to the achievable ceiling so a curtailed clear day stays neutral.
+- **Curtailment** — when your inverter is export-limited, that capped output is detected and handled so it doesn't look like shading: tuning excludes it, and dampening limits the forecast to what could have been exported, so a capped half hour counts as neutral rather than as shading.
 
 Full detail — the confidence model, the weighting maths, convergence timelines by climate, and design decisions — lives in the [design document](DESIGN_DOCUMENT.md).
 
@@ -603,10 +628,11 @@ Turning the base's own **automatic dampening** on is a separate matter: it makes
 
 When the base integration has more than one rooftop array, each is stored, tuned and dampened separately (keyed by its Solcast `resource_id`) alongside the property-wide aggregate. Single-site behaviour is unchanged.
 
-The per-site step asks which of these two topologies you have, then shows only the matching fields:
+The per-site step asks which of these three topologies you have, then shows only the matching fields:
 
 - **Dedicated AC per array (simplest).** If every array is independently metered — microinverters (e.g. Enphase) or one string inverter per array — map each site's own AC/generation sensor. There's no DC field in this mode; each site reports its own AC directly, no apportionment needed.
-- **Shared inverter AC.** If several arrays share one AC sensor (a single multi-string inverter, e.g. Fronius), put that same AC sensor on every array and give each its per-string DC sensor; the integration splits the measured AC between them by each string's share of DC current (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Every array in this mode needs a DC sensor and they must share one AC sensor — otherwise the wizard shows an error rather than silently dropping an array.
+- **Shared inverter AC.** If several arrays share one AC sensor (a single multi-string inverter, e.g. Fronius), put that same AC sensor on every array and give each its per-string DC sensor; the integration splits the measured AC between them by each array's share of the DC reading (`ac × dcᵢ / Σ dc`), so each array can still be tuned individually. Every array in this mode needs a DC sensor and they must share one AC sensor — otherwise the wizard shows an error rather than silently dropping an array.
+- **One combined meter, no per-array data.** If a single sensor reports the whole system and nothing per array is exposed (a Tesla Powerwall 3, say), nothing is mapped and the property is tracked as one system. There are no per-array sensors or per-array tuning, because per-array output can't be recovered from one summed reading.
 
 ---
 
@@ -616,13 +642,13 @@ The per-site step asks which of these two topologies you have, then shows only t
 |---|---|---|
 | Forecast Now | kW | Current 30-min PV forecast (from base integration) |
 | Forecast Today | kWh | Total forecast for today (from base integration) |
-| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries `mae_kw`, `capacity_scale`, and a `per_site` attribute in multi-site mode). **Unavailable when the fit cannot determine a tilt** — see `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes |
-| Tuned Panel Azimuth | ° | Your configured azimuth — **not tuned** (azimuth is non-identifiable from this data; `azimuth_tuned: false`). Reported for reference only |
+| Tuned Panel Tilt | ° | Optimised tilt from PV tuning (carries `n_records`, `mae_kw`, `capacity_scale`, `azimuth_tuned: false`, and a `per_site` attribute in multi-site mode). **Reads *unknown* when the fit cannot determine a tilt** — see `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes |
+| Tuned Panel Azimuth | ° | Your configured azimuth — **not tuned** (azimuth is non-identifiable from this data). Reported for reference only |
 | Tuning RMSE | kW | Goodness of fit for the tuned tilt |
 | Tuning Export Limited Excluded | — | Records dropped from the last tuning run by the export-limit filter |
 | Database Records | — | Total records in the store |
 | MPPT DC Voltage (max) | V | Diagnostic — highest captured string voltage this cycle (per-tracker detail in attributes). Unavailable until per-string DC sensors are configured |
-| Dampening Hours with DB Data | — | Hours where DB-derived factors are active (per-hour diagnostics in attributes) |
+| Dampening Hours with DB Data | — | How many of the 48 half-hour slots have factors backed by stored history (per-hour `hour_NN_factor`, `hour_NN_alpha`, `hour_NN_quality_records` and similar, plus `estimator` and `orientation_diverged`, in attributes). The name predates half-hourly factors |
 | Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect right now (1.0 = none) — for the current half hour, or the current hour if the base was given hourly factors (`period_start` / `period_minutes` say which) — with `raw_factor`, `alpha`, `source`, `orientation_diverged` and `pushed` in attributes. A sensor state rather than an attribute, so it graphs over the day |
 | Weather Temperature | °C | Current temperature (Open-Meteo, or OWM if configured) |
 | Cloud Cover | % | Cloud cover (Open-Meteo, or OWM if configured) |
@@ -635,6 +661,8 @@ The per-site step asks which of these two topologies you have, then shows only t
 
 All sensor names above are **translated into your Home Assistant language** (11 locales ship with the integration); the English names are shown here. Existing entities keep the entity IDs they were registered with, so nothing breaks on upgrade — but note that on a *fresh* install in a non-English language, Home Assistant builds each entity ID from the translated name, so the IDs will not be the English ones listed here. Check the entity IDs in Home Assistant before writing automations against them.
 
+**About Shading Loss (Measured).** It answers a different question from the dampening factors. Dampening asks "how much less than forecast does this hour usually produce?"; this asks **"where in the sky is something in the way?"** — building a map of your roof's horizon from the irradiance and output already in the database, and reporting the direction and sun height where the loss bites. It also says *what kind* of shadow it is: one lying evenly across the panels loses power in proportion to the area covered, while one triggering the bypass diodes does not, and only the first kind can be modelled by a simple factor at all. It is **read-only** — nothing here is sent to Solcast and your dampening is unchanged. Below about 15° of sun elevation the method cannot cleanly separate a blocked sun from a blocked sky, so it flags rather than hides that; and shading that dims *every* array on the property equally is invisible to it.
+
 ### Per-site sensors (multi-site only)
 
 When you configure more than one array, each array gets **its own HA device** (grouped on its own card, nested under the main integration device), carrying these entities:
@@ -643,7 +671,7 @@ When you configure more than one array, each array gets **its own HA device** (g
 |---|---|---|
 | `<array>` PV Power 30min Average | kW | That array's measured generation for the period (DC-share apportioned for shared-inverter setups; `pv_estimate` + `capacity_kw` in attributes) |
 | `<array>` Shading | — | Average daytime dampening factor (1.0 = no shading, < 1 = measured structural shading), with orientation, `shading_pct`, confidence and clear-sky basis in attributes |
-| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, record count and configured tilt/orientation in attributes). Unavailable when the fit cannot determine a tilt |
+| `<array>` Tuned Tilt | ° | Optimised tilt from that array's last PV tuning run (fit RMSE, `tuning_records` and configured tilt/orientation in attributes). Reads *unknown* when the fit cannot determine a tilt |
 | `<array>` Azimuth | ° | That array's orientation as configured in Solcast — held fixed, never tuned |
 | `<array>` Tuning RMSE | kW | *Diagnostic.* That array's tuning fit error; the trust signal for its tuned tilt (lower = tighter fit) |
 | `<array>` Current Hour Dampening | — | *Diagnostic, disabled by default.* The dampening factor in effect for that array right now (current half hour) — the per-array counterpart to the property-wide sensor above, so differently-shaded arrays can be watched apart |
@@ -672,8 +700,6 @@ They also raise when the work itself fails, rather than logging quietly and repo
 > The entity IDs below are the **English** defaults. On a non-English install Home Assistant builds them from the translated names, so check yours under **Developer tools → States** before copying anything.
 
 ### Run a heavy load when the forecast is being trusted
-
-*Shading Loss (Measured)* is a different question from the dampening factors. Dampening asks "how much less than forecast does this hour usually produce?"; this asks **"where in the sky is something in the way?"** — building a map of your roof's horizon from the irradiance and output already in the database, and reporting the direction and sun height where the loss bites. It also says *what kind* of shadow it is: one lying evenly across the panels loses power in proportion to the area covered, while one triggering the bypass diodes does not, and only the first kind can be modelled by a simple factor at all. It is **read-only** — nothing here is sent to Solcast and your dampening is unchanged. Below about 15° of sun elevation the method cannot cleanly separate a blocked sun from a blocked sky, so it flags rather than hides that; and shading that dims *every* array on the property equally is invisible to it.
 
 *PV Forecast Confidence* scores how well the last few hours of real output tracked the forecast. It is a scheduling aid, not a forecast — high confidence means "today's forecast is behaving", which is when it is safe to commit a dishwasher or a car charge to it.
 
@@ -727,7 +753,7 @@ template:
 
 ### Get told when the tuned orientation disagrees with Solcast
 
-This also raises a repair issue, so the automation is only worth adding if you want it pushed to your phone. It is **advisory** — dampening is still applied either way.
+This also raises a repair issue, so the automation is only worth adding if you want it pushed to your phone. It is **advisory** — dampening is still applied either way. It can only fire once a tuning run used at least 50 records *and* pinned the tilt down, and then only when that tilt is more than 15° from Solcast's. While Tuned Tilt reads *unknown*, it stays silent.
 
 ```yaml
 automation:
@@ -765,8 +791,8 @@ logger:
 |---|---|---|
 | **Dampening seems to have no effect** | The base integration's *automatic dampening* is on — it rejects manual `set_dampening`, so we skip the push entirely | Turn automatic dampening off in the base integration's options |
 | **…still no effect** | A pre-existing `all` key in the base's granular dampening file shadows every per-site key | Check the repair issues — we detect this and raise one. Clear the `all` entry (a global `set_dampening` call, or the base's own UI) and our next push will land |
-| **Dampening factors are all 1.0** | Not enough history yet. The blend ramps from a neutral 1.0 toward the measured ratio as quality-weighted records accumulate | Check `alpha` and `quality_records` in the *Dampening Hours with DB Data* attributes. In winter, or after a database reset, this legitimately takes weeks |
-| **Shading sensor shows a real loss but the pushed factors stay near 1.0** | Before 1.10.3, two defects held the confidence weight `alpha` low: the average-quality term fell as history grew, and the seasonal window was permanently half-empty on a first-year install | Update to 1.10.3. `alpha` should rise substantially and the curve should deepen — the *measured* ratio was always right, only the amount applied was wrong. Compare `alpha` in the *Dampening Hours with DB Data* attributes before and after |
+| **Dampening factors are all 1.0** | Not enough history yet. The blend ramps from a neutral 1.0 toward the measured ratio as quality-weighted records accumulate | Check `hour_NN_alpha` and `hour_NN_quality_records` in the *Dampening Hours with DB Data* attributes, or `alpha` on *Current Hour Dampening*. In winter, or after a database reset, this legitimately takes weeks |
+| **Shading sensor shows a real loss but the pushed factors stay near 1.0** | Before 1.10.3, two defects held the confidence weight `alpha` low: the average-quality term fell as history grew, and the seasonal window was permanently half-empty on a first-year install | Update to 1.10.3. `alpha` should rise substantially and the curve should deepen — the *measured* ratio was always right, only the amount applied was wrong. Compare `hour_NN_alpha` in the *Dampening Hours with DB Data* attributes before and after |
 | **Tuned Tilt reads *unknown*** | By design — the fit could not actually determine a tilt, and reporting one you might apply to Solcast would make your forecast worse | Read `tilt_unidentifiable_reason`, `fit_rel_error` and `unidentified_tilt` in the attributes. `railed` means the best fit sat on a search bound; `fit_too_loose` means the residual was too large relative to output |
 | **Two arrays, but the wizard never shows the sites step** | Before 1.11.1, site discovery only recognised rooftop sensors whose entity id contained `solcast`. Rooftops created on a Home Assistant core before 2026.4 are named `sensor.<site>` and keep that id forever, so every one was dropped and the property was treated as a single array ([discussion #65](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/65)) | Update — rooftops are now recognised by their integration, not their name. On an older version, renaming each rooftop's entity id to `sensor.solcast_pv_forecast_<site>` in **Settings → Devices & services → Entities** is a workaround |
 | **Per-site sensors read 0 or *unknown*** | The base integration is not exposing per-site forecast detail, and the arrays' azimuths differ by more than 10°, so we will not invent a capacity split | Confirm the base's `detailedForecast-<resource_id>` attribute exists. With divergent orientations, per-site dampening needs real per-site detail |

@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Now in the HACS default catalog.** The README's install steps no longer add a custom repository
   first. They cover HACS on Home Assistant 2026.10 and earlier, and the Marketplace that replaces it
   from 2026.11. Existing installs from the custom repository need no change.
+- **README corrected and given a table of contents.** It now says tuning fits tilt only, and how
+  many records each stage needs: 10 to run, 50 for the orientation warning, and no fixed number to
+  report a tilt. Tuned Tilt is described as reading *unknown*, not *unavailable*, and the sensor
+  that carries `sun_position_slots` is named correctly. The README also lists the orientation-warning
+  option and the third multi-site topology.
 
 ## [1.14.0b1] - 2026-10-18
 
