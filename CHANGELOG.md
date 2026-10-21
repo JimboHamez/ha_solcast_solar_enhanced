@@ -51,8 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   A sun position the history has not covered yet keeps the standard estimate. At high latitudes in
   winter the sun drops below anything recorded so far, and this keeps it at least as good as today.
-  The **Shading Dampening** sensor and each array's shading sensor gain `estimator` and
-  `sun_position_slots` attributes, and diagnostics carry `estimator`.
+  The **Dampening Hours with DB Data** sensor and each array's **Shading** sensor gain `estimator`
+  and `sun_position_slots` attributes, and diagnostics carry `estimator`.
 
   Checked with a walk-forward replay. Each day's factors were rebuilt from earlier history only and
   scored against measured output:
