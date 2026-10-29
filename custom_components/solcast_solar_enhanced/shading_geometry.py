@@ -44,7 +44,7 @@ import logging
 import math
 from datetime import UTC, datetime
 from statistics import median
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .const import (
     MAX_MPPT_TRACKERS,
@@ -60,6 +60,9 @@ from .const import (
     SHADING_UNIFORM_VOLTAGE_MIN,
 )
 from .pv_tuning import cos_incidence, extraterrestrial_normal, normalize_epoch
+
+if TYPE_CHECKING:
+    from .models import StoreRecord
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,7 +165,7 @@ def _cell_centre(cell: tuple[int, int]) -> tuple[float, float]:
 
 
 def _prepare(
-    records: list[dict[str, Any]],
+    records: list[StoreRecord],
     tilt_deg: float,
     panel_azimuth_deg: float,
     albedo: float,
@@ -203,9 +206,12 @@ def _prepare(
             "ratio": observed / expected,
             "expected": expected,
         }
+        # Spelled out per tracker so each key is a literal the row type can check.
+        medians = ((record.get("dc_vmed1"), record.get("dc_imed1")), (record.get("dc_vmed2"), record.get("dc_imed2")))
         for idx in range(1, MAX_MPPT_TRACKERS + 1):
-            entry[f"v{idx}"] = float(record.get(f"dc_vmed{idx}") or 0.0)
-            entry[f"i{idx}"] = float(record.get(f"dc_imed{idx}") or 0.0)
+            vmed, imed = medians[idx - 1] if idx <= len(medians) else (None, None)
+            entry[f"v{idx}"] = float(vmed or 0.0)
+            entry[f"i{idx}"] = float(imed or 0.0)
         prepared.append(entry)
     return prepared
 
@@ -295,7 +301,7 @@ def classify_mechanism(prepared: list[dict[str, float]]) -> dict[str, Any]:
 
 
 def analyse_shading(
-    records: list[dict[str, Any]],
+    records: list[StoreRecord],
     tilt_deg: float,
     panel_azimuth_deg: float,
     albedo: float = 0.2,

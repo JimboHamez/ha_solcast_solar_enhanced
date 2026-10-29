@@ -13,8 +13,9 @@ A new column must be added in **three** places or the schema silently drifts:
 ALTER pass), ``_ADDED_COLUMNS`` (so an existing database gains it) and
 ``_INSERT_COLUMNS`` + ``_row_values`` (so it is actually written). Appending it
 last in ``CREATE_TABLE_SQL``, in ``_ADDED_COLUMNS`` order, also keeps a fresh
-database's physical column order identical to an upgraded one's.
-``tests/test_sqlite_store.py`` pins all three against each other.
+database's physical column order identical to an upgraded one's. The row's type,
+``models.StoreRecord``, needs the key as well so mypy accepts it.
+``tests/test_sqlite_store.py`` pins all of them against each other.
 """
 
 from __future__ import annotations
@@ -23,13 +24,15 @@ import logging
 import sqlite3
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .const import DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS, SHADING_ZENITH_MAX
 from .pv_tuning import clearsky_ghi, solar_position
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
+    from .models import StoreRecord
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -266,7 +269,7 @@ class SqliteStore:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _row_values(record: dict[str, Any]) -> tuple[Any, ...]:
+    def _row_values(record: StoreRecord) -> tuple[Any, ...]:
         return (
             record["period_end"],
             record["period_end_epoch"],
@@ -298,13 +301,13 @@ class SqliteStore:
             record.get("pv_export_max", 0.0) or 0.0,
         )
 
-    async def async_insert_record(self, record: dict[str, Any]) -> bool:
+    async def async_insert_record(self, record: StoreRecord) -> bool:
         """Insert one record. Duplicate (epoch, site) is ignored. True on success."""
         if self._conn is None or self._readonly:
             return False
         return await self._hass.async_add_executor_job(self._insert_many, [record])
 
-    def _insert_many(self, records: list[dict[str, Any]]) -> bool:
+    def _insert_many(self, records: list[StoreRecord]) -> bool:
         assert self._conn is not None  # Narrowed by async_insert_record's guard.
         try:
             rows = [self._row_values(r) for r in records]
@@ -445,7 +448,7 @@ class SqliteStore:
         back_days: int = DAMPENING_WINDOW_BACK_DAYS,
         forward_days: int = DAMPENING_WINDOW_FORWARD_DAYS,
         site: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[StoreRecord]:
         """Fetch records in a seasonal day-of-year window around ``slot_doy``, across all years.
 
         The window spans ``back_days`` before the target day to ``forward_days`` after
@@ -492,7 +495,7 @@ class SqliteStore:
         kt_threshold: float | None = None,
         kt_zenith_max: float = 85.0,
         kt_ghi_cs_floor: float = 40.0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[StoreRecord]:
         """Fetch recent clear-sky records for PV tuning.
 
         Two mutually exclusive clear-sky gates, both applied **in SQL before the
@@ -546,7 +549,7 @@ class SqliteStore:
         site: str | None = None,
         limit: int = 6000,
         zenith_max: float = SHADING_ZENITH_MAX,
-    ) -> list[dict[str, Any]]:
+    ) -> list[StoreRecord]:
         """Fetch daylight records for the geometric shading advisory.
 
         This is the **only** query that returns the per-tracker median DC telemetry
@@ -603,13 +606,14 @@ class SqliteStore:
             return f"0.0 AS {name}"
         return f"COALESCE({name}, 0.0) AS {name}"
 
-    def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+    def _query(self, sql: str, params: tuple[Any, ...]) -> list[StoreRecord]:
         assert self._conn is not None  # Narrowed by each async query wrapper's guard.
         try:
             with self._lock:
                 cur = self._conn.execute(sql, params)
                 rows = cur.fetchall()
-            return [dict(r) for r in rows]
+            # Each query aliases its columns to StoreRecord's keys, so the row dicts match it.
+            return [cast("StoreRecord", dict(r)) for r in rows]
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite query failed: %s", exc)
             return []

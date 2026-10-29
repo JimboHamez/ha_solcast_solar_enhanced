@@ -10,7 +10,10 @@ this specific site, using measured ground truth the base integration never sees.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import ConfidenceResult
 
 # Confidence maps the recent bias to 0–100 via exp(−|ln(bias)| / scale). The scale
 # is chosen so output tracking the forecast within ±18% reads "high", within ±40%
@@ -26,7 +29,7 @@ RECENT_BIAS_LOOKBACK_S = 4 * 3600
 CONFIDENCE_HORIZON_HOURS = 3
 
 
-def compute_confidence(pairs: list[tuple[float, float]]) -> dict[str, Any]:
+def compute_confidence(pairs: list[tuple[float, float]]) -> ConfidenceResult:
     """Confidence that the next few hours' forecast can be trusted at this site.
 
     ``pairs`` are recent ``(pv_actual, pv_estimate)`` half-hour slots (daylight, with

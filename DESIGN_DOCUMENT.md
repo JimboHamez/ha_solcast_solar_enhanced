@@ -46,6 +46,7 @@ solcast_solar_enhanced/
 ├── shading_dampening.py     Quality-weighted dampening calculation
 ├── solcast_api.py           OWM client only (no Solcast API calls)
 ├── load_advisory.py         Short-horizon forecast-confidence (item 3 load aid)
+├── models.py                TypedDict shapes for records, results and site config
 ├── sensor.py                16 property-wide sensors + one per configured array
 ├── services.yaml            Service definitions
 └── translations/            UI strings (11 languages)
@@ -99,7 +100,7 @@ Persists historical PV data alongside solar position, weather and battery state 
 
 `SqliteStore` runs every call via `async_add_executor_job` under a serialising lock, in WAL mode (`synchronous=NORMAL`). The core schema is created complete on first run (so the `site` and `battery_charge` columns are always present); writes use `INSERT OR IGNORE` on `(period_end_epoch, site)`. Schema evolution is additive only: the per-MPPT `dc_*` columns (v1.6.8), the `ghi`/`dni`/`dhi` irradiance columns, the `dc_vmed*`/`dc_imed*` operating-point medians and `pv_estimate_undampened` are `ALTER TABLE`d into older DBs (`_ensure_columns`), backfilled to `0`.
 
-A new column must be declared in **three** places — `CREATE_TABLE_SQL`, `_ADDED_COLUMNS` and `_INSERT_COLUMNS`/`_row_values` — and appended *last* in `CREATE_TABLE_SQL` so a fresh database's physical column order matches an upgraded one's. Missing the `CREATE` half is silent, because `_ensure_columns` runs immediately after `CREATE TABLE` on a new database and quietly repairs it; `tests/test_sqlite_store.py` pins the three lists against each other so the drift fails the build instead.
+A new column must be declared in **three** places — `CREATE_TABLE_SQL`, `_ADDED_COLUMNS` and `_INSERT_COLUMNS`/`_row_values` — plus its key on `models.StoreRecord`, and appended *last* in `CREATE_TABLE_SQL` so a fresh database's physical column order matches an upgraded one's. Missing the `CREATE` half is silent, because `_ensure_columns` runs immediately after `CREATE TABLE` on a new database and quietly repairs it; `tests/test_sqlite_store.py` pins the three lists against each other so the drift fails the build instead (the same file pins `StoreRecord` to `_INSERT_COLUMNS`).
 
 One-time **data repairs** (not schema changes) are gated by `PRAGMA user_version`, so they run silently once and no-op thereafter. v1 recomputes the solar `azimuth` column for rows written before the hour-angle wrap fix — reconstructable in place from each row's `period_end_epoch` + site lat/lon, rewriting only rows whose value actually moved (to spare SD-card wear).
 
