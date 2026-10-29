@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-10-29
+
+> Stable. Promotes `1.14.0b2` unchanged: the code is the beta with the version string bumped. Your
+> Solcast PV Forecast hourly dampening values are no longer reset, and an **opt-in** sun-position
+> dampening mode is added for arrays behind a hard horizon. It is **off by default**.
+
+Everything below shipped in `1.14.0b1` and `1.14.0b2`; those entries are kept intact underneath and
+have the full detail. This entry is the summary for anyone upgrading from **1.13.1**.
+
+- **Hourly dampening you set by hand is kept** (b2). From 1.13.0, the first cycle reset Solcast PV
+  Forecast's hourly values (`damp00…23`) to 1.0 whenever its granular dampening file was still
+  empty, overwriting values tuned by hand without saying so. The reset is removed. Values already
+  reset by 1.13.0 to 1.14.0b1 cannot be recovered by this release.
+- **Sun-position dampening, opt-in** (b1, [#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+  *PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)* builds each half-hour's
+  factor from records taken with the sun within a few degrees of the same place, in all weather,
+  without the confidence hold-back. A sun position the history has not covered yet keeps the
+  standard estimate. In a walk-forward replay it cut daily-total error by 36.5% on a hard-horizon
+  array and 9% on soft morning shading, and was about 2% worse on an unshaded array. Turn it on only
+  if an array has a sharp obstruction such as a building, a roofline or a tree line. The option keeps
+  "beta" in its name while results from real installs come in.
+- **Auto dampening says what it takes over** (b2). Its description now explains that it turns on
+  Solcast PV Forecast's granular dampening and replaces each site's factors. Translated into all 11
+  languages.
+- **Now in the HACS default catalog** (b2). The install steps cover HACS on Home Assistant 2026.10
+  and earlier, and the Marketplace that replaces it from 2026.11. Existing installs from the custom
+  repository need no change.
+- **README corrected, with a table of contents and an Installs badge** (b2 and after).
+
 ## [1.14.0b2] - 2026-10-21
 
 > Beta, following the integration's acceptance into the HACS default catalog. Solcast PV Forecast's
@@ -1788,6 +1817,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.14.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b2...v1.14.0
 [1.14.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...v1.14.0b2
 [1.14.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.1...v1.14.0b1
 [1.13.1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.0...v1.13.1
