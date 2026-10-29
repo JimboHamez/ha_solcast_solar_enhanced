@@ -233,7 +233,7 @@ async def test_read_battery_prefers_stat_sensor(hass, coordinator):
     """Stat sensor takes priority over raw fallback."""
     hass.states.async_set("sensor.battery_stat", "2.0")
     opts = {CONF_BATTERY_STAT_SENSOR: "sensor.battery_stat"}
-    assert coordinator._read_battery(opts) == pytest.approx(2.0)
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(2.0)
 
 
 async def test_read_battery_falls_back_to_net(hass, coordinator):
@@ -245,7 +245,7 @@ async def test_read_battery_falls_back_to_net(hass, coordinator):
         CONF_BATTERY_MODE: "net",
         CONF_BATTERY_NET_SENSOR: "sensor.battery_net",
     }
-    assert coordinator._read_battery(opts) == pytest.approx(1.5)
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(1.5)
 
 
 async def test_read_battery_negative_net_clamped(hass, coordinator):
@@ -257,13 +257,13 @@ async def test_read_battery_negative_net_clamped(hass, coordinator):
         CONF_BATTERY_MODE: "net",
         CONF_BATTERY_NET_SENSOR: "sensor.battery_net",
     }
-    assert coordinator._read_battery(opts) == 0.0
+    assert coordinator._read_battery(opts, 1_700_000_000) == 0.0
 
 
 async def test_read_battery_disabled(hass, coordinator):
     """Returns 0 when battery fallback is disabled and no stat sensor."""
     opts = {CONF_BATTERY_STAT_SENSOR: "", CONF_BATTERY_ENABLED: False}
-    assert coordinator._read_battery(opts) == 0.0
+    assert coordinator._read_battery(opts, 1_700_000_000) == 0.0
 
 
 # ---------------------------------------------------------------------------

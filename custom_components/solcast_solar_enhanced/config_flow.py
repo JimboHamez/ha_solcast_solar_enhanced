@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -29,6 +30,8 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    BATTERY_MODE_NET,
+    BATTERY_MODES,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
     CONF_AZIMUTH,
@@ -36,6 +39,7 @@ from .const import (
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
+    CONF_BATTERY_REVERSE_SIGN,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
     CONF_CLIPPING_THRESHOLD,
@@ -134,19 +138,32 @@ def _build_database_schema(current: dict[str, Any]) -> vol.Schema:
 
 
 def _build_battery_schema(current: dict[str, Any]) -> vol.Schema:
-    """Build the Battery Storage schema, defaulted from ``current``."""
+    """Build the Battery Storage schema, defaulted from ``current``.
+
+    The one place battery input is configured. The averaged charging-power sensor
+    used to sit on Step 1 as well, two places for one optional value (discussion
+    #104). Its key is unchanged, so existing entries keep their sensor.
+    """
     return vol.Schema(
         {
+            vol.Optional(
+                CONF_BATTERY_STAT_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_STAT_SENSOR)}
+            ): _sensor_selector(SensorDeviceClass.POWER),
+            vol.Required(
+                CONF_BATTERY_REVERSE_SIGN, default=current.get(CONF_BATTERY_REVERSE_SIGN, False)
+            ): BooleanSelector(),
             vol.Required(CONF_BATTERY_ENABLED, default=current.get(CONF_BATTERY_ENABLED, False)): BooleanSelector(),
-            vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, "net")): SelectSelector(
-                SelectSelectorConfig(options=["net", "separate"], mode=SelectSelectorMode.DROPDOWN)
+            vol.Optional(CONF_BATTERY_MODE, default=current.get(CONF_BATTERY_MODE, BATTERY_MODE_NET)): SelectSelector(
+                SelectSelectorConfig(
+                    options=BATTERY_MODES, mode=SelectSelectorMode.DROPDOWN, translation_key="battery_mode"
+                )
             ),
             vol.Optional(
                 CONF_BATTERY_NET_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_NET_SENSOR)}
-            ): _entity_selector(),
+            ): _sensor_selector(SensorDeviceClass.POWER),
             vol.Optional(
                 CONF_BATTERY_CHARGE_SENSOR, description={"suggested_value": current.get(CONF_BATTERY_CHARGE_SENSOR)}
-            ): _entity_selector(),
+            ): _sensor_selector(SensorDeviceClass.POWER, SensorDeviceClass.ENERGY),
         }
     )
 
@@ -222,6 +239,14 @@ def _entity_selector(domain: str = "sensor", *, multiple: bool = False) -> Entit
     ``multiple`` renders a multi-entity picker, whose value is a list.
     """
     return EntitySelector(EntitySelectorConfig(domain=domain, multiple=multiple))
+
+
+def _sensor_selector(*device_classes: SensorDeviceClass) -> EntitySelector:
+    """Sensor picker limited to ``device_classes``, so it does not list the whole house.
+
+    A sensor without a device class (a template that never set one) is hidden too.
+    """
+    return EntitySelector(EntitySelectorConfig(filter={"domain": "sensor", "device_class": list(device_classes)}))
 
 
 def _dc_list(value: Any) -> list[str]:
@@ -311,9 +336,6 @@ def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
         vol.Required(
             CONF_PV_EXPORT_INPUT_MODE, default=d.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)
         ): _input_mode_selector(),
-        vol.Optional(
-            CONF_BATTERY_STAT_SENSOR, description={"suggested_value": d.get(CONF_BATTERY_STAT_SENSOR)}
-        ): _entity_selector(),
     }
     if single_site:
         for key in _FLAT_MPPT_KEYS:

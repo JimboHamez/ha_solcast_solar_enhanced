@@ -11,7 +11,6 @@
           "azimuth": "Azimut des panneaux (°)",
           "pv_actual_sensor": "Capteur de puissance / production PV",
           "pv_export_sensor": "Capteur d'injection PV",
-          "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
           "pv_actual_input_mode": "Type de capteur PV",
           "pv_export_input_mode": "Type de capteur d'injection PV",
           "mppt1_voltage_sensor": "Capteur de tension CC du MPPT 1 (facultatif, pour la détection d'écrêtage)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Stockage par batterie",
+        "description": "Facultatif : laissez tout vide si vous n'avez pas de batterie. La charge de la batterie est seulement enregistrée et affichée sur le capteur « Charge batterie moyenne sur 30 min » ; elle n'influence ni l'ajustement ni l'atténuation.",
         "data": {
-          "battery_enabled": "Activer le repli batterie brut",
-          "battery_mode": "Mode",
-          "battery_net_sensor": "Capteur de puissance nette de batterie (signée)",
-          "battery_charge_sensor": "Capteur de puissance de charge de batterie"
+          "battery_stat_sensor": "Capteur de puissance de charge de la batterie (facultatif)",
+          "battery_reverse_sign": "Le capteur indique la charge en négatif",
+          "battery_enabled": "Utiliser un capteur de batterie brut en secours",
+          "battery_mode": "Type de capteur brut",
+          "battery_net_sensor": "Capteur de puissance nette de la batterie (signé)",
+          "battery_charge_sensor": "Capteur de charge seule de la batterie"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Puissance moyenne de la batterie sur les 30 dernières minutes, idéalement un assistant de statistiques mean_linear. Positive en charge, négative en décharge (cochez l'option ci-dessous si c'est l'inverse chez vous). W ou kW, converti automatiquement. Seuls les capteurs de puissance sont proposés.",
+          "battery_reverse_sign": "Cochez si vos capteurs de batterie sont négatifs en charge. S'applique aux capteurs moyenné et net.",
+          "battery_enabled": "Lire plutôt un capteur brut lorsque le capteur moyenné n'est pas défini ou indique zéro.",
+          "battery_mode": "Net : un seul capteur de puissance signé (positif = charge). Charge seule : un capteur jamais négatif, puissance de charge ou compteur cumulé d'énergie de charge.",
+          "battery_net_sensor": "Puissance de la batterie signée, en W ou kW. La décharge est ignorée.",
+          "battery_charge_sensor": "Puissance de charge (W/kW) ou compteur cumulé d'énergie de charge (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Azimut des panneaux (°)",
           "pv_actual_sensor": "Capteur de puissance / production PV",
           "pv_export_sensor": "Capteur d'injection PV",
-          "battery_stat_sensor": "Capteur de moyenne 30 min de charge batterie (facultatif)",
           "pv_actual_input_mode": "Type de capteur PV",
           "pv_export_input_mode": "Type de capteur d'injection PV",
           "mppt1_voltage_sensor": "Capteur de tension CC du MPPT 1 (facultatif, pour la détection d'écrêtage)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Stockage par batterie",
+        "description": "Facultatif : laissez tout vide si vous n'avez pas de batterie. La charge de la batterie est seulement enregistrée et affichée sur le capteur « Charge batterie moyenne sur 30 min » ; elle n'influence ni l'ajustement ni l'atténuation.",
         "data": {
-          "battery_enabled": "Activer le repli batterie brut",
-          "battery_mode": "Mode",
-          "battery_net_sensor": "Capteur de puissance nette de batterie (signée)",
-          "battery_charge_sensor": "Capteur de puissance de charge de batterie"
+          "battery_stat_sensor": "Capteur de puissance de charge de la batterie (facultatif)",
+          "battery_reverse_sign": "Le capteur indique la charge en négatif",
+          "battery_enabled": "Utiliser un capteur de batterie brut en secours",
+          "battery_mode": "Type de capteur brut",
+          "battery_net_sensor": "Capteur de puissance nette de la batterie (signé)",
+          "battery_charge_sensor": "Capteur de charge seule de la batterie"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Puissance moyenne de la batterie sur les 30 dernières minutes, idéalement un assistant de statistiques mean_linear. Positive en charge, négative en décharge (cochez l'option ci-dessous si c'est l'inverse chez vous). W ou kW, converti automatiquement. Seuls les capteurs de puissance sont proposés.",
+          "battery_reverse_sign": "Cochez si vos capteurs de batterie sont négatifs en charge. S'applique aux capteurs moyenné et net.",
+          "battery_enabled": "Lire plutôt un capteur brut lorsque le capteur moyenné n'est pas défini ou indique zéro.",
+          "battery_mode": "Net : un seul capteur de puissance signé (positif = charge). Charge seule : un capteur jamais négatif, puissance de charge ou compteur cumulé d'énergie de charge.",
+          "battery_net_sensor": "Puissance de la batterie signée, en W ou kW. La décharge est ignorée.",
+          "battery_charge_sensor": "Puissance de charge (W/kW) ou compteur cumulé d'énergie de charge (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Chaque champ a son propre capteur de production (micro-onduleurs / un onduleur par champ)",
         "dc_split": "Un onduleur partagé, réparti entre les champs selon le CC (un onduleur, plusieurs MPPT)",
         "shared_no_dc": "Un seul compteur combiné, aucune donnée par champ (p. ex. Tesla Powerwall 3) — suivre l'installation comme un système unique"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Puissance nette (signée)",
+        "separate": "Capteur de charge seule"
       }
     }
   },

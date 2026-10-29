@@ -11,7 +11,6 @@
           "azimuth": "Azimut panelov (°)",
           "pv_actual_sensor": "Senzor výkonu / výroby FV",
           "pv_export_sensor": "Senzor dodávky FV do siete",
-          "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
           "pv_actual_input_mode": "Typ senzora FV",
           "pv_export_input_mode": "Typ senzora dodávky FV",
           "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Batériové úložisko",
+        "description": "Voliteľné — ak nemáte batériu, nechajte všetko prázdne. Nabíjanie batérie sa zatiaľ iba ukladá a zobrazuje v senzore „Nabíjanie batérie priemer za 30 min“; neovplyvňuje ladenie ani tlmenie.",
         "data": {
-          "battery_enabled": "Povoliť surový záložný režim batérie",
-          "battery_mode": "Režim",
+          "battery_stat_sensor": "Senzor nabíjacieho výkonu batérie (voliteľné)",
+          "battery_reverse_sign": "Senzor hlási nabíjanie ako zápornú hodnotu",
+          "battery_enabled": "Použiť surový senzor batérie ako záložný",
+          "battery_mode": "Typ surového senzora",
           "battery_net_sensor": "Senzor čistého výkonu batérie (so znamienkom)",
-          "battery_charge_sensor": "Senzor nabíjacieho výkonu batérie"
+          "battery_charge_sensor": "Senzor iba nabíjania batérie"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Priemerný výkon batérie za posledných 30 minút, ideálne štatistický pomocník mean_linear. Kladný pri nabíjaní, záporný pri vybíjaní (ak je to u vás naopak, zaškrtnite možnosť nižšie). W alebo kW, prepočíta sa automaticky. Zobrazujú sa iba senzory výkonu.",
+          "battery_reverse_sign": "Zaškrtnite, ak sú vaše senzory batérie pri nabíjaní záporné. Platí pre priemerovaný aj čistý senzor.",
+          "battery_enabled": "Čítať namiesto toho surový senzor, keď priemerovaný senzor nie je nastavený alebo ukazuje nulu.",
+          "battery_mode": "Čistý: jeden senzor výkonu so znamienkom (kladný = nabíjanie). Iba nabíjanie: senzor, ktorý nikdy nie je záporný — nabíjací výkon alebo kumulatívne počítadlo nabíjacej energie.",
+          "battery_net_sensor": "Výkon batérie so znamienkom, W alebo kW. Vybíjanie sa ignoruje.",
+          "battery_charge_sensor": "Nabíjací výkon (W/kW) alebo kumulatívne počítadlo nabíjacej energie (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Azimut panelov (°)",
           "pv_actual_sensor": "Senzor výkonu / výroby FV",
           "pv_export_sensor": "Senzor dodávky FV do siete",
-          "battery_stat_sensor": "Senzor 30-min priemeru nabíjania batérie (voliteľné)",
           "pv_actual_input_mode": "Typ senzora FV",
           "pv_export_input_mode": "Typ senzora dodávky FV",
           "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Batériové úložisko",
+        "description": "Voliteľné — ak nemáte batériu, nechajte všetko prázdne. Nabíjanie batérie sa zatiaľ iba ukladá a zobrazuje v senzore „Nabíjanie batérie priemer za 30 min“; neovplyvňuje ladenie ani tlmenie.",
         "data": {
-          "battery_enabled": "Povoliť surový záložný režim batérie",
-          "battery_mode": "Režim",
+          "battery_stat_sensor": "Senzor nabíjacieho výkonu batérie (voliteľné)",
+          "battery_reverse_sign": "Senzor hlási nabíjanie ako zápornú hodnotu",
+          "battery_enabled": "Použiť surový senzor batérie ako záložný",
+          "battery_mode": "Typ surového senzora",
           "battery_net_sensor": "Senzor čistého výkonu batérie (so znamienkom)",
-          "battery_charge_sensor": "Senzor nabíjacieho výkonu batérie"
+          "battery_charge_sensor": "Senzor iba nabíjania batérie"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Priemerný výkon batérie za posledných 30 minút, ideálne štatistický pomocník mean_linear. Kladný pri nabíjaní, záporný pri vybíjaní (ak je to u vás naopak, zaškrtnite možnosť nižšie). W alebo kW, prepočíta sa automaticky. Zobrazujú sa iba senzory výkonu.",
+          "battery_reverse_sign": "Zaškrtnite, ak sú vaše senzory batérie pri nabíjaní záporné. Platí pre priemerovaný aj čistý senzor.",
+          "battery_enabled": "Čítať namiesto toho surový senzor, keď priemerovaný senzor nie je nastavený alebo ukazuje nulu.",
+          "battery_mode": "Čistý: jeden senzor výkonu so znamienkom (kladný = nabíjanie). Iba nabíjanie: senzor, ktorý nikdy nie je záporný — nabíjací výkon alebo kumulatívne počítadlo nabíjacej energie.",
+          "battery_net_sensor": "Výkon batérie so znamienkom, W alebo kW. Vybíjanie sa ignoruje.",
+          "battery_charge_sensor": "Nabíjací výkon (W/kW) alebo kumulatívne počítadlo nabíjacej energie (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Každé pole má vlastný snímač výroby (mikromeniče / jeden menič na pole)",
         "dc_split": "Jeden zdieľaný menič, rozdelený medzi polia podľa DC (jeden menič, viac MPPT)",
         "shared_no_dc": "Jeden kombinovaný merač, žiadne údaje pre jednotlivé polia (napr. Tesla Powerwall 3) – sledovať inštaláciu ako jeden systém"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Čistý výkon (so znamienkom)",
+        "separate": "Senzor iba nabíjania"
       }
     }
   },

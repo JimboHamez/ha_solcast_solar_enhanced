@@ -11,7 +11,6 @@
           "azimuth": "パネル方位角 (°)",
           "pv_actual_sensor": "PV 電力／発電センサー",
           "pv_export_sensor": "PV 売電センサー",
-          "battery_stat_sensor": "バッテリー充電 30 分平均センサー（任意）",
           "pv_actual_input_mode": "PV センサーの種類",
           "pv_export_input_mode": "PV 売電センサーの種類",
           "mppt1_voltage_sensor": "MPPT 1 DC電圧センサー（任意、出力抑制の検出用）",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "バッテリー蓄電",
+        "description": "任意 — バッテリーがない場合はすべて空欄のままにしてください。バッテリー充電は現在、保存されて「バッテリー充電 30分平均」センサーに表示されるだけで、チューニングやダンピングには影響しません。",
         "data": {
-          "battery_enabled": "生のバッテリーフォールバックを有効化",
-          "battery_mode": "モード",
+          "battery_stat_sensor": "バッテリー充電電力センサー（任意）",
+          "battery_reverse_sign": "センサーが充電を負の値で報告する",
+          "battery_enabled": "生のバッテリーセンサーを代替として使用",
+          "battery_mode": "生センサーの種類",
           "battery_net_sensor": "正味バッテリー電力センサー（符号付き）",
-          "battery_charge_sensor": "バッテリー充電電力センサー"
+          "battery_charge_sensor": "充電専用バッテリーセンサー"
+        },
+        "data_description": {
+          "battery_stat_sensor": "直近 30 分間の平均バッテリー電力。mean_linear 統計ヘルパーが理想的です。充電中は正、放電中は負（逆の場合は下のオプションをオンにしてください）。W または kW で、自動的に換算されます。電力センサーのみが表示されます。",
+          "battery_reverse_sign": "バッテリーセンサーが充電中に負になる場合はオンにします。平均センサーと正味センサーに適用されます。",
+          "battery_enabled": "平均センサーが未設定またはゼロの場合に、代わりに生センサーを読み取ります。",
+          "battery_mode": "正味: 符号付きの電力センサー 1 つ（正 = 充電）。充電専用: 負にならないセンサー（充電電力、または累積充電エネルギーカウンター）。",
+          "battery_net_sensor": "符号付きのバッテリー電力（W または kW）。放電は無視されます。",
+          "battery_charge_sensor": "充電電力 (W/kW) または累積充電エネルギーカウンター (Wh/kWh)。"
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "パネル方位角 (°)",
           "pv_actual_sensor": "PV 電力／発電センサー",
           "pv_export_sensor": "PV 売電センサー",
-          "battery_stat_sensor": "バッテリー充電 30 分平均センサー（任意）",
           "pv_actual_input_mode": "PV センサーの種類",
           "pv_export_input_mode": "PV 売電センサーの種類",
           "mppt1_voltage_sensor": "MPPT 1 DC電圧センサー（任意、出力抑制の検出用）",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "バッテリー蓄電",
+        "description": "任意 — バッテリーがない場合はすべて空欄のままにしてください。バッテリー充電は現在、保存されて「バッテリー充電 30分平均」センサーに表示されるだけで、チューニングやダンピングには影響しません。",
         "data": {
-          "battery_enabled": "生のバッテリーフォールバックを有効化",
-          "battery_mode": "モード",
+          "battery_stat_sensor": "バッテリー充電電力センサー（任意）",
+          "battery_reverse_sign": "センサーが充電を負の値で報告する",
+          "battery_enabled": "生のバッテリーセンサーを代替として使用",
+          "battery_mode": "生センサーの種類",
           "battery_net_sensor": "正味バッテリー電力センサー（符号付き）",
-          "battery_charge_sensor": "バッテリー充電電力センサー"
+          "battery_charge_sensor": "充電専用バッテリーセンサー"
+        },
+        "data_description": {
+          "battery_stat_sensor": "直近 30 分間の平均バッテリー電力。mean_linear 統計ヘルパーが理想的です。充電中は正、放電中は負（逆の場合は下のオプションをオンにしてください）。W または kW で、自動的に換算されます。電力センサーのみが表示されます。",
+          "battery_reverse_sign": "バッテリーセンサーが充電中に負になる場合はオンにします。平均センサーと正味センサーに適用されます。",
+          "battery_enabled": "平均センサーが未設定またはゼロの場合に、代わりに生センサーを読み取ります。",
+          "battery_mode": "正味: 符号付きの電力センサー 1 つ（正 = 充電）。充電専用: 負にならないセンサー（充電電力、または累積充電エネルギーカウンター）。",
+          "battery_net_sensor": "符号付きのバッテリー電力（W または kW）。放電は無視されます。",
+          "battery_charge_sensor": "充電電力 (W/kW) または累積充電エネルギーカウンター (Wh/kWh)。"
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "各アレイに独自の発電センサーがある（マイクロインバーター／アレイごとに1台のインバーター）",
         "dc_split": "1台のインバーターを共有し、DCでアレイに分配（1台のインバーター、複数のMPPT）",
         "shared_no_dc": "統合メーター1台のみ、アレイごとのデータなし（例：Tesla Powerwall 3）— 設備全体を単一システムとして扱う"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "正味電力（符号付き）",
+        "separate": "充電専用センサー"
       }
     }
   },

@@ -11,7 +11,6 @@
           "azimuth": "Panel azimuth (°)",
           "pv_actual_sensor": "PV Power / Generation sensor",
           "pv_export_sensor": "PV Export sensor",
-          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
           "mppt1_voltage_sensor": "MPPT 1 DC voltage sensor (optional, for curtailment detection)",
           "mppt1_current_sensor": "MPPT 1 DC current sensor (optional)",
           "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
@@ -53,11 +52,22 @@
       },
       "battery": {
         "title": "Battery Storage",
+        "description": "Optional — leave everything blank if you have no battery. Battery charging is currently only stored and shown on the Battery Charge 30min Average sensor; it does not affect tuning or dampening.",
         "data": {
-          "battery_enabled": "Enable raw battery fallback",
-          "battery_mode": "Mode",
+          "battery_stat_sensor": "Battery charging power sensor (optional)",
+          "battery_reverse_sign": "Sensor reports charging as negative",
+          "battery_enabled": "Use a raw battery sensor as a fallback",
+          "battery_mode": "Raw sensor type",
           "battery_net_sensor": "Net battery power sensor (signed)",
-          "battery_charge_sensor": "Battery charge power sensor"
+          "battery_charge_sensor": "Battery charge-only sensor"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Average battery power over the last 30 minutes, ideally a mean_linear statistics helper. Positive while charging, negative while discharging (tick the option below if yours is the other way round). W or kW, converted automatically. Only power sensors are listed.",
+          "battery_reverse_sign": "Tick if your battery sensors are negative while charging. Applies to the averaged and net sensors.",
+          "battery_enabled": "Read a raw sensor instead when the averaged sensor is not set or reads zero.",
+          "battery_mode": "Net: one signed power sensor (positive = charging). Charge-only: a sensor that is never negative — charging power, or a cumulative charge energy counter.",
+          "battery_net_sensor": "Signed battery power, W or kW. Discharging is ignored.",
+          "battery_charge_sensor": "Charging power (W/kW) or a cumulative charge energy counter (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Panel azimuth (°)",
           "pv_actual_sensor": "PV Power / Generation sensor",
           "pv_export_sensor": "PV Export sensor",
-          "battery_stat_sensor": "Battery Charge 30min Average sensor (optional)",
           "mppt1_voltage_sensor": "MPPT 1 DC voltage sensor (optional, for curtailment detection)",
           "mppt1_current_sensor": "MPPT 1 DC current sensor (optional)",
           "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
@@ -152,11 +161,22 @@
       },
       "battery": {
         "title": "Battery Storage",
+        "description": "Optional — leave everything blank if you have no battery. Battery charging is currently only stored and shown on the Battery Charge 30min Average sensor; it does not affect tuning or dampening.",
         "data": {
-          "battery_enabled": "Enable raw battery fallback",
-          "battery_mode": "Mode",
+          "battery_stat_sensor": "Battery charging power sensor (optional)",
+          "battery_reverse_sign": "Sensor reports charging as negative",
+          "battery_enabled": "Use a raw battery sensor as a fallback",
+          "battery_mode": "Raw sensor type",
           "battery_net_sensor": "Net battery power sensor (signed)",
-          "battery_charge_sensor": "Battery charge power sensor"
+          "battery_charge_sensor": "Battery charge-only sensor"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Average battery power over the last 30 minutes, ideally a mean_linear statistics helper. Positive while charging, negative while discharging (tick the option below if yours is the other way round). W or kW, converted automatically. Only power sensors are listed.",
+          "battery_reverse_sign": "Tick if your battery sensors are negative while charging. Applies to the averaged and net sensors.",
+          "battery_enabled": "Read a raw sensor instead when the averaged sensor is not set or reads zero.",
+          "battery_mode": "Net: one signed power sensor (positive = charging). Charge-only: a sensor that is never negative — charging power, or a cumulative charge energy counter.",
+          "battery_net_sensor": "Signed battery power, W or kW. Discharging is ignored.",
+          "battery_charge_sensor": "Charging power (W/kW) or a cumulative charge energy counter (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Each array has its own generation sensor (microinverters / one inverter per array)",
         "dc_split": "One shared inverter, split across arrays by DC (single inverter, multiple MPPTs)",
         "shared_no_dc": "One combined meter, no per-array data (e.g. Tesla Powerwall 3) — track the property as a single system"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Net power (signed)",
+        "separate": "Charge-only sensor"
       }
     }
   },

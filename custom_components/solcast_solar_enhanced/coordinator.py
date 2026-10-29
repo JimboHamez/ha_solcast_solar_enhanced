@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
@@ -23,6 +24,7 @@ from .const import (
     APPORTION_AZIMUTH_TOL,
     BASE_DOMAIN,
     BASE_GRANULAR_ALL_KEY,
+    BATTERY_MODE_NET,
     CAPACITY_DC_SUSPECT_RATIO,
     CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
@@ -32,6 +34,7 @@ from .const import (
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
+    CONF_BATTERY_REVERSE_SIGN,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
     CONF_CLIPPING_THRESHOLD,
@@ -528,9 +531,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             pv_actual, summed_start = self._sum_site_actuals(site_actuals)
             if summed_start:
                 pv_actual_start = summed_start
+        # Before the save: a charge-energy counter sets its baseline here too.
+        battery_charge = self._read_battery(opts, now_epoch)
         if self._baselines_dirty:
             await self._save_baselines()
-        battery_charge = self._read_battery(opts)
 
         await self._fetch_weather_sources(period_epoch)
 
@@ -2585,21 +2589,54 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Failed to persist energy baselines: %s", exc)
 
-    def _read_battery(self, opts: dict[str, Any]) -> float:
-        # Prefer Statistics sensor
-        stat = self._safe_read_sensor(opts.get(CONF_BATTERY_STAT_SENSOR, ""))
+    def _read_signed_power_kw(self, entity_id: str) -> float:
+        """Read a power sensor as signed kW, converted from W when its unit says so.
+
+        Unlike ``_safe_read_sensor`` this keeps the sign. A net battery sensor goes
+        negative while discharging, and clamping before the sign convention is
+        applied turned a reversed sensor's discharge into "charge" (discussion
+        #104). A sensor with an energy unit is not a power reading and reads 0,
+        rather than a cumulative kWh total being taken for kW.
+        """
+        if not entity_id:
+            return 0.0
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN, ""):
+            return 0.0
+        try:
+            raw = float(state.state)
+        except (ValueError, TypeError):
+            return 0.0
+        mode = self._resolve_input_mode(state, DEFAULT_PV_INPUT_MODE)
+        if not mode.startswith("power"):
+            _LOGGER.debug("Battery sensor %s has an energy unit where power was expected; ignored", entity_id)
+            return 0.0
+        return self._to_kw(raw, mode)
+
+    def _read_battery(self, opts: dict[str, Any], now_epoch: int) -> float:
+        """Average battery charging power in kW, or 0 while idle, discharging or unmapped.
+
+        The averaged sensor takes precedence. The raw fallback is used only when it
+        reads 0 or less. ``CONF_BATTERY_REVERSE_SIGN`` flips the signed sensors
+        before the clamp, so discharge never counts as charge. A charge-only sensor
+        cannot go negative, so the flip does not apply to it; it may be power or a
+        cumulative charge-energy counter, read like the PV inputs.
+
+        Display-only today: stored on the ``_total`` row and shown on the Battery
+        Charge sensor, but used by neither tuning nor dampening.
+        """
+        sign = -1.0 if opts.get(CONF_BATTERY_REVERSE_SIGN) else 1.0
+        stat = sign * self._read_signed_power_kw(opts.get(CONF_BATTERY_STAT_SENSOR) or "")
         if stat > 0:
             return stat
-
-        # Raw battery fallback
-        if opts.get(CONF_BATTERY_ENABLED):
-            mode = opts.get(CONF_BATTERY_MODE, "net")
-            if mode == "net":
-                raw = self._safe_read_sensor(opts.get(CONF_BATTERY_NET_SENSOR, ""))
-                return max(0.0, raw)
-            raw = self._safe_read_sensor(opts.get(CONF_BATTERY_CHARGE_SENSOR, ""))
-            return max(0.0, raw)
-        return 0.0
+        if not opts.get(CONF_BATTERY_ENABLED):
+            return 0.0
+        if opts.get(CONF_BATTERY_MODE, BATTERY_MODE_NET) == BATTERY_MODE_NET:
+            return max(0.0, sign * self._read_signed_power_kw(opts.get(CONF_BATTERY_NET_SENSOR) or ""))
+        charge_kw, _ = self._read_pv_value(
+            opts.get(CONF_BATTERY_CHARGE_SENSOR) or "", DEFAULT_PV_INPUT_MODE, "battery:charge", now_epoch
+        )
+        return charge_kw
 
     def _read_forecast_from_base(self, base_coord: Any) -> tuple[float, float, float, float, float]:
         """Return (forecast_now_kw, forecast_today_kwh, pv_estimate, pv_est10, pv_est90)."""
