@@ -26,6 +26,7 @@ from custom_components.solcast_solar_enhanced.const import (
     CONF_BATTERY_ENABLED,
     CONF_BATTERY_MODE,
     CONF_BATTERY_NET_SENSOR,
+    CONF_BATTERY_REVERSE_SIGN,
     CONF_BATTERY_STAT_SENSOR,
     CONF_CAPACITY_KW,
     CONF_DAMPENING_GATE,
@@ -231,7 +232,7 @@ async def test_read_base_export_limit_unset(hass, coordinator):
 async def test_read_battery_stat_precedence(hass, coordinator):
     hass.states.async_set("sensor.batt_stat", "1.2")
     opts = {CONF_BATTERY_STAT_SENSOR: "sensor.batt_stat"}
-    assert coordinator._read_battery(opts) == pytest.approx(1.2)
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(1.2)
 
 
 async def test_read_battery_net_fallback(hass, coordinator):
@@ -242,7 +243,7 @@ async def test_read_battery_net_fallback(hass, coordinator):
         CONF_BATTERY_MODE: "net",
         CONF_BATTERY_NET_SENSOR: "sensor.batt_net",
     }
-    assert coordinator._read_battery(opts) == pytest.approx(0.8)
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(0.8)
 
 
 async def test_read_battery_separate_charge_mode(hass, coordinator):
@@ -253,11 +254,84 @@ async def test_read_battery_separate_charge_mode(hass, coordinator):
         CONF_BATTERY_MODE: "separate",
         CONF_BATTERY_CHARGE_SENSOR: "sensor.batt_charge",
     }
-    assert coordinator._read_battery(opts) == pytest.approx(0.5)
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(0.5)
 
 
 async def test_read_battery_disabled_zero(hass, coordinator):
-    assert coordinator._read_battery({CONF_BATTERY_STAT_SENSOR: ""}) == 0.0
+    assert coordinator._read_battery({CONF_BATTERY_STAT_SENSOR: ""}, 1_700_000_000) == 0.0
+
+
+async def test_read_battery_converts_a_watt_sensor_to_kw(hass, coordinator):
+    """A W sensor is read in kW, not stored 1000x too large (discussion #104)."""
+    hass.states.async_set("sensor.batt_stat", "1500", {"unit_of_measurement": "W"})
+    opts = {CONF_BATTERY_STAT_SENSOR: "sensor.batt_stat"}
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(1.5)
+
+
+async def test_read_battery_reverse_sign_reads_negative_as_charging(hass, coordinator):
+    """With the sign reversed, a sensor that is negative while charging reads as charge."""
+    hass.states.async_set("sensor.batt_stat", "-1200", {"unit_of_measurement": "W"})
+    opts = {CONF_BATTERY_STAT_SENSOR: "sensor.batt_stat", CONF_BATTERY_REVERSE_SIGN: True}
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(1.2)
+
+
+async def test_read_battery_reverse_sign_never_books_discharge_as_charge(hass, coordinator):
+    """The old clamp ran before the sign was known, so a reversed sensor's discharge read as charge.
+
+    Here the sensor is positive while *discharging*. With the flip applied before
+    the clamp, both the averaged and the net path read 0.
+    """
+    hass.states.async_set("sensor.batt_stat", "900", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.batt_net", "0.9", {"unit_of_measurement": "kW"})
+    opts = {
+        CONF_BATTERY_STAT_SENSOR: "sensor.batt_stat",
+        CONF_BATTERY_REVERSE_SIGN: True,
+        CONF_BATTERY_ENABLED: True,
+        CONF_BATTERY_MODE: "net",
+        CONF_BATTERY_NET_SENSOR: "sensor.batt_net",
+    }
+    assert coordinator._read_battery(opts, 1_700_000_000) == 0.0
+
+
+async def test_read_battery_reverse_sign_applies_to_the_net_fallback(hass, coordinator):
+    """A reversed net sensor's charging (negative) reaches the fallback as positive kW."""
+    hass.states.async_set("sensor.batt_net", "-750", {"unit_of_measurement": "W"})
+    opts = {
+        CONF_BATTERY_STAT_SENSOR: "",
+        CONF_BATTERY_REVERSE_SIGN: True,
+        CONF_BATTERY_ENABLED: True,
+        CONF_BATTERY_MODE: "net",
+        CONF_BATTERY_NET_SENSOR: "sensor.batt_net",
+    }
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(0.75)
+
+
+async def test_read_battery_ignores_an_energy_unit_on_a_power_field(hass, coordinator):
+    """A kWh total on the averaged field is not a power reading, so the fallback is used."""
+    hass.states.async_set("sensor.batt_stat", "4321.0", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.batt_net", "0.4", {"unit_of_measurement": "kW"})
+    opts = {
+        CONF_BATTERY_STAT_SENSOR: "sensor.batt_stat",
+        CONF_BATTERY_ENABLED: True,
+        CONF_BATTERY_MODE: "net",
+        CONF_BATTERY_NET_SENSOR: "sensor.batt_net",
+    }
+    assert coordinator._read_battery(opts, 1_700_000_000) == pytest.approx(0.4)
+
+
+async def test_read_battery_separate_mode_reads_a_charge_energy_counter(hass, coordinator):
+    """A charge-only kWh counter is read as average kW over the interval, like the PV inputs."""
+    now = 1_700_001_800
+    opts = {
+        CONF_BATTERY_STAT_SENSOR: "",
+        CONF_BATTERY_ENABLED: True,
+        CONF_BATTERY_MODE: "separate",
+        CONF_BATTERY_CHARGE_SENSOR: "sensor.batt_charged",
+    }
+    hass.states.async_set("sensor.batt_charged", "10.0", {"unit_of_measurement": "kWh"})
+    assert coordinator._read_battery(opts, now - UPDATE_INTERVAL_MINUTES * 60) == 0.0  # Seeds the baseline.
+    hass.states.async_set("sensor.batt_charged", "11.0", {"unit_of_measurement": "kWh"})
+    assert coordinator._read_battery(opts, now) == pytest.approx(1.0 / (UPDATE_INTERVAL_MINUTES / 60.0))
 
 
 # ---------------------------------------------------------------------------

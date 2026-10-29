@@ -572,7 +572,6 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | PV sensor type | `Auto-detect` (default), `Energy counter`, or `Averaged power` |
 | PV Export sensor | Export energy counter (recommended) or a rolling helper |
 | PV Export sensor type | As above, for export |
-| Battery Charge sensor | Battery charge sensor (optional) |
 | MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
 
 ### Step 2 — Storage
@@ -610,14 +609,18 @@ If you enable OWM, the key is tested against the API before the step is accepted
   <a href="images/config-step4-battery.png"><img width="420" alt="Step 4 — Battery Storage" src="images/config-step4-battery.png"></a>
 </p>
 
-A fallback for systems without a battery sensor mapped in Step 1.
+Optional. Leave it all blank if you have no battery. Battery charging is currently only stored and shown on the **Battery Charge 30min Average** sensor. It does not affect tuning or dampening, and is kept for the planned load-window entities and battery-full curtailment ([issue #85](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/85)).
 
 | Field | Description |
 |---|---|
-| Enable raw battery fallback | Toggle |
-| Mode | `net` (signed power sensor) or `separate` (charge-only sensor) |
-| Net battery sensor | Signed power entity (positive = charging) |
-| Charge battery sensor | Charge-only power entity |
+| Battery charging power sensor | Average battery power over the last 30 minutes, ideally a `mean_linear` statistics helper. Positive while charging, negative while discharging. W or kW, converted automatically. Only power sensors are listed |
+| Sensor reports charging as negative | Tick if your battery sensors use the opposite sign. Applies to the averaged and net sensors |
+| Use a raw battery sensor as a fallback | Read one of the sensors below when the averaged sensor is not set or reads zero |
+| Raw sensor type | **Net power**: one signed power sensor. **Charge-only**: a sensor that is never negative |
+| Net battery power sensor | Signed battery power, W or kW. Discharging is ignored |
+| Battery charge-only sensor | Charging power (W/kW) or a cumulative charge energy counter (Wh/kWh), read like the PV inputs |
+
+Upgrading from 1.14 or earlier: the averaged sensor used to be on Step 1. It has moved here and keeps its value, so there is nothing to re-enter.
 
 ### Step 5 — PV Tuning & Dampening
 

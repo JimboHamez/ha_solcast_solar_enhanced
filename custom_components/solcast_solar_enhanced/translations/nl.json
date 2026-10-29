@@ -11,7 +11,6 @@
           "azimuth": "Azimut panelen (°)",
           "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
           "pv_export_sensor": "Sensor voor PV-teruglevering",
-          "battery_stat_sensor": "Sensor 30-min-gemiddelde batterijlading (optioneel)",
           "pv_actual_input_mode": "PV-sensortype",
           "pv_export_input_mode": "Type PV-terugleversensor",
           "mppt1_voltage_sensor": "MPPT 1 DC-spanningssensor (optioneel, voor curtailmentdetectie)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Batterijopslag",
+        "description": "Optioneel — laat alles leeg als je geen batterij hebt. Het laden van de batterij wordt nu alleen opgeslagen en getoond op de sensor ‘Batterijlading 30-min-gemiddelde’; het heeft geen invloed op het afstemmen of de demping.",
         "data": {
-          "battery_enabled": "Ruwe batterij-terugval inschakelen",
-          "battery_mode": "Modus",
+          "battery_stat_sensor": "Sensor voor batterijlaadvermogen (optioneel)",
+          "battery_reverse_sign": "Sensor meldt laden als negatief",
+          "battery_enabled": "Een ruwe batterijsensor als terugval gebruiken",
+          "battery_mode": "Type ruwe sensor",
           "battery_net_sensor": "Sensor voor netto batterijvermogen (met teken)",
-          "battery_charge_sensor": "Sensor voor batterijlaadvermogen"
+          "battery_charge_sensor": "Sensor alleen voor batterijlading"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Gemiddeld batterijvermogen over de laatste 30 minuten, bij voorkeur een mean_linear-statistiekhelper. Positief tijdens laden, negatief tijdens ontladen (vink de optie hieronder aan als het bij jou andersom is). W of kW, wordt automatisch omgerekend. Alleen vermogenssensoren worden getoond.",
+          "battery_reverse_sign": "Vink aan als je batterijsensoren negatief zijn tijdens het laden. Geldt voor de gemiddelde en de netto sensor.",
+          "battery_enabled": "Lees in plaats daarvan een ruwe sensor als de gemiddelde sensor niet is ingesteld of nul aangeeft.",
+          "battery_mode": "Netto: één vermogenssensor met teken (positief = laden). Alleen laden: een sensor die nooit negatief is — laadvermogen of een cumulatieve laadenergieteller.",
+          "battery_net_sensor": "Batterijvermogen met teken, W of kW. Ontladen wordt genegeerd.",
+          "battery_charge_sensor": "Laadvermogen (W/kW) of een cumulatieve laadenergieteller (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Azimut panelen (°)",
           "pv_actual_sensor": "Sensor voor PV-vermogen / -opwekking",
           "pv_export_sensor": "Sensor voor PV-teruglevering",
-          "battery_stat_sensor": "Sensor 30-min-gemiddelde batterijlading (optioneel)",
           "pv_actual_input_mode": "PV-sensortype",
           "pv_export_input_mode": "Type PV-terugleversensor",
           "mppt1_voltage_sensor": "MPPT 1 DC-spanningssensor (optioneel, voor curtailmentdetectie)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Batterijopslag",
+        "description": "Optioneel — laat alles leeg als je geen batterij hebt. Het laden van de batterij wordt nu alleen opgeslagen en getoond op de sensor ‘Batterijlading 30-min-gemiddelde’; het heeft geen invloed op het afstemmen of de demping.",
         "data": {
-          "battery_enabled": "Ruwe batterij-terugval inschakelen",
-          "battery_mode": "Modus",
+          "battery_stat_sensor": "Sensor voor batterijlaadvermogen (optioneel)",
+          "battery_reverse_sign": "Sensor meldt laden als negatief",
+          "battery_enabled": "Een ruwe batterijsensor als terugval gebruiken",
+          "battery_mode": "Type ruwe sensor",
           "battery_net_sensor": "Sensor voor netto batterijvermogen (met teken)",
-          "battery_charge_sensor": "Sensor voor batterijlaadvermogen"
+          "battery_charge_sensor": "Sensor alleen voor batterijlading"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Gemiddeld batterijvermogen over de laatste 30 minuten, bij voorkeur een mean_linear-statistiekhelper. Positief tijdens laden, negatief tijdens ontladen (vink de optie hieronder aan als het bij jou andersom is). W of kW, wordt automatisch omgerekend. Alleen vermogenssensoren worden getoond.",
+          "battery_reverse_sign": "Vink aan als je batterijsensoren negatief zijn tijdens het laden. Geldt voor de gemiddelde en de netto sensor.",
+          "battery_enabled": "Lees in plaats daarvan een ruwe sensor als de gemiddelde sensor niet is ingesteld of nul aangeeft.",
+          "battery_mode": "Netto: één vermogenssensor met teken (positief = laden). Alleen laden: een sensor die nooit negatief is — laadvermogen of een cumulatieve laadenergieteller.",
+          "battery_net_sensor": "Batterijvermogen met teken, W of kW. Ontladen wordt genegeerd.",
+          "battery_charge_sensor": "Laadvermogen (W/kW) of een cumulatieve laadenergieteller (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Elke array heeft een eigen opwekkingssensor (micro-omvormers / één omvormer per array)",
         "dc_split": "Eén gedeelde omvormer, over de arrays verdeeld op basis van DC (één omvormer, meerdere MPPT's)",
         "shared_no_dc": "Eén gecombineerde meter, geen gegevens per array (bijv. Tesla Powerwall 3) — de installatie als één systeem volgen"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Netto vermogen (met teken)",
+        "separate": "Sensor alleen voor laden"
       }
     }
   },

@@ -11,7 +11,6 @@
           "azimuth": "Azimut del panel (°)",
           "pv_actual_sensor": "Sensor de potencia / generación FV",
           "pv_export_sensor": "Sensor de exportación FV",
-          "battery_stat_sensor": "Sensor de media de 30 min de carga de batería (opcional)",
           "pv_actual_input_mode": "Tipo de sensor FV",
           "pv_export_input_mode": "Tipo de sensor de exportación FV",
           "mppt1_voltage_sensor": "Sensor de tensión CC del MPPT 1 (opcional, para detección de limitación)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Almacenamiento de batería",
+        "description": "Opcional: déjelo todo en blanco si no tiene batería. La carga de la batería solo se guarda y se muestra en el sensor «Carga de la batería media de 30 min»; no afecta al ajuste ni a la amortiguación.",
         "data": {
-          "battery_enabled": "Habilitar respaldo de batería en bruto",
-          "battery_mode": "Modo",
-          "battery_net_sensor": "Sensor de potencia neta de batería (con signo)",
-          "battery_charge_sensor": "Sensor de potencia de carga de batería"
+          "battery_stat_sensor": "Sensor de potencia de carga de la batería (opcional)",
+          "battery_reverse_sign": "El sensor indica la carga como negativa",
+          "battery_enabled": "Usar un sensor de batería sin procesar como alternativa",
+          "battery_mode": "Tipo de sensor sin procesar",
+          "battery_net_sensor": "Sensor de potencia neta de la batería (con signo)",
+          "battery_charge_sensor": "Sensor solo de carga de la batería"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Potencia media de la batería en los últimos 30 minutos, idealmente un asistente de estadísticas mean_linear. Positiva al cargar y negativa al descargar (marque la opción de abajo si la suya es al revés). W o kW, se convierte automáticamente. Solo se muestran sensores de potencia.",
+          "battery_reverse_sign": "Márquelo si sus sensores de batería son negativos al cargar. Se aplica a los sensores promediado y neto.",
+          "battery_enabled": "Leer un sensor sin procesar cuando el sensor promediado no está configurado o marca cero.",
+          "battery_mode": "Neto: un sensor de potencia con signo (positivo = carga). Solo carga: un sensor que nunca es negativo, ya sea potencia de carga o un contador acumulado de energía de carga.",
+          "battery_net_sensor": "Potencia de la batería con signo, en W o kW. La descarga se ignora.",
+          "battery_charge_sensor": "Potencia de carga (W/kW) o un contador acumulado de energía de carga (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Azimut del panel (°)",
           "pv_actual_sensor": "Sensor de potencia / generación FV",
           "pv_export_sensor": "Sensor de exportación FV",
-          "battery_stat_sensor": "Sensor de media de 30 min de carga de batería (opcional)",
           "pv_actual_input_mode": "Tipo de sensor FV",
           "pv_export_input_mode": "Tipo de sensor de exportación FV",
           "mppt1_voltage_sensor": "Sensor de tensión CC del MPPT 1 (opcional, para detección de limitación)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Almacenamiento de batería",
+        "description": "Opcional: déjelo todo en blanco si no tiene batería. La carga de la batería solo se guarda y se muestra en el sensor «Carga de la batería media de 30 min»; no afecta al ajuste ni a la amortiguación.",
         "data": {
-          "battery_enabled": "Habilitar respaldo de batería en bruto",
-          "battery_mode": "Modo",
-          "battery_net_sensor": "Sensor de potencia neta de batería (con signo)",
-          "battery_charge_sensor": "Sensor de potencia de carga de batería"
+          "battery_stat_sensor": "Sensor de potencia de carga de la batería (opcional)",
+          "battery_reverse_sign": "El sensor indica la carga como negativa",
+          "battery_enabled": "Usar un sensor de batería sin procesar como alternativa",
+          "battery_mode": "Tipo de sensor sin procesar",
+          "battery_net_sensor": "Sensor de potencia neta de la batería (con signo)",
+          "battery_charge_sensor": "Sensor solo de carga de la batería"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Potencia media de la batería en los últimos 30 minutos, idealmente un asistente de estadísticas mean_linear. Positiva al cargar y negativa al descargar (marque la opción de abajo si la suya es al revés). W o kW, se convierte automáticamente. Solo se muestran sensores de potencia.",
+          "battery_reverse_sign": "Márquelo si sus sensores de batería son negativos al cargar. Se aplica a los sensores promediado y neto.",
+          "battery_enabled": "Leer un sensor sin procesar cuando el sensor promediado no está configurado o marca cero.",
+          "battery_mode": "Neto: un sensor de potencia con signo (positivo = carga). Solo carga: un sensor que nunca es negativo, ya sea potencia de carga o un contador acumulado de energía de carga.",
+          "battery_net_sensor": "Potencia de la batería con signo, en W o kW. La descarga se ignora.",
+          "battery_charge_sensor": "Potencia de carga (W/kW) o un contador acumulado de energía de carga (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Cada campo tiene su propio sensor de generación (microinversores / un inversor por campo)",
         "dc_split": "Un inversor compartido, repartido entre los campos por CC (un inversor, varios MPPT)",
         "shared_no_dc": "Un único contador combinado, sin datos por campo (p. ej. Tesla Powerwall 3): tratar la instalación como un solo sistema"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Potencia neta (con signo)",
+        "separate": "Sensor solo de carga"
       }
     }
   },

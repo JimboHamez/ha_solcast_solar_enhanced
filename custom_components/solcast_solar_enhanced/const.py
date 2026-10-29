@@ -56,6 +56,14 @@ CONF_BATTERY_ENABLED = "battery_enabled"
 CONF_BATTERY_MODE = "battery_mode"
 CONF_BATTERY_NET_SENSOR = "battery_net_sensor"
 CONF_BATTERY_CHARGE_SENSOR = "battery_charge_sensor"
+# Flips the sign of the signed battery sensors (the averaged and net ones) for
+# inverters that report charging as negative.
+CONF_BATTERY_REVERSE_SIGN = "battery_reverse_sign"
+# How the raw fallback sensor reads: one signed net-power sensor, or a charge-only
+# one (power or a cumulative charge-energy counter).
+BATTERY_MODE_NET = "net"
+BATTERY_MODE_SEPARATE = "separate"
+BATTERY_MODES = [BATTERY_MODE_NET, BATTERY_MODE_SEPARATE]
 
 # Multi-site (multiple Solcast rooftop arrays on one property).
 # DEFAULT_SITE_ID tags single-site / aggregate rows and back-filled legacy data;

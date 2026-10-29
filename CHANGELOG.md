@@ -5,6 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — planned for 1.15.0b1
+
+### Changed
+
+- **Battery input is set up in one place, with help text.** The averaged battery sensor moved from
+  Step 1 to the Battery Storage step, which now explains each field, says what it is for, and labels
+  the raw-sensor type in every language. The sensor keeps its value, so existing installs have
+  nothing to re-enter. The pickers list only power sensors, plus energy counters for the charge-only
+  sensor, instead of every entity. Thanks to @BJReplay for the write-up in discussion #104.
+- **Internal: typed data models.** The records, results and site configuration passed between the
+  store, the estimators and the coordinator are now `TypedDict`s (`models.py`), and the coordinator
+  is `DataUpdateCoordinator[CoordinatorData]`. No behaviour change (#112).
+
+### Added
+
+- **Sensor reports charging as negative.** A toggle for batteries that report charging as negative,
+  so nobody needs a template just to flip the sign. It applies to the averaged and net sensors.
+- **A charge-only energy counter** (Wh/kWh) is accepted for the raw fallback and read as average
+  power over the half hour, like the PV inputs.
+
+### Fixed
+
+- **W battery sensors are converted to kW.** A watts sensor was stored 1000 times too large.
+- **Discharge is no longer recorded as charge.** Negative readings were clamped to zero before any
+  sign convention applied, so a sensor that reports charging as negative stored its discharge as
+  charging. The sign is now applied first. A sensor with an energy unit on a power field is ignored
+  rather than read as kW.
+- These were display-only: battery charge feeds neither tuning nor dampening.
+
 ## [1.14.0] - 2026-10-29
 
 > Stable. Promotes `1.14.0b2` unchanged: the code is the beta with the version string bumped. Your

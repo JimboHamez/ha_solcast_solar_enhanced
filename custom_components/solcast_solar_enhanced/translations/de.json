@@ -11,7 +11,6 @@
           "azimuth": "Modulazimut (°)",
           "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
           "pv_export_sensor": "Sensor für PV-Einspeisung",
-          "battery_stat_sensor": "Sensor für Batterieladung 30-Min-Mittel (optional)",
           "pv_actual_input_mode": "PV-Sensortyp",
           "pv_export_input_mode": "Typ des PV-Einspeisesensors",
           "mppt1_voltage_sensor": "MPPT-1-DC-Spannungssensor (optional, zur Abregelungserkennung)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Batteriespeicher",
+        "description": "Optional – ohne Batterie alles leer lassen. Die Batterieladung wird derzeit nur gespeichert und im Sensor „Batterieladung 30-Min-Mittel“ angezeigt; sie beeinflusst weder Tuning noch Dämpfung.",
         "data": {
-          "battery_enabled": "Rohen Batterie-Fallback aktivieren",
-          "battery_mode": "Modus",
+          "battery_stat_sensor": "Sensor für Batterieladeleistung (optional)",
+          "battery_reverse_sign": "Sensor meldet Laden als negativ",
+          "battery_enabled": "Rohen Batteriesensor als Fallback verwenden",
+          "battery_mode": "Typ des Rohsensors",
           "battery_net_sensor": "Sensor für Netto-Batterieleistung (vorzeichenbehaftet)",
-          "battery_charge_sensor": "Sensor für Batterieladeleistung"
+          "battery_charge_sensor": "Sensor nur für Batterieladung"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Mittlere Batterieleistung der letzten 30 Minuten, idealerweise ein mean_linear-Statistik-Helfer. Positiv beim Laden, negativ beim Entladen (aktivieren Sie die Option unten, wenn es bei Ihnen umgekehrt ist). W oder kW, wird automatisch umgerechnet. Es werden nur Leistungssensoren angezeigt.",
+          "battery_reverse_sign": "Aktivieren, wenn Ihre Batteriesensoren beim Laden negativ sind. Gilt für den gemittelten und den Netto-Sensor.",
+          "battery_enabled": "Stattdessen einen Rohsensor lesen, wenn der gemittelte Sensor nicht gesetzt ist oder null anzeigt.",
+          "battery_mode": "Netto: ein vorzeichenbehafteter Leistungssensor (positiv = Laden). Nur Laden: ein Sensor, der nie negativ ist – Ladeleistung oder ein kumulativer Ladeenergiezähler.",
+          "battery_net_sensor": "Vorzeichenbehaftete Batterieleistung, W oder kW. Entladen wird ignoriert.",
+          "battery_charge_sensor": "Ladeleistung (W/kW) oder ein kumulativer Ladeenergiezähler (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Modulazimut (°)",
           "pv_actual_sensor": "Sensor für PV-Leistung / -Erzeugung",
           "pv_export_sensor": "Sensor für PV-Einspeisung",
-          "battery_stat_sensor": "Sensor für Batterieladung 30-Min-Mittel (optional)",
           "pv_actual_input_mode": "PV-Sensortyp",
           "pv_export_input_mode": "Typ des PV-Einspeisesensors",
           "mppt1_voltage_sensor": "MPPT-1-DC-Spannungssensor (optional, zur Abregelungserkennung)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Batteriespeicher",
+        "description": "Optional – ohne Batterie alles leer lassen. Die Batterieladung wird derzeit nur gespeichert und im Sensor „Batterieladung 30-Min-Mittel“ angezeigt; sie beeinflusst weder Tuning noch Dämpfung.",
         "data": {
-          "battery_enabled": "Rohen Batterie-Fallback aktivieren",
-          "battery_mode": "Modus",
+          "battery_stat_sensor": "Sensor für Batterieladeleistung (optional)",
+          "battery_reverse_sign": "Sensor meldet Laden als negativ",
+          "battery_enabled": "Rohen Batteriesensor als Fallback verwenden",
+          "battery_mode": "Typ des Rohsensors",
           "battery_net_sensor": "Sensor für Netto-Batterieleistung (vorzeichenbehaftet)",
-          "battery_charge_sensor": "Sensor für Batterieladeleistung"
+          "battery_charge_sensor": "Sensor nur für Batterieladung"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Mittlere Batterieleistung der letzten 30 Minuten, idealerweise ein mean_linear-Statistik-Helfer. Positiv beim Laden, negativ beim Entladen (aktivieren Sie die Option unten, wenn es bei Ihnen umgekehrt ist). W oder kW, wird automatisch umgerechnet. Es werden nur Leistungssensoren angezeigt.",
+          "battery_reverse_sign": "Aktivieren, wenn Ihre Batteriesensoren beim Laden negativ sind. Gilt für den gemittelten und den Netto-Sensor.",
+          "battery_enabled": "Stattdessen einen Rohsensor lesen, wenn der gemittelte Sensor nicht gesetzt ist oder null anzeigt.",
+          "battery_mode": "Netto: ein vorzeichenbehafteter Leistungssensor (positiv = Laden). Nur Laden: ein Sensor, der nie negativ ist – Ladeleistung oder ein kumulativer Ladeenergiezähler.",
+          "battery_net_sensor": "Vorzeichenbehaftete Batterieleistung, W oder kW. Entladen wird ignoriert.",
+          "battery_charge_sensor": "Ladeleistung (W/kW) oder ein kumulativer Ladeenergiezähler (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Jedes Array hat einen eigenen Erzeugungssensor (Mikrowechselrichter / ein Wechselrichter pro Array)",
         "dc_split": "Ein gemeinsamer Wechselrichter, nach DC auf die Arrays aufgeteilt (ein Wechselrichter, mehrere MPPTs)",
         "shared_no_dc": "Ein kombinierter Zähler, keine Daten je Array (z. B. Tesla Powerwall 3) – Anlage als ein einziges System erfassen"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Nettoleistung (vorzeichenbehaftet)",
+        "separate": "Sensor nur für Laden"
       }
     }
   },

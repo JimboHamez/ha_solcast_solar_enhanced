@@ -1079,3 +1079,92 @@ def test_sunpos_dampening_is_labelled_and_described_in_every_locale():
             step = data[flow]["step"]["tuning"]
             assert step["data"].get("sunpos_dampening"), f"{path.name} {flow}: no label"
             assert step["data_description"].get("sunpos_dampening"), f"{path.name} {flow}: no description"
+
+
+# ---------------------------------------------------------------------------
+# Battery step (discussion #104)
+# ---------------------------------------------------------------------------
+
+_BATTERY_FIELDS = (
+    "battery_stat_sensor",
+    "battery_reverse_sign",
+    "battery_enabled",
+    "battery_mode",
+    "battery_net_sensor",
+    "battery_charge_sensor",
+)
+
+
+def _schema_field(schema: vol.Schema, key: str):
+    for marker, selector in schema.schema.items():
+        if marker == key:
+            return marker, selector
+    raise AssertionError(f"{key} not in schema")
+
+
+def test_site_step_no_longer_asks_for_the_battery_sensor():
+    """Battery input lives on the Battery step only, not on Step 1 as well."""
+    from custom_components.solcast_solar_enhanced.config_flow import _build_site_schema
+
+    for single_site in (True, False):
+        keys = {str(m) for m in _build_site_schema({}, single_site=single_site).schema}
+        assert "battery_stat_sensor" not in keys
+
+
+def test_battery_step_holds_every_battery_field_and_keeps_an_existing_sensor():
+    """One place for all battery input; an entry configured on the old Step 1 still shows its sensor."""
+    from custom_components.solcast_solar_enhanced.config_flow import _build_battery_schema
+
+    schema = _build_battery_schema({"battery_stat_sensor": "sensor.batt_avg"})
+    assert [str(m) for m in schema.schema] == list(_BATTERY_FIELDS)
+    marker, _ = _schema_field(schema, "battery_stat_sensor")
+    assert marker.description == {"suggested_value": "sensor.batt_avg"}
+    assert _schema_default(schema, "battery_reverse_sign") is False
+
+
+def test_battery_pickers_list_only_power_or_energy_sensors():
+    """The pickers are filtered by device class instead of listing every entity."""
+    from custom_components.solcast_solar_enhanced.config_flow import _build_battery_schema
+
+    schema = _build_battery_schema({})
+    expected = {
+        "battery_stat_sensor": ["power"],
+        "battery_net_sensor": ["power"],
+        "battery_charge_sensor": ["power", "energy"],
+    }
+    for key, classes in expected.items():
+        _, selector = _schema_field(schema, key)
+        (entity_filter,) = selector.config["filter"]
+        assert entity_filter["domain"] == ["sensor"], key
+        assert entity_filter["device_class"] == classes, key
+
+
+def test_battery_mode_dropdown_uses_translated_labels():
+    """Without a translation key the raw 'net' / 'separate' values are shown."""
+    from custom_components.solcast_solar_enhanced.config_flow import _build_battery_schema
+
+    _, selector = _schema_field(_build_battery_schema({}), "battery_mode")
+    assert selector.config["translation_key"] == "battery_mode"
+    assert selector.config["options"] == ["net", "separate"]
+
+
+def test_battery_step_is_labelled_and_described_in_every_locale():
+    """Every locale labels and explains every battery field and both mode options."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "custom_components" / "solcast_solar_enhanced"
+    files = [root / "strings.json", *sorted((root / "translations").glob("*.json"))]
+    assert len(files) == 12
+    for path in files:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for flow in ("config", "options"):
+            steps = data[flow]["step"]
+            assert "battery_stat_sensor" not in steps["site"]["data"], f"{path.name} {flow}: still on Step 1"
+            battery = steps["battery"]
+            assert battery.get("description"), f"{path.name} {flow}: no step description"
+            for field in _BATTERY_FIELDS:
+                assert battery["data"].get(field), f"{path.name} {flow}: no label for {field}"
+                assert battery["data_description"].get(field), f"{path.name} {flow}: no description for {field}"
+        options = data["selector"]["battery_mode"]["options"]
+        assert options.get("net") and options.get("separate"), f"{path.name}: unlabelled battery mode"

@@ -11,7 +11,6 @@
           "azimuth": "Azimut dei pannelli (°)",
           "pv_actual_sensor": "Sensore di potenza / produzione FV",
           "pv_export_sensor": "Sensore di immissione FV",
-          "battery_stat_sensor": "Sensore media 30 min di carica batteria (facoltativo)",
           "pv_actual_input_mode": "Tipo di sensore FV",
           "pv_export_input_mode": "Tipo di sensore di immissione FV",
           "mppt1_voltage_sensor": "Sensore di tensione CC del MPPT 1 (facoltativo, per il rilevamento della limitazione)",
@@ -41,11 +40,22 @@
       },
       "battery": {
         "title": "Accumulo a batteria",
+        "description": "Facoltativo: lascia tutto vuoto se non hai una batteria. La carica della batteria viene solo salvata e mostrata sul sensore «Carica batteria media 30 min»; non influisce né sulla regolazione né sullo smorzamento.",
         "data": {
-          "battery_enabled": "Abilita fallback batteria grezzo",
-          "battery_mode": "Modalità",
-          "battery_net_sensor": "Sensore di potenza netta della batteria (con segno)",
-          "battery_charge_sensor": "Sensore di potenza di carica della batteria"
+          "battery_stat_sensor": "Sensore della potenza di carica della batteria (facoltativo)",
+          "battery_reverse_sign": "Il sensore indica la carica come negativa",
+          "battery_enabled": "Usa un sensore batteria grezzo come riserva",
+          "battery_mode": "Tipo di sensore grezzo",
+          "battery_net_sensor": "Sensore della potenza netta della batteria (con segno)",
+          "battery_charge_sensor": "Sensore di sola carica della batteria"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Potenza media della batteria negli ultimi 30 minuti, idealmente un helper statistico mean_linear. Positiva in carica, negativa in scarica (spunta l'opzione qui sotto se il tuo è al contrario). W o kW, convertiti automaticamente. Vengono elencati solo i sensori di potenza.",
+          "battery_reverse_sign": "Spunta se i tuoi sensori della batteria sono negativi in carica. Vale per il sensore mediato e per quello netto.",
+          "battery_enabled": "Leggi invece un sensore grezzo quando il sensore mediato non è impostato o segna zero.",
+          "battery_mode": "Netto: un solo sensore di potenza con segno (positivo = carica). Sola carica: un sensore mai negativo, potenza di carica o contatore cumulativo dell'energia di carica.",
+          "battery_net_sensor": "Potenza della batteria con segno, in W o kW. La scarica viene ignorata.",
+          "battery_charge_sensor": "Potenza di carica (W/kW) o contatore cumulativo dell'energia di carica (Wh/kWh)."
         }
       },
       "tuning": {
@@ -110,7 +120,6 @@
           "azimuth": "Azimut dei pannelli (°)",
           "pv_actual_sensor": "Sensore di potenza / produzione FV",
           "pv_export_sensor": "Sensore di immissione FV",
-          "battery_stat_sensor": "Sensore media 30 min di carica batteria (facoltativo)",
           "pv_actual_input_mode": "Tipo di sensore FV",
           "pv_export_input_mode": "Tipo di sensore di immissione FV",
           "mppt1_voltage_sensor": "Sensore di tensione CC del MPPT 1 (facoltativo, per il rilevamento della limitazione)",
@@ -140,11 +149,22 @@
       },
       "battery": {
         "title": "Accumulo a batteria",
+        "description": "Facoltativo: lascia tutto vuoto se non hai una batteria. La carica della batteria viene solo salvata e mostrata sul sensore «Carica batteria media 30 min»; non influisce né sulla regolazione né sullo smorzamento.",
         "data": {
-          "battery_enabled": "Abilita fallback batteria grezzo",
-          "battery_mode": "Modalità",
-          "battery_net_sensor": "Sensore di potenza netta della batteria (con segno)",
-          "battery_charge_sensor": "Sensore di potenza di carica della batteria"
+          "battery_stat_sensor": "Sensore della potenza di carica della batteria (facoltativo)",
+          "battery_reverse_sign": "Il sensore indica la carica come negativa",
+          "battery_enabled": "Usa un sensore batteria grezzo come riserva",
+          "battery_mode": "Tipo di sensore grezzo",
+          "battery_net_sensor": "Sensore della potenza netta della batteria (con segno)",
+          "battery_charge_sensor": "Sensore di sola carica della batteria"
+        },
+        "data_description": {
+          "battery_stat_sensor": "Potenza media della batteria negli ultimi 30 minuti, idealmente un helper statistico mean_linear. Positiva in carica, negativa in scarica (spunta l'opzione qui sotto se il tuo è al contrario). W o kW, convertiti automaticamente. Vengono elencati solo i sensori di potenza.",
+          "battery_reverse_sign": "Spunta se i tuoi sensori della batteria sono negativi in carica. Vale per il sensore mediato e per quello netto.",
+          "battery_enabled": "Leggi invece un sensore grezzo quando il sensore mediato non è impostato o segna zero.",
+          "battery_mode": "Netto: un solo sensore di potenza con segno (positivo = carica). Sola carica: un sensore mai negativo, potenza di carica o contatore cumulativo dell'energia di carica.",
+          "battery_net_sensor": "Potenza della batteria con segno, in W o kW. La scarica viene ignorata.",
+          "battery_charge_sensor": "Potenza di carica (W/kW) o contatore cumulativo dell'energia di carica (Wh/kWh)."
         }
       },
       "tuning": {
@@ -289,6 +309,12 @@
         "direct": "Ogni stringa ha il proprio sensore di generazione (microinverter / un inverter per stringa)",
         "dc_split": "Un inverter condiviso, ripartito tra le stringhe in base al CC (un inverter, più MPPT)",
         "shared_no_dc": "Un unico contatore combinato, nessun dato per stringa (es. Tesla Powerwall 3) — traccia l'impianto come un unico sistema"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "net": "Potenza netta (con segno)",
+        "separate": "Sensore di sola carica"
       }
     }
   },
