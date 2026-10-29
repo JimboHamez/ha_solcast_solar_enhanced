@@ -84,7 +84,21 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.14.0b2
+## 🆕 What's new in v1.14.0
+
+**Stable: your Solcast PV Forecast hourly dampening values are no longer reset, and an opt-in sun-position dampening mode is added for arrays behind a hard horizon.** The code is identical to `v1.14.0b2`; if you have been running the beta there is nothing new here.
+
+- **Hourly dampening you set by hand is kept.** From 1.13.0, the first cycle reset Solcast PV Forecast's hourly dampening values to 1.0 whenever its granular dampening file was still empty, overwriting values you had tuned yourself. The reset is gone. Values already reset by 1.13.0 to 1.14.0b1 can't be brought back by this release. See [granular dampening](#about-the-base-integrations-granular-dampening-setting) for how the two sets of values interact.
+- **Sun-position dampening, for a sharp horizon** (*PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)*), off by default. It builds each half-hour's factor from records taken with the sun in nearly the same place, so a shading edge that clears within a few degrees of sun is followed instead of smoothed out. Turn it on only if an array has a sharp obstruction such as a building, a roofline or a tree line: on an unshaded array it is slightly worse than the standard mode. The option keeps "beta" in its name while results from real installs come in ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+- **Auto dampening says what it takes over**, translated into all 11 languages.
+- **Now in the HACS default catalog.** The [install steps](#hacs-or-marketplace-recommended) cover HACS and the Marketplace that replaces it from Home Assistant 2026.11. If you installed from the custom repository, you don't need to do anything.
+
+**Upgrading from 1.13.x?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed.
+
+[CHANGELOG](CHANGELOG.md#1140---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0)
+
+<details>
+<summary><b>What landed in v1.14.0b2</b></summary>
 
 **Beta: your Solcast PV Forecast hourly dampening values are no longer reset, and the integration is now in the HACS default catalog.** The opt-in sun-position dampening from v1.14.0b1 is unchanged.
 
@@ -96,6 +110,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a beta, so HACS only offers it if you have turned on the integration's **Pre-release** switch.
 
 [CHANGELOG](CHANGELOG.md#1140b2---2026-10-21) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0b2)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.14.0b1</b></summary>
