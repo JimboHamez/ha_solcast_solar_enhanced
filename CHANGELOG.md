@@ -5,7 +5,10 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — planned for 1.15.0b1
+## [1.15.0b1] - 2026-10-29
+
+> Beta. A tidier, correct Battery Storage step, from @BJReplay's write-up in discussion #104.
+> Battery charge is display-only, so nothing here changes tuning or dampening.
 
 ### Changed
 
@@ -1846,6 +1849,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.15.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0...v1.15.0b1
 [1.14.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b2...v1.14.0
 [1.14.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...v1.14.0b2
 [1.14.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.13.1...v1.14.0b1

@@ -84,7 +84,23 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.14.0
+## 🆕 What's new in v1.15.0b1
+
+**Beta: a tidier Battery Storage step that reads your battery sensor correctly.** Thanks to @BJReplay for the write-up in [discussion #104](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/104). Battery charge is only stored and shown on the **Battery Charge 30min Average** sensor, so nothing here changes tuning or dampening.
+
+- **All battery input is in one place.** The battery sensor moved from Step 1 to the [Battery Storage](#step-4--battery-storage) step. It keeps its value, so there is nothing to re-enter.
+- **Every field explains itself**, and the raw-sensor type is labelled, in all 11 languages.
+- **The pickers list only power sensors** (and energy counters for the charge-only sensor) instead of every entity.
+- **Watts are converted to kW.** A W sensor was stored 1000 times too large.
+- **Sensor reports charging as negative**: a new toggle for batteries with the opposite sign convention. Discharge is no longer ever recorded as charge.
+- **A charge energy counter** (Wh/kWh) is accepted for the charge-only sensor.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1150b1---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b1)
+
+<details>
+<summary><b>What landed in v1.14.0</b></summary>
 
 **Stable: your Solcast PV Forecast hourly dampening values are no longer reset, and an opt-in sun-position dampening mode is added for arrays behind a hard horizon.** The code is identical to `v1.14.0b2`; if you have been running the beta there is nothing new here.
 
@@ -96,6 +112,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading from 1.13.x?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed.
 
 [CHANGELOG](CHANGELOG.md#1140---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.14.0b2</b></summary>
