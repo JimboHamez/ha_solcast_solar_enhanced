@@ -13,10 +13,12 @@ from __future__ import annotations
 import logging
 import math
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from .models import StoreRecord, TuningResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,7 +197,7 @@ def extraterrestrial_normal(doy: int) -> float:
 
 
 def run_tuning(
-    records: list[dict[str, Any]],
+    records: list[StoreRecord],
     capacity_kw: float,
     cloud_threshold: int,  # >100 disables the internal re-filter; see the note at its use.
     clipping_threshold: float,
@@ -203,7 +205,7 @@ def run_tuning(
     fixed_azimuth: float = 0.0,
     albedo: float = 0.2,
     model: str = "hay_davies",
-) -> dict[str, Any] | None:
+) -> TuningResult | None:
     """Transposition-based **tilt** optimisation at a fixed azimuth.
 
     For each candidate tilt the stored Open-Meteo GHI/DNI/DHI are transposed to the

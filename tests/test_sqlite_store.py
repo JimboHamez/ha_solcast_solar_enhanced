@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from custom_components.solcast_solar_enhanced.models import StoreRecord
 from custom_components.solcast_solar_enhanced.sqlite_store import (
     _ADDED_COLUMNS,
     _INSERT_COLUMNS,
@@ -705,6 +706,16 @@ def test_insert_columns_match_row_values_arity():
     """``_row_values`` supplies exactly one value per ``_INSERT_COLUMNS`` entry."""
     values = SqliteStore._row_values(_record(JUNE1))
     assert len(values) == len(_INSERT_COLUMNS)
+
+
+def test_store_record_type_declares_every_inserted_column():
+    """``models.StoreRecord`` lists exactly the inserted columns, in schema order.
+
+    mypy checks every record literal against this type, so a column missing from it
+    is rejected at each write site, and a key it still carries after a column is
+    dropped would let a misspelt key through unchecked.
+    """
+    assert list(StoreRecord.__annotations__) == list(_INSERT_COLUMNS)
 
 
 def test_fresh_schema_accepts_a_full_insert_without_the_alter_pass():

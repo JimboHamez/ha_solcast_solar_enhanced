@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # From HA 2026.10 `async_show_form` types `data_schema` as `probatio.Schema`. At runtime HA aliases `voluptuous` to
 # probatio's shim, so these schemas already are probatio schemas. Only the static types disagree, which is why each
@@ -90,6 +90,9 @@ from .const import (
     SITE_TOPOLOGY_SHARED_NO_DC,
 )
 from .solcast_api import OWMAuthError, OWMClient, OWMConnectionError
+
+if TYPE_CHECKING:
+    from .models import DiscoveredSite
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -487,7 +490,7 @@ def _derive_groups(
 
 
 def _seed_flat_mppt(
-    discovered: list[dict[str, Any]],
+    discovered: list[DiscoveredSite],
     assignments: dict[str, dict[str, Any]],
     src: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
@@ -523,7 +526,7 @@ def _clear_flat_mppt(target: dict[str, Any]) -> None:
 
 
 def _build_sites_schema(
-    discovered: list[dict[str, Any]],
+    discovered: list[DiscoveredSite],
     assignments: dict[str, dict[str, Any]],
     default_ac: str | None = None,
     *,
@@ -648,7 +651,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialise the config flow with empty collected data."""
         self._data: dict[str, Any] = {}
-        self._discovered: list[dict[str, Any]] | None = None
+        self._discovered: list[DiscoveredSite] | None = None
         self._sites_mode: str | None = None
 
     def _is_single_site(self) -> bool:
@@ -747,7 +750,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _show_sites_form(
         self,
-        discovered: list[dict[str, Any]],
+        discovered: list[DiscoveredSite],
         assignments: dict[str, dict[str, Any]],
         default_ac: str | None,
         mode: str,
@@ -807,7 +810,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
     def __init__(self) -> None:
         """Initialise the options flow with empty collected options."""
         self._opts: dict[str, Any] = {}
-        self._discovered: list[dict[str, Any]] | None = None
+        self._discovered: list[DiscoveredSite] | None = None
         self._sites_mode: str | None = None
 
     def _is_single_site(self) -> bool:
@@ -874,7 +877,7 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
 
     def _show_sites_form(
         self,
-        discovered: list[dict[str, Any]],
+        discovered: list[DiscoveredSite],
         assignments: dict[str, dict[str, Any]],
         default_ac: str | None,
         mode: str,

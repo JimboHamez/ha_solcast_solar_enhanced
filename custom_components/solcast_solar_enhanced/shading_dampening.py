@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING
 
 from .const import KT_GHI_CS_FLOOR, SUNPOS_MIN_COVERAGE_KW, SUNPOS_PRIOR_KW, SUNPOS_SIGMA_AZIM, SUNPOS_SIGMA_ELEV
 from .pv_tuning import clearsky_ghi
+
+if TYPE_CHECKING:
+    from .models import DampeningResult, StoreRecord
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +77,7 @@ def _geometry_weight(
     return z_w * a_w
 
 
-def _record_estimate(r: dict[str, Any]) -> tuple[float, bool]:
+def _record_estimate(r: StoreRecord) -> tuple[float, bool]:
     """Return a record's forecast denominator and whether it is the undampened one.
 
     The denominator must be the forecast *before* our own dampening. ``pv_estimate``
@@ -92,7 +95,7 @@ def _record_estimate(r: dict[str, Any]) -> tuple[float, bool]:
 
 
 def _clearness(
-    r: dict[str, Any], zenith: float, cloud_threshold: int, kt_threshold: float | None
+    r: StoreRecord, zenith: float, cloud_threshold: int, kt_threshold: float | None
 ) -> tuple[float | None, int, bool]:
     """Return a record's clearness index, cloud cover and whether its sky counts as clear.
 
@@ -121,7 +124,7 @@ def _clearness(
 
 
 def _export_ceiling(
-    r: dict[str, Any],
+    r: StoreRecord,
     total_pv: float,
     pv_est: float,
     export_limit_kw: float,
@@ -171,7 +174,7 @@ def _export_ceiling(
 
 
 def compute_dampening(
-    records: list[dict[str, Any]],
+    records: list[StoreRecord],
     capacity_kw: float,
     cloud_threshold: int,
     cloud_max_include: int,
@@ -180,7 +183,7 @@ def compute_dampening(
     target_azimuth: float,
     export_limit_kw: float = 0.0,
     kt_threshold: float | None = None,
-) -> dict[str, Any]:
+) -> DampeningResult:
     """Compute a single half-hour slot's dampening from database-collected records only.
 
     The factor is the confidence-weighted blend of a neutral 1.0 anchor and the
@@ -357,7 +360,7 @@ def _sunpos_weight(rec_zenith: float, rec_azimuth: float, target_zenith: float, 
 
 
 def compute_sunpos_dampening(
-    records: list[dict[str, Any]],
+    records: list[StoreRecord],
     capacity_kw: float,
     cloud_threshold: int,
     cloud_max_include: int,
@@ -366,7 +369,7 @@ def compute_sunpos_dampening(
     target_azimuth: float,
     export_limit_kw: float = 0.0,
     kt_threshold: float | None = None,
-) -> dict[str, Any] | None:
+) -> DampeningResult | None:
     """Compute a half-hour slot's factor from records taken with the sun in nearly the same place.
 
     The opt-in alternative to ``compute_dampening`` for a sharp, hard horizon (issue
