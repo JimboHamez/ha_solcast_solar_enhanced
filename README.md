@@ -84,7 +84,20 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.15.0b1
+## 🆕 What's new in v1.15.0b2
+
+**Beta: groundwork for telling inverter curtailment apart from shading.** When your inverter holds its output down, whether from an export limit, a network command (DOE) or derating, the lost output can be booked as shading. This beta starts recording what each half-hour looked like at the inverter, so a later release can keep those slots out of dampening and tuning. It only records: **nothing here changes tuning or dampening yet.** Thanks to @guiguan for the 5-second trace of a real event in [issue #109](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/109) that this is built and tested on.
+
+- **Three optional sensors on [Step 1](#step-1--site--system):** grid voltage, inverter temperature and an "inverter limited" binary sensor. Each half-hour stores the voltage maximum and median, the peak temperature, and the share of the slot the inverter reported holding back.
+- **Off-MPP minutes from the MPPT sensors you already map.** Each half-hour counts the time every tracker on an inverter sat near open-circuit voltage while drawing little current, at the same moment. That's how an inverter holding back looks. Cloud, clipping and the few-second MPPT scans don't count.
+- **The export limit in force** is stamped on every row.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. The new sensors are optional. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1150b2---2026-10-30) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b2)
+
+<details>
+<summary><b>What landed in v1.15.0b1</b></summary>
 
 **Beta: a tidier Battery Storage step that reads your battery sensor correctly.** Thanks to @BJReplay for the write-up in [discussion #104](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/104). Battery charge is only stored and shown on the **Battery Charge 30min Average** sensor, so nothing here changes tuning or dampening.
 
@@ -98,6 +111,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
 
 [CHANGELOG](CHANGELOG.md#1150b1---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b1)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.14.0</b></summary>
