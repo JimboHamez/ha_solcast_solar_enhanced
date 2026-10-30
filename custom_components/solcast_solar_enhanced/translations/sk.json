@@ -16,7 +16,10 @@
           "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
           "mppt1_current_sensor": "Snímač jednosmerného prúdu MPPT 1 (voliteľné)",
           "mppt2_voltage_sensor": "Snímač jednosmerného napätia MPPT 2 (voliteľné)",
-          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)"
+          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)",
+          "grid_voltage_sensor": "Senzor napätia siete (voliteľný, na zistenie obmedzenia)",
+          "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
+          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor. Súčet celého systému — systémy s viacerými poľami priraďujú každé pole aj na nasledujúcej stránke pre jednotlivé lokality.",
@@ -24,7 +27,10 @@
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
           "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
           "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny. Zobrazuje sa len pre systémy s jedným poľom — pri viacerých poliach sa napätie/prúd každého poľa nastavuje v kroku pre jednotlivé lokality.",
-          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná."
+          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná.",
+          "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
+          "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
+          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva."
         }
       },
       "database": {
@@ -125,7 +131,10 @@
           "mppt1_voltage_sensor": "Snímač jednosmerného napätia MPPT 1 (voliteľné, na detekciu obmedzovania)",
           "mppt1_current_sensor": "Snímač jednosmerného prúdu MPPT 1 (voliteľné)",
           "mppt2_voltage_sensor": "Snímač jednosmerného napätia MPPT 2 (voliteľné)",
-          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)"
+          "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)",
+          "grid_voltage_sensor": "Senzor napätia siete (voliteľný, na zistenie obmedzenia)",
+          "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
+          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
@@ -133,7 +142,10 @@
           "pv_actual_input_mode": "Automatická detekcia vyberá medzi počítadlom energie a priemerným výkonom podľa jednotky (Wh/kWh alebo W/kW).",
           "pv_export_input_mode": "Automatická detekcia podľa jednotky. Odporúča sa počítadlo energie.",
           "mppt1_voltage_sensor": "Voliteľné snímače jednosmerného reťazca pre každý MPPT (napr. Fronius). Nasmerujte na surové entity napätia/prúdu jednotlivých reťazcov – integrácia berie maximálne napätie a minimálny prúd za každý 30-minútový interval z histórie, takže pomocník štatistík nie je potrebný. Napätie stúpajúce k napätiu naprázdno pri súčasnom poklese prúdu je odtlačok mimo MPP spôsobený obmedzovaním dodávky. MPPT 2 je voliteľný; meniče s jedným trackerom ho nechajú prázdny.",
-          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná."
+          "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná.",
+          "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
+          "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
+          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva."
         }
       },
       "database": {

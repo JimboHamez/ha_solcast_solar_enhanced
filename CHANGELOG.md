@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+> Groundwork for telling inverter-side curtailment apart from shading (issue #109).
+> Everything here is recorded only: nothing reads the new columns yet, so tuning and dampening are unchanged.
+
+### Added
+
+- **Optional curtailment inputs on Step 1:** a grid voltage sensor, an inverter temperature sensor and an
+  "inverter limited" binary sensor. Each half-hour stores the grid voltage maximum and median, the
+  inverter's peak temperature and the share of the slot the inverter reported holding its output down.
+  Every row also records the export limit in force.
+- **Off-MPP minutes per slot,** from the per-MPPT DC sensors you already map. A slot counts the time
+  that every tracker on an inverter sat well above its operating voltage while drawing well below its
+  operating current, judged in the same sample. That is how an inverter holding back looks. Cloud
+  (current down, voltage held) and clipping (voltage up, current held) don't count, and neither do the
+  few-second MPPT scans. The existing max-voltage / min-current columns can't make that distinction,
+  because the two extremes can come from different moments. Thanks to @guiguan for the 5-second trace
+  of a real event that this is built and tested on.
+
 ## [1.15.0b1] - 2026-10-29
 
 > Beta. A tidier, correct Battery Storage step, from @BJReplay's write-up in discussion #104.

@@ -26,7 +26,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, cast
 
-from .const import DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS, SHADING_ZENITH_MAX
+from .const import CURTAILMENT_UNKNOWN, DAMPENING_WINDOW_BACK_DAYS, DAMPENING_WINDOW_FORWARD_DAYS, SHADING_ZENITH_MAX
 from .pv_tuning import clearsky_ghi, solar_position
 
 if TYPE_CHECKING:
@@ -78,6 +78,12 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_imed2         REAL NOT NULL DEFAULT 0,
   pv_estimate_undampened REAL NOT NULL DEFAULT 0,
   pv_export_max    REAL NOT NULL DEFAULT 0,
+  grid_v_max       REAL NOT NULL DEFAULT 0,
+  grid_v_med       REAL NOT NULL DEFAULT 0,
+  inverter_temp_max REAL NOT NULL DEFAULT 0,
+  inverter_limited REAL NOT NULL DEFAULT -1,
+  export_limit     REAL NOT NULL DEFAULT -1,
+  dc_offmpp_min    REAL NOT NULL DEFAULT -1,
   UNIQUE(period_end_epoch, site)
 );
 """
@@ -130,6 +136,21 @@ _ADDED_COLUMNS = (
     # bakes today's limit into the row and breaks under a DNSP dynamic limit.
     # Forward-only: the recorder keeps ~10 days, so only a short backfill is possible.
     ("pv_export_max", "REAL NOT NULL DEFAULT 0"),
+    # Inverter-side curtailment capture (record-only; nothing reads these yet).
+    # Grid voltage max and median over the slot, and the inverter's peak
+    # temperature: 0 = unknown, since neither is ever 0 while generating.
+    ("grid_v_max", "REAL NOT NULL DEFAULT 0"),
+    ("grid_v_med", "REAL NOT NULL DEFAULT 0"),
+    ("inverter_temp_max", "REAL NOT NULL DEFAULT 0"),
+    # Fraction of the slot the inverter reported holding its output down (0-1),
+    # and the export limit in force in kW. Both have a real 0, so -1 = unknown,
+    # which is also what every row written before these columns existed gets.
+    ("inverter_limited", "REAL NOT NULL DEFAULT -1"),
+    ("export_limit", "REAL NOT NULL DEFAULT -1"),
+    # Minutes of the slot every DC tracker on the inverter spent off-MPP at the
+    # same moment (see OFFMPP_* in const.py). 0 is a real "none", so -1 = unknown:
+    # no paired voltage/current sensors, or no recorder history for them.
+    ("dc_offmpp_min", "REAL NOT NULL DEFAULT -1"),
 )
 
 # Names only, for the optional-column SELECT guard below.
@@ -165,6 +186,12 @@ _INSERT_COLUMNS = (
     "dc_imed2",
     "pv_estimate_undampened",
     "pv_export_max",
+    "grid_v_max",
+    "grid_v_med",
+    "inverter_temp_max",
+    "inverter_limited",
+    "export_limit",
+    "dc_offmpp_min",
 )
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO solcast_data ("
@@ -299,6 +326,13 @@ class SqliteStore:
             record.get("dc_imed2", 0.0) or 0.0,
             record.get("pv_estimate_undampened", 0.0) or 0.0,
             record.get("pv_export_max", 0.0) or 0.0,
+            record.get("grid_v_max", 0.0) or 0.0,
+            record.get("grid_v_med", 0.0) or 0.0,
+            record.get("inverter_temp_max", 0.0) or 0.0,
+            # Not `or`: 0.0 is a real value here, so only a missing key falls back.
+            record.get("inverter_limited", CURTAILMENT_UNKNOWN),
+            record.get("export_limit", CURTAILMENT_UNKNOWN),
+            record.get("dc_offmpp_min", CURTAILMENT_UNKNOWN),
         )
 
     async def async_insert_record(self, record: StoreRecord) -> bool:

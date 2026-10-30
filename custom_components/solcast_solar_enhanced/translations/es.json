@@ -16,7 +16,10 @@
           "mppt1_voltage_sensor": "Sensor de tensión CC del MPPT 1 (opcional, para detección de limitación)",
           "mppt1_current_sensor": "Sensor de corriente CC del MPPT 1 (opcional)",
           "mppt2_voltage_sensor": "Sensor de tensión CC del MPPT 2 (opcional)",
-          "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)"
+          "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)",
+          "grid_voltage_sensor": "Sensor de tensión de red (opcional, para detectar recortes)",
+          "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: un contador de energía acumulada (Wh/kWh, total_increasing). Si solo dispone de una lectura de potencia, use un ayudante de estadísticas mean_linear móvil (kW), no un sensor instantáneo en bruto. Total de todo el sistema — los sistemas con varios conjuntos también asignan cada conjunto en la página por sitio que sigue.",
@@ -24,7 +27,10 @@
           "pv_actual_input_mode": "La detección automática elige entre contador de energía y potencia promediada según la unidad (Wh/kWh frente a W/kW).",
           "pv_export_input_mode": "Detección automática por unidad. Se recomienda un contador de energía.",
           "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío. Se muestra solo en sistemas de un único conjunto: en sistemas con varios conjuntos, la tensión/corriente de cada conjunto se asigna en el paso por sitio.",
-          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo."
+          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo.",
+          "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
+          "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
+          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra."
         }
       },
       "database": {
@@ -125,7 +131,10 @@
           "mppt1_voltage_sensor": "Sensor de tensión CC del MPPT 1 (opcional, para detección de limitación)",
           "mppt1_current_sensor": "Sensor de corriente CC del MPPT 1 (opcional)",
           "mppt2_voltage_sensor": "Sensor de tensión CC del MPPT 2 (opcional)",
-          "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)"
+          "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)",
+          "grid_voltage_sensor": "Sensor de tensión de red (opcional, para detectar recortes)",
+          "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: un contador de energía acumulada (Wh/kWh, total_increasing). Si solo dispone de una lectura de potencia, use un ayudante de estadísticas mean_linear móvil (kW), no un sensor instantáneo en bruto.",
@@ -133,7 +142,10 @@
           "pv_actual_input_mode": "La detección automática elige entre contador de energía y potencia promediada según la unidad (Wh/kWh frente a W/kW).",
           "pv_export_input_mode": "Detección automática por unidad. Se recomienda un contador de energía.",
           "mppt1_voltage_sensor": "Sensores opcionales de cadena CC por MPPT (p. ej., de Fronius). Indica las entidades de tensión/corriente por cadena sin procesar: la integración toma la tensión máxima y la corriente mínima de cada intervalo de 30 minutos desde el historial, por lo que no se necesita un ayudante de estadísticas. Una tensión que sube hacia el circuito abierto mientras la corriente se desploma es la huella fuera del MPP de la limitación de exportación. El MPPT 2 es opcional; los inversores de un solo seguidor lo dejan vacío.",
-          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo."
+          "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo.",
+          "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
+          "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
+          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra."
         }
       },
       "database": {

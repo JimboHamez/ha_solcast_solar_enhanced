@@ -591,6 +591,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | PV Export sensor | Export energy counter (recommended) or a rolling helper |
 | PV Export sensor type | As above, for export |
 | MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
+| Grid voltage sensor | Optional — the AC voltage your inverter measures at the grid connection. Each half-hour's maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now |
+| Inverter temperature sensor | Optional — recorded as each half-hour's maximum, to tell thermal derating apart from shading later. Recorded only for now |
+| Inverter limited status | Optional binary sensor that is **on** while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template (for a Sungrow string inverter, work state `0x8200` dispatch or `0x8100` derating). The share of each half-hour it was on is recorded. Recorded only for now |
 
 ### Step 2 — Storage
 

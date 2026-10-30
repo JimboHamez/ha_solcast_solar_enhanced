@@ -16,7 +16,10 @@
           "mppt1_voltage_sensor": "MPPT-1-DC-Spannungssensor (optional, zur Abregelungserkennung)",
           "mppt1_current_sensor": "MPPT-1-DC-Stromsensor (optional)",
           "mppt2_voltage_sensor": "MPPT-2-DC-Spannungssensor (optional)",
-          "mppt2_current_sensor": "MPPT-2-DC-Stromsensor (optional)"
+          "mppt2_current_sensor": "MPPT-2-DC-Stromsensor (optional)",
+          "grid_voltage_sensor": "Netzspannungssensor (optional, zur Erkennung von Abregelung)",
+          "inverter_temp_sensor": "Wechselrichter-Temperatursensor (optional)",
+          "inverter_limited_sensor": "Status „Wechselrichter begrenzt“ (optionaler Binärsensor)"
         },
         "data_description": {
           "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor. Gesamtwert des Gesamtsystems — bei mehreren Strängen wird jeder Strang zusätzlich auf der folgenden Seite je Standort zugeordnet.",
@@ -24,7 +27,10 @@
           "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen.",
           "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer. Wird nur für Anlagen mit einem einzelnen Strang angezeigt — bei mehreren Strängen werden Spannung/Strom je Strang stattdessen im Schritt je Standort zugeordnet.",
-          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert."
+          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert.",
+          "grid_voltage_sensor": "Die AC-Spannung, die Ihr Wechselrichter am Netzanschluss misst. Maximum und Median jeder halben Stunde werden gespeichert, damit Zeiträume, in denen hohe Spannung die Leistung gedrosselt hat, später von Verschattung unterschieden werden können. Vorerst nur aufgezeichnet.",
+          "inverter_temp_sensor": "Wird als Maximum jeder halben Stunde gespeichert, damit thermisches Derating später von Verschattung unterschieden werden kann. Vorerst nur aufgezeichnet.",
+          "inverter_limited_sensor": "Ein Binärsensor, der eingeschaltet ist, solange der Wechselrichter seine Leistung aus irgendeinem Grund begrenzt: Einspeiselimit, Netzbetreiber-Befehl oder Derating. Bilden Sie den Status Ihres Wechselrichters per Template darauf ab. Gespeichert wird der Anteil jeder halben Stunde, in dem er eingeschaltet war. Vorerst nur aufgezeichnet."
         }
       },
       "database": {
@@ -125,7 +131,10 @@
           "mppt1_voltage_sensor": "MPPT-1-DC-Spannungssensor (optional, zur Abregelungserkennung)",
           "mppt1_current_sensor": "MPPT-1-DC-Stromsensor (optional)",
           "mppt2_voltage_sensor": "MPPT-2-DC-Spannungssensor (optional)",
-          "mppt2_current_sensor": "MPPT-2-DC-Stromsensor (optional)"
+          "mppt2_current_sensor": "MPPT-2-DC-Stromsensor (optional)",
+          "grid_voltage_sensor": "Netzspannungssensor (optional, zur Erkennung von Abregelung)",
+          "inverter_temp_sensor": "Wechselrichter-Temperatursensor (optional)",
+          "inverter_limited_sensor": "Status „Wechselrichter begrenzt“ (optionaler Binärsensor)"
         },
         "data_description": {
           "pv_actual_sensor": "Empfohlen: ein kumulativer Energiezähler (Wh/kWh, total_increasing). Wenn nur ein Leistungswert vorliegt, verwenden Sie einen gleitenden mean_linear-Statistik-Helfer (kW) – keinen rohen Momentansensor.",
@@ -133,7 +142,10 @@
           "pv_actual_input_mode": "Die automatische Erkennung wählt anhand der Einheit zwischen Energiezähler und gemittelter Leistung (Wh/kWh vs. W/kW).",
           "pv_export_input_mode": "Automatische Erkennung anhand der Einheit. Energiezähler empfohlen.",
           "mppt1_voltage_sensor": "Optionale DC-Strang-Sensoren je MPPT (z. B. von Fronius). Verweisen Sie auf die rohen Spannungs-/Strom-Entitäten je Strang – die Integration verwendet die maximale Spannung und den minimalen Strom über jedes 30-Minuten-Intervall aus dem Verlauf, sodass kein Statistik-Helfer nötig ist. Eine zur Leerlaufspannung steigende Spannung bei gleichzeitig einbrechendem Strom ist der MPP-ferne Fingerabdruck der Einspeise-Abregelung. MPPT 2 ist optional; Wechselrichter mit nur einem Tracker lassen es leer.",
-          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert."
+          "capacity_kw": "Die AC-Nennleistung Ihres Wechselrichters — nicht die Modulleistung (DC). Messwerte ab diesem Wert mal der Abregelungsschwelle gelten als Wechselrichter-Abregelung und werden von Tuning und Verschattung ausgeschlossen. Wird automatisch von Solcast übernommen, sofern Ihre Standorte sie melden; dieser Wert dient als Rückfallwert.",
+          "grid_voltage_sensor": "Die AC-Spannung, die Ihr Wechselrichter am Netzanschluss misst. Maximum und Median jeder halben Stunde werden gespeichert, damit Zeiträume, in denen hohe Spannung die Leistung gedrosselt hat, später von Verschattung unterschieden werden können. Vorerst nur aufgezeichnet.",
+          "inverter_temp_sensor": "Wird als Maximum jeder halben Stunde gespeichert, damit thermisches Derating später von Verschattung unterschieden werden kann. Vorerst nur aufgezeichnet.",
+          "inverter_limited_sensor": "Ein Binärsensor, der eingeschaltet ist, solange der Wechselrichter seine Leistung aus irgendeinem Grund begrenzt: Einspeiselimit, Netzbetreiber-Befehl oder Derating. Bilden Sie den Status Ihres Wechselrichters per Template darauf ab. Gespeichert wird der Anteil jeder halben Stunde, in dem er eingeschaltet war. Vorerst nur aufgezeichnet."
         }
       },
       "database": {

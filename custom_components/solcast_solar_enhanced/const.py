@@ -30,6 +30,38 @@ CONF_MPPT1_VOLTAGE_SENSOR = "mppt1_voltage_sensor"
 CONF_MPPT1_CURRENT_SENSOR = "mppt1_current_sensor"
 CONF_MPPT2_VOLTAGE_SENSOR = "mppt2_voltage_sensor"
 CONF_MPPT2_CURRENT_SENSOR = "mppt2_current_sensor"
+# Inverter-side curtailment capture. Each slot records what the inverter saw and
+# did, so rows the inverter itself curtailed (a DNSP-set limit, Volt-Watt, an
+# overvoltage trip, thermal derating) can later be told apart from shading.
+# Optional and record-only for now: nothing reads the columns yet. One property-
+# wide set, replicated onto per-site rows like ``pv_export``.
+CONF_GRID_VOLTAGE_SENSOR = "grid_voltage_sensor"
+CONF_INVERTER_TEMP_SENSOR = "inverter_temp_sensor"
+# A binary_sensor that is on while the inverter holds its output down, for any
+# reason. Brands report this differently, so a template maps each one onto it.
+CONF_INVERTER_LIMITED_SENSOR = "inverter_limited_sensor"
+# Stored when a curtailment input is not configured or could not be read. The
+# limited fraction and the export limit both have a meaningful 0, so 0 cannot
+# stand for "unknown" the way it does for voltage and temperature.
+CURTAILMENT_UNKNOWN = -1.0
+# Time-aligned off-MPP capture (issue #109): the minutes in a slot during which
+# every DC tracker on an inverter sat well above its operating voltage while
+# drawing well below its operating current, judged in the SAME sample. A limited
+# inverter parks its strings toward open circuit, so both move together; cloud
+# drops the current at a held voltage, and clipping raises the voltage at a held
+# current. The slot's max-V / min-I columns cannot tell these apart, because the
+# two extremes can come from different moments (19 Oct: a 9.9 kW clipping second
+# paired with a cloud minute read as curtailment). Both thresholds are ratios to
+# the tracker's reference, so string length and sensor units do not matter.
+OFFMPP_VOLTAGE_RATIO = 1.08
+OFFMPP_CURRENT_RATIO = 0.3
+# A run shorter than this is not counted: MPPT scan sweeps visit open circuit for
+# a few seconds by design.
+OFFMPP_MIN_RUN_S = 60
+# The reference is the slot's median, tightened by the last healthy slot's
+# median when it is recent enough. The slot median alone fails when most of the
+# slot is curtailed, since the median is then the curtailed operating point.
+OFFMPP_REF_MAX_AGE_S = 7200
 
 CONF_DB_ENABLED = "db_enabled"
 # Optional history retention. 0 = keep everything (default, never prunes). When
