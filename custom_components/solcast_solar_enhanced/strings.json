@@ -16,7 +16,10 @@
           "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
           "mppt2_current_sensor": "MPPT 2 DC current sensor (optional)",
           "pv_actual_input_mode": "PV sensor type",
-          "pv_export_input_mode": "PV Export sensor type"
+          "pv_export_input_mode": "PV Export sensor type",
+          "grid_voltage_sensor": "Grid voltage sensor (optional, for curtailment detection)",
+          "inverter_temp_sensor": "Inverter temperature sensor (optional)",
+          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)"
         },
         "data_description": {
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor. Whole-system total — multi-array systems also map each array on the per-site page that follows.",
@@ -24,7 +27,10 @@
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
           "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
           "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank. Shown only for single-array systems — multi-array systems map each array's MPPT voltage/current in the per-site step instead.",
-          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback."
+          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback.",
+          "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
+          "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
+          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now."
         }
       },
       "database": {
@@ -125,7 +131,10 @@
           "mppt2_voltage_sensor": "MPPT 2 DC voltage sensor (optional)",
           "mppt2_current_sensor": "MPPT 2 DC current sensor (optional)",
           "pv_actual_input_mode": "PV sensor type",
-          "pv_export_input_mode": "PV Export sensor type"
+          "pv_export_input_mode": "PV Export sensor type",
+          "grid_voltage_sensor": "Grid voltage sensor (optional, for curtailment detection)",
+          "inverter_temp_sensor": "Inverter temperature sensor (optional)",
+          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)"
         },
         "data_description": {
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
@@ -133,7 +142,10 @@
           "pv_actual_input_mode": "Auto-detect picks energy counter vs averaged power from the unit (Wh/kWh vs W/kW).",
           "pv_export_input_mode": "Auto-detect by unit. Energy counter recommended.",
           "mppt1_voltage_sensor": "Optional per-MPPT DC string sensors (e.g. from Fronius). Point at the raw per-string voltage/current entities — the integration takes the maximum voltage and minimum current over each 30-minute slot from history, so no statistics helper is needed. Voltage climbing toward open-circuit while current collapses is the off-MPP fingerprint of export curtailment. MPPT 2 is optional; single-tracker inverters leave it blank.",
-          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback."
+          "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback.",
+          "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
+          "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
+          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now."
         }
       },
       "database": {

@@ -49,6 +49,9 @@ from .const import (
     CONF_DB_ENABLED,
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
+    CONF_GRID_VOLTAGE_SENSOR,
+    CONF_INVERTER_LIMITED_SENSOR,
+    CONF_INVERTER_TEMP_SENSOR,
     CONF_KT_THRESHOLD,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -336,6 +339,16 @@ def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
         vol.Required(
             CONF_PV_EXPORT_INPUT_MODE, default=d.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)
         ): _input_mode_selector(),
+        # Optional inverter-side curtailment inputs: recorded per slot, read by nothing yet.
+        vol.Optional(
+            CONF_GRID_VOLTAGE_SENSOR, description={"suggested_value": d.get(CONF_GRID_VOLTAGE_SENSOR)}
+        ): _sensor_selector(SensorDeviceClass.VOLTAGE),
+        vol.Optional(
+            CONF_INVERTER_TEMP_SENSOR, description={"suggested_value": d.get(CONF_INVERTER_TEMP_SENSOR)}
+        ): _sensor_selector(SensorDeviceClass.TEMPERATURE),
+        vol.Optional(
+            CONF_INVERTER_LIMITED_SENSOR, description={"suggested_value": d.get(CONF_INVERTER_LIMITED_SENSOR)}
+        ): _entity_selector("binary_sensor"),
     }
     if single_site:
         for key in _FLAT_MPPT_KEYS:

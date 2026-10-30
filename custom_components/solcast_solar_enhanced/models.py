@@ -55,6 +55,12 @@ class StoreRecord(TypedDict, total=False):
     dc_imed2: float
     pv_estimate_undampened: float
     pv_export_max: float
+    grid_v_max: float
+    grid_v_med: float
+    inverter_temp_max: float
+    inverter_limited: float
+    export_limit: float
+    dc_offmpp_min: float
 
 
 class StoredIrradiance(TypedDict):
