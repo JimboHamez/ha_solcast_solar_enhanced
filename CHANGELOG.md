@@ -5,9 +5,9 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.15.0b2] - 2026-10-30
 
-> Groundwork for telling inverter-side curtailment apart from shading (issue #109).
+> Beta. Groundwork for telling inverter-side curtailment apart from shading (issue #109).
 > Everything here is recorded only: nothing reads the new columns yet, so tuning and dampening are unchanged.
 
 ### Added
@@ -1868,6 +1868,7 @@ Housekeeping against the Home Assistant [Integration Quality Scale](https://deve
 - `CREATE TABLE` permission error avoided by checking `information_schema` first.
 - `NumberSelectorConfig` step rejected by HA 2026.x.
 
+[1.15.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.15.0b1...v1.15.0b2
 [1.15.0b1]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0...v1.15.0b1
 [1.14.0]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b2...v1.14.0
 [1.14.0b2]: https://github.com/JimboHamez/ha_solcast_solar_enhanced/compare/v1.14.0b1...v1.14.0b2
