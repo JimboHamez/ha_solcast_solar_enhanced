@@ -139,6 +139,12 @@ CREATE TABLE IF NOT EXISTS solcast_data (
   dc_imed2         REAL NOT NULL DEFAULT 0,
   pv_estimate_undampened REAL NOT NULL DEFAULT 0,
   pv_export_max    REAL NOT NULL DEFAULT 0,
+  grid_v_max       REAL NOT NULL DEFAULT 0,
+  grid_v_med       REAL NOT NULL DEFAULT 0,
+  inverter_temp_max REAL NOT NULL DEFAULT 0,
+  inverter_limited REAL NOT NULL DEFAULT -1,
+  export_limit     REAL NOT NULL DEFAULT -1,
+  dc_offmpp_min    REAL NOT NULL DEFAULT -1,
   UNIQUE(period_end_epoch, site)
 );
 """

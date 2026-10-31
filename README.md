@@ -84,7 +84,54 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.14.0b2
+## 🆕 What's new in v1.15.0b2
+
+**Beta: groundwork for telling inverter curtailment apart from shading.** When your inverter holds its output down, whether from an export limit, a network command (DOE) or derating, the lost output can be booked as shading. This beta starts recording what each half-hour looked like at the inverter, so a later release can keep those slots out of dampening and tuning. It only records: **nothing here changes tuning or dampening yet.** Thanks to @guiguan for the 5-second trace of a real event in [issue #109](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/109) that this is built and tested on.
+
+- **Three optional sensors on [Step 1](#step-1--site--system):** grid voltage, inverter temperature and an "inverter limited" binary sensor. Each half-hour stores the voltage maximum and median, the peak temperature, and the share of the slot the inverter reported holding back.
+- **Off-MPP minutes from the MPPT sensors you already map.** Each half-hour counts the time every tracker on an inverter sat near open-circuit voltage while drawing little current, at the same moment. That's how an inverter holding back looks. Cloud, clipping and the few-second MPPT scans don't count.
+- **The export limit in force** is stamped on every row.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. The new sensors are optional. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1150b2---2026-10-30) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b2)
+
+<details>
+<summary><b>What landed in v1.15.0b1</b></summary>
+
+**Beta: a tidier Battery Storage step that reads your battery sensor correctly.** Thanks to @BJReplay for the write-up in [discussion #104](https://github.com/JimboHamez/ha_solcast_solar_enhanced/discussions/104). Battery charge is only stored and shown on the **Battery Charge 30min Average** sensor, so nothing here changes tuning or dampening.
+
+- **All battery input is in one place.** The battery sensor moved from Step 1 to the [Battery Storage](#step-4--battery-storage) step. It keeps its value, so there is nothing to re-enter.
+- **Every field explains itself**, and the raw-sensor type is labelled, in all 11 languages.
+- **The pickers list only power sensors** (and energy counters for the charge-only sensor) instead of every entity.
+- **Watts are converted to kW.** A W sensor was stored 1000 times too large.
+- **Sensor reports charging as negative**: a new toggle for batteries with the opposite sign convention. Discharge is no longer ever recorded as charge.
+- **A charge energy counter** (Wh/kWh) is accepted for the charge-only sensor.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1150b1---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b1)
+
+</details>
+
+<details>
+<summary><b>What landed in v1.14.0</b></summary>
+
+**Stable: your Solcast PV Forecast hourly dampening values are no longer reset, and an opt-in sun-position dampening mode is added for arrays behind a hard horizon.** The code is identical to `v1.14.0b2`; if you have been running the beta there is nothing new here.
+
+- **Hourly dampening you set by hand is kept.** From 1.13.0, the first cycle reset Solcast PV Forecast's hourly dampening values to 1.0 whenever its granular dampening file was still empty, overwriting values you had tuned yourself. The reset is gone. Values already reset by 1.13.0 to 1.14.0b1 can't be brought back by this release. See [granular dampening](#about-the-base-integrations-granular-dampening-setting) for how the two sets of values interact.
+- **Sun-position dampening, for a sharp horizon** (*PV Tuning & Dampening → Sun-position dampening (sharp horizon, beta)*), off by default. It builds each half-hour's factor from records taken with the sun in nearly the same place, so a shading edge that clears within a few degrees of sun is followed instead of smoothed out. Turn it on only if an array has a sharp obstruction such as a building, a roofline or a tree line: on an unshaded array it is slightly worse than the standard mode. The option keeps "beta" in its name while results from real installs come in ([#91](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/91)).
+- **Auto dampening says what it takes over**, translated into all 11 languages.
+- **Now in the HACS default catalog.** The [install steps](#hacs-or-marketplace-recommended) cover HACS and the Marketplace that replaces it from Home Assistant 2026.11. If you installed from the custom repository, you don't need to do anything.
+
+**Upgrading from 1.13.x?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed.
+
+[CHANGELOG](CHANGELOG.md#1140---2026-10-29) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0)
+
+</details>
+
+<details>
+<summary><b>What landed in v1.14.0b2</b></summary>
 
 **Beta: your Solcast PV Forecast hourly dampening values are no longer reset, and the integration is now in the HACS default catalog.** The opt-in sun-position dampening from v1.14.0b1 is unchanged.
 
@@ -96,6 +143,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. This is a beta, so HACS only offers it if you have turned on the integration's **Pre-release** switch.
 
 [CHANGELOG](CHANGELOG.md#1140b2---2026-10-21) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.14.0b2)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.14.0b1</b></summary>
@@ -557,6 +606,9 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 | PV Export sensor | Export energy counter (recommended) or a rolling helper |
 | PV Export sensor type | As above, for export |
 | MPPT 1/2 DC voltage + current | Optional — your inverter's per-string voltage/current sensors, for curtailment-detection capture. Leave MPPT 2 blank for single-tracker inverters. **Single-array systems only** — these fields are hidden for multi-array systems, which map per-array MPPT in Step 6 instead |
+| Grid voltage sensor | Optional — the AC voltage your inverter measures at the grid connection. Each half-hour's maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now |
+| Inverter temperature sensor | Optional — recorded as each half-hour's maximum, to tell thermal derating apart from shading later. Recorded only for now |
+| Inverter limited status | Optional binary sensor that is **on** while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template (for a Sungrow string inverter, work state `0x8200` dispatch or `0x8100` derating). The share of each half-hour it was on is recorded. Recorded only for now |
 
 ### Step 2 — Storage
 

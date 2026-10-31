@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
@@ -44,6 +44,9 @@ from .const import (
     CONF_DB_ENABLED,
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
+    CONF_GRID_VOLTAGE_SENSOR,
+    CONF_INVERTER_LIMITED_SENSOR,
+    CONF_INVERTER_TEMP_SENSOR,
     CONF_KT_THRESHOLD,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -63,6 +66,7 @@ from .const import (
     CONF_SITE_TOPOLOGY,
     CONF_SUNPOS_DAMPENING,
     CONF_TILT,
+    CURTAILMENT_UNKNOWN,
     DAMPENING_GATE_AZIMUTH_TOL,
     DAMPENING_GATE_MIN_RECORDS,
     DAMPENING_GATE_TILT_TOL,
@@ -98,6 +102,10 @@ from .const import (
     KT_GHI_CS_FLOOR,
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
+    OFFMPP_CURRENT_RATIO,
+    OFFMPP_MIN_RUN_S,
+    OFFMPP_REF_MAX_AGE_S,
+    OFFMPP_VOLTAGE_RATIO,
     PUSH_FACTOR_COUNT,
     SHADING_INTERVAL_HOURS,
     STORAGE_VERSION,
@@ -338,6 +346,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # sensor so users can confirm their string sensors are wired and data is
         # landing. None until a cycle with DC sensors configured runs.
         self._dc_telemetry: DcTelemetry | None = None
+        # Per-tracker off-MPP reference: entity_id -> (median over the last healthy
+        # slot, that slot's period-end epoch). In memory only, so after a restart
+        # the slot's own median serves until the next healthy slot.
+        self._offmpp_ref: dict[str, tuple[float, float]] = {}
+        # What the latest '_total' row captured for inverter-side curtailment, for
+        # the diagnostics download. Empty until a cycle with the store enabled runs.
+        self._curtailment_capture: dict[str, Any] = {}
         # True while a tuned orientation diverges materially from the configured
         # (Solcast) one. Advisory only — dampening is still pushed; this drives the
         # warning and the repair issue. Per-site aware: set if *any* target diverges
@@ -579,12 +594,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             # (issue #86). Property-wide, so it is replicated onto the per-site rows
             # exactly as ``pv_export`` already is.
             export_entity = str(opts.get(CONF_PV_EXPORT_SENSOR, "") or "")
+            # Grid voltage and inverter temperature ride the same batch: both are
+            # optional curtailment inputs reduced over the slot like the DC series.
+            grid_v_entity = str(opts.get(CONF_GRID_VOLTAGE_SENSOR, "") or "")
+            temp_entity = str(opts.get(CONF_INVERTER_TEMP_SENSOR, "") or "")
             samples = await self._interval_samples(
-                dc_entities | ({export_entity} if export_entity else set()),
+                dc_entities | {e for e in (export_entity, grid_v_entity, temp_entity) if e},
                 slot_start_epoch,
                 period_epoch,
             )
             dc_hist = self._values_only(samples)
+            curtailment, site_offmpp = await self._capture_curtailment(opts, samples, slot_start_epoch, period_epoch)
             pv_export_max = self._interval_peak_kw(
                 export_entity,
                 str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)),
@@ -658,6 +678,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch), 4
                 ),
                 **self._irradiance_for_storage(),
+                **curtailment,
             }
             await self._db.async_insert_record(record)
 
@@ -715,6 +736,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                         ),
                         # Irradiance is property-wide weather: same values on every site.
                         **self._irradiance_for_storage(),
+                        # Curtailment inputs are property-wide too, except the off-MPP
+                        # minutes, which come from the inverter this array feeds.
+                        **curtailment,
+                        "dc_offmpp_min": site_offmpp.get(site_id, CURTAILMENT_UNKNOWN),
                     }
                 )
 
@@ -854,9 +879,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return
         # Prefer the base integration's property-wide export limit; fall back to
         # the manual option when the base hasn't set one.
-        export_limit = self._read_base_export_limit()
-        if export_limit is None:
-            export_limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
+        export_limit = self._resolve_export_limit(opts)
         albedo = float(opts.get(CONF_ALBEDO, DEFAULT_ALBEDO))
         result = await self.hass.async_add_executor_job(
             run_tuning,
@@ -1303,9 +1326,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # Export limit for curtailment-aware forecast clipping — prefer the base's
         # site_export_limit, fall back to the manual option (0 = disabled). Same
         # source the tuner uses, so dampening and tuning agree on the ceiling.
-        export_limit = self._read_base_export_limit()
-        if export_limit is None:
-            export_limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
+        export_limit = self._resolve_export_limit(opts)
 
         tz = dt_util.get_time_zone(self.hass.config.time_zone) or UTC
         now_local = datetime.fromtimestamp(now_epoch, tz=tz)
@@ -1703,6 +1724,27 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         reducers that only need the values project them off with
         ``_interval_values``.
         """
+        raw = await self._recorder_states(entity_ids, start_epoch, end_epoch)
+        out: dict[str, list[tuple[float, float]]] = {}
+        for eid, states in raw.items():
+            vals: list[tuple[float, float]] = []
+            for st in states:
+                try:
+                    value = float(st.state)
+                except (TypeError, ValueError):
+                    continue  # 'unknown'/'unavailable' between real readings
+                vals.append((self._state_epoch(st), value))
+            if vals:
+                vals.sort(key=lambda pair: pair[0])
+                out[eid] = vals
+        return out
+
+    async def _recorder_states(self, entity_ids: set[str], start_epoch: int, end_epoch: int) -> dict[str, list[Any]]:
+        """Raw recorded states per entity over ``[start, end]``, or ``{}`` when the recorder can't answer.
+
+        One batched ``get_significant_states`` (all states, no attributes) run on
+        the recorder executor.
+        """
         ids = [e for e in entity_ids if e]
         if not ids:
             return {}
@@ -1731,23 +1773,228 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except Exception as exc:  # noqa: BLE001 — recorder may be disabled/not ready
             _LOGGER.debug("Interval history unavailable: %s", exc)
             return {}
-        out: dict[str, list[tuple[float, float]]] = {}
-        for eid, states in (raw or {}).items():
-            vals: list[tuple[float, float]] = []
-            for st in states:
-                try:
-                    value = float(st.state)
-                except (TypeError, ValueError):
-                    continue  # 'unknown'/'unavailable' between real readings
-                ts = getattr(st, "last_updated_timestamp", None)
-                if ts is None:
-                    last_updated = getattr(st, "last_updated", None)
-                    ts = last_updated.timestamp() if last_updated is not None else 0.0
-                vals.append((float(ts), value))
-            if vals:
-                vals.sort(key=lambda pair: pair[0])
-                out[eid] = vals
-        return out
+        return dict(raw or {})
+
+    @staticmethod
+    def _state_epoch(state: Any) -> float:
+        """A recorded state's ``last_updated`` as an epoch, or 0.0 when it carries none."""
+        ts = getattr(state, "last_updated_timestamp", None)
+        if ts is None:
+            last_updated = getattr(state, "last_updated", None)
+            ts = last_updated.timestamp() if last_updated is not None else 0.0
+        return float(ts)
+
+    async def _interval_on_fraction(self, entity_id: str, start_epoch: int, end_epoch: int) -> float:
+        """Time-weighted share of ``[start, end]`` a binary_sensor spent ``on`` (0-1).
+
+        Each recorded state holds until the next one. Time spent ``unknown`` or
+        ``unavailable`` is left out of the denominator, so a sensor that dropped out
+        mid-slot is judged on the time it did report. With no recorder history the
+        current state stands for the whole slot. Returns ``CURTAILMENT_UNKNOWN``
+        when the entity is unset or never reported ``on`` or ``off``.
+        """
+        if not entity_id:
+            return CURTAILMENT_UNKNOWN
+        raw = await self._recorder_states({entity_id}, start_epoch, end_epoch)
+        timeline = sorted(
+            ((max(float(start_epoch), self._state_epoch(st)), st.state) for st in raw.get(entity_id) or []),
+            key=lambda pair: pair[0],
+        )
+        if not timeline:
+            current = self.hass.states.get(entity_id)
+            if current is not None and current.state in (STATE_ON, STATE_OFF):
+                return 1.0 if current.state == STATE_ON else 0.0
+            return CURTAILMENT_UNKNOWN
+        on = known = 0.0
+        for k, (ts, state) in enumerate(timeline):
+            nxt = timeline[k + 1][0] if k + 1 < len(timeline) else float(end_epoch)
+            span = max(0.0, min(nxt, float(end_epoch)) - ts)
+            if state == STATE_ON:
+                on += span
+                known += span
+            elif state == STATE_OFF:
+                known += span
+        if known <= 0:
+            return CURTAILMENT_UNKNOWN
+        return round(on / known, 4)
+
+    async def _capture_curtailment(
+        self,
+        opts: dict[str, Any],
+        samples: dict[str, list[tuple[float, float]]],
+        start_epoch: int,
+        end_epoch: int,
+    ) -> tuple[StoreRecord, dict[str, float]]:
+        """Reduce the slot's inverter-side curtailment inputs for the store.
+
+        Record-only: nothing reads these columns yet. Returns the property-wide
+        columns for the ``_total`` row (the per-site rows reuse them) and each
+        array's off-MPP minutes, taken from the inverter that array feeds.
+
+        Args:
+            opts: The merged entry data and options.
+            samples: The slot's batched recorder samples (DC, export, grid voltage,
+                inverter temperature).
+            start_epoch: The slot start.
+            end_epoch: The slot end (period end).
+
+        Returns:
+            ``(columns, site_offmpp)``, with unknown inputs carrying their sentinels.
+        """
+        hist = self._values_only(samples)
+        grid_v_entity = str(opts.get(CONF_GRID_VOLTAGE_SENSOR, "") or "")
+        temp_entity = str(opts.get(CONF_INVERTER_TEMP_SENSOR, "") or "")
+        limited_entity = str(opts.get(CONF_INVERTER_LIMITED_SENSOR, "") or "")
+        export_limit = self._resolve_export_limit(opts)
+
+        offmpp_total: float | None = None
+        site_offmpp: dict[str, float] = {}
+        for trackers, sites in self._offmpp_tracker_sets(opts):
+            minutes = self._offmpp_minutes(trackers, samples, start_epoch, end_epoch)
+            if minutes is None:
+                continue
+            # '_total' takes the worst inverter, so curtailment on any one shows.
+            offmpp_total = minutes if offmpp_total is None else max(offmpp_total, minutes)
+            for site in sites:
+                site_offmpp[site] = minutes
+
+        columns: StoreRecord = {
+            "grid_v_max": round(self._interval_extreme(grid_v_entity, "max", hist) or 0.0, 2),
+            "grid_v_med": round(self._interval_median(grid_v_entity, hist) or 0.0, 2),
+            "inverter_temp_max": round(self._interval_extreme(temp_entity, "max", hist) or 0.0, 2),
+            "inverter_limited": await self._interval_on_fraction(limited_entity, start_epoch, end_epoch),
+            # 0 kW means "no limit configured" until a dynamic limit can be told
+            # apart from a disabled one, so it is stamped as unknown.
+            "export_limit": round(export_limit, 3) if export_limit > 0 else CURTAILMENT_UNKNOWN,
+            "dc_offmpp_min": offmpp_total if offmpp_total is not None else CURTAILMENT_UNKNOWN,
+        }
+        self._curtailment_capture = {
+            "inputs": {
+                CONF_GRID_VOLTAGE_SENSOR: grid_v_entity or None,
+                CONF_INVERTER_TEMP_SENSOR: temp_entity or None,
+                CONF_INVERTER_LIMITED_SENSOR: limited_entity or None,
+            },
+            "period_end_epoch": end_epoch,
+            "total": dict(columns),
+            "site_offmpp_min": dict(site_offmpp),
+        }
+        return columns, site_offmpp
+
+    @staticmethod
+    def _offmpp_tracker_sets(opts: dict[str, Any]) -> list[tuple[list[MpptTracker], list[str]]]:
+        """Each inverter's full set of paired DC trackers, with the sites it feeds.
+
+        An inverter-side limit moves every tracker at once, so the off-MPP test
+        needs all of an inverter's trackers together, not the two per array the
+        other DC columns keep. A site group is one inverter: its own trackers plus
+        every apportioned string's. The flat single-array keys form one more set,
+        feeding any site whose group maps no trackers of its own. Only trackers
+        with both a voltage and a current sensor count.
+        """
+
+        def _paired(mppts: list[MpptTracker] | None) -> list[MpptTracker]:
+            return [m for m in mppts or [] if m.get("voltage_sensor") and m.get("current_sensor")]
+
+        sets: list[tuple[list[MpptTracker], list[str]]] = []
+        uncovered: list[str] = []
+        for group in _site_groups(opts):
+            trackers: list[MpptTracker] = []
+            sites: list[str] = []
+            for cfg in (group, *(group.get("strings") or [])):
+                trackers += _paired(cfg.get("mppts"))
+                if site := cfg.get("site"):
+                    sites.append(site)
+            if trackers:
+                sets.append((trackers, sites))
+            else:
+                uncovered += sites
+        flat = _paired(SolcastEnhancedCoordinator._mppt_list_from_opts(opts))
+        if flat:
+            sets.append((flat, uncovered))
+        return sets
+
+    def _offmpp_minutes(
+        self,
+        trackers: list[MpptTracker],
+        samples: dict[str, list[tuple[float, float]]],
+        start_epoch: int,
+        end_epoch: int,
+    ) -> float | None:
+        """Minutes in the slot that every tracker was off-MPP in the same sample.
+
+        Each recorded value holds until the next one, so the trackers' series are
+        walked on one merged timeline. Off-MPP means voltage above
+        ``OFFMPP_VOLTAGE_RATIO`` times the reference and current below
+        ``OFFMPP_CURRENT_RATIO`` times it, on every tracker at once. Runs shorter
+        than ``OFFMPP_MIN_RUN_S`` are dropped as MPPT scans. A slot that was not
+        mostly off-MPP refreshes the remembered references.
+
+        Returns:
+            Minutes off-MPP, 0.0 for a tracker set that was not generating, or
+            ``None`` when any tracker has no recorded history (unknown).
+        """
+        series: list[tuple[list[tuple[float, float]], float, bool]] = []
+        medians: list[tuple[str, float, str, float]] = []
+        for m in trackers:
+            v_id, i_id = str(m.get("voltage_sensor")), str(m.get("current_sensor"))
+            v, i = samples.get(v_id), samples.get(i_id)
+            if not v or not i:
+                return None
+            v_med = statistics.median(x for _, x in v)
+            i_med = statistics.median(x for _, x in i)
+            medians.append((v_id, v_med, i_id, i_med))
+            v_ref = self._offmpp_reference(v_id, v_med, end_epoch, prefer_lower=True)
+            i_ref = self._offmpp_reference(i_id, i_med, end_epoch, prefer_lower=False)
+            if v_ref <= 0 or i_ref <= 0:
+                return 0.0  # Nothing generating: no operating point to judge against.
+            series.append((v, OFFMPP_VOLTAGE_RATIO * v_ref, True))
+            series.append((i, OFFMPP_CURRENT_RATIO * i_ref, False))
+
+        start, end = float(start_epoch), float(end_epoch)
+        times = sorted({start} | {min(max(ts, start), end) for s, _, _ in series for ts, _ in s})
+        cursor = [0] * len(series)
+        current: list[float | None] = [None] * len(series)
+        total = run = 0.0
+        for k, t in enumerate(times):
+            for n, (s, _, _) in enumerate(series):
+                while cursor[n] < len(s) and s[cursor[n]][0] <= t:
+                    current[n] = s[cursor[n]][1]
+                    cursor[n] += 1
+            span = (times[k + 1] if k + 1 < len(times) else end) - t
+            off = all(
+                value is not None and (value > limit if above else value < limit)
+                for value, (_, limit, above) in zip(current, series, strict=True)
+            )
+            if off:
+                run += span
+                continue
+            if run >= OFFMPP_MIN_RUN_S:
+                total += run
+            run = 0.0
+        if run >= OFFMPP_MIN_RUN_S:
+            total += run
+
+        # The slot's medians are still the operating point unless the trackers sat
+        # off-MPP for half of it or more, so only then are they kept as references.
+        if total < (end - start) / 2:
+            for v_id, v_med, i_id, i_med in medians:
+                if v_med > 0 and i_med > 0:
+                    self._offmpp_ref[v_id] = (v_med, end)
+                    self._offmpp_ref[i_id] = (i_med, end)
+        return round(total / 60.0, 2)
+
+    def _offmpp_reference(self, entity_id: str, slot_median: float, end_epoch: int, *, prefer_lower: bool) -> float:
+        """The operating point a tracker's samples are judged against.
+
+        The slot's median, tightened by the remembered healthy median when it is
+        younger than ``OFFMPP_REF_MAX_AGE_S``: the lower voltage and the higher
+        current. Curtailment can only push the slot's voltage median up and its
+        current median down, so tightening never hides a curtailed slot.
+        """
+        remembered = self._offmpp_ref.get(entity_id)
+        if remembered is None or remembered[0] <= 0 or end_epoch - remembered[1] > OFFMPP_REF_MAX_AGE_S:
+            return slot_median
+        return min(slot_median, remembered[0]) if prefer_lower else max(slot_median, remembered[0])
 
     async def _interval_values(self, entity_ids: set[str], start_epoch: int, end_epoch: int) -> dict[str, list[float]]:
         """Recorded numeric values per entity over ``[start, end]``, timestamps dropped."""
@@ -2407,6 +2654,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if self._foreign_factor_counts(factors, own_ids) == {HOURLY_FACTOR_COUNT}:
             return HOURLY_FACTOR_COUNT
         return PUSH_FACTOR_COUNT
+
+    def _resolve_export_limit(self, opts: dict[str, Any]) -> float:
+        """Export limit in force, in kW: the base's ``site_export_limit``, else the manual option.
+
+        0 means no limit is configured. Shared by tuning, dampening and the per-row
+        stamp, so all three judge a slot against the same ceiling.
+        """
+        limit = self._read_base_export_limit()
+        if limit is None:
+            limit = float(opts.get(CONF_EXPORT_LIMIT_KW, DEFAULT_EXPORT_LIMIT_KW))
+        return limit
 
     def _read_base_export_limit(self) -> float | None:
         """Property-wide export limit in kW from the base config entry, or None.
@@ -3194,4 +3452,5 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 "per_site": {sid: c.get("confidence") for sid, c in self._site_confidence.items()},
             },
             "dc_telemetry": self._dc_telemetry,
+            "curtailment": self._curtailment_capture,
         }
