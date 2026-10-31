@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # The workflows pin every action to a commit SHA, with the version in a
+  # comment; Dependabot moves the SHA and the comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    ignore:
+      # Both are used from a branch head (their last tags are from 2020 and
+      # 2022), which Dependabot would "update" back to those old tags. Bump
+      # these two SHAs by hand.
+      - dependency-name: hacs/action
+      - dependency-name: home-assistant/actions*
