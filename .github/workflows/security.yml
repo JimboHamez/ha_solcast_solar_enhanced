@@ -4,6 +4,8 @@ name: Security
 # publish findings to the repo's Security tab (Code scanning) and/or job logs
 # so they can be triaged without blocking PRs. Flip the per-tool exit codes /
 # fail-build flags noted below once the baseline is clean to make them gating.
+# A pull request from a fork gets a read-only token and cannot upload SARIF, so
+# it only runs the scans; the upload steps check for that.
 
 on:
   push:
@@ -13,19 +15,22 @@ on:
     # Weekly re-scan so newly disclosed CVEs surface even without a push.
     - cron: "0 0 * * 1"
 
+# Read-only by default. The jobs that publish findings to the Security tab
+# (Code scanning) add `security-events: write` for themselves.
 permissions:
   contents: read
-  security-events: write # required to upload SARIF to the Security tab
-  actions: read
 
 jobs:
   # --- SAST -----------------------------------------------------------------
   semgrep:
     name: Semgrep (SAST)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
       - name: Install Semgrep
@@ -39,9 +44,15 @@ jobs:
             --config p/security-audit \
             --config p/secrets \
             --config p/github-actions
+      # Semgrep keeps a finding silenced with `# nosemgrep` in the SARIF,
+      # marked as suppressed, but code scanning opens an alert for it anyway.
+      - name: Drop suppressed findings
+        run: |
+          jq '.runs[].results |= map(select((.suppressions // []) | length == 0))' semgrep.sarif > semgrep.tmp
+          mv semgrep.tmp semgrep.sarif
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -50,14 +61,23 @@ jobs:
   gitleaks:
     name: Gitleaks (secrets)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history so the whole git log is scanned
+      # The release archive is checked against its published checksum, so a
+      # replaced download fails here instead of running.
       - name: Install gitleaks
         run: |
           curl -sSfL -o gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf gitleaks.tar.gz gitleaks
           sudo mv gitleaks /usr/local/bin/
       - name: Scan
@@ -69,8 +89,8 @@ jobs:
             --report-path gitleaks.sarif \
             --exit-code 0
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
@@ -79,10 +99,13 @@ jobs:
   trivy:
     name: Trivy (fs)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
@@ -90,8 +113,8 @@ jobs:
           output: trivy.sarif
           exit-code: "0" # report-only
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy.sarif
           category: trivy
@@ -100,20 +123,24 @@ jobs:
   grype:
     name: Grype (dep CVEs)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan
         id: scan
-        uses: anchore/scan-action@v5
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           path: "."
           fail-build: false # report-only
           output-format: sarif
+          output-file: grype.sarif
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
-          sarif_file: ${{ steps.scan.outputs.sarif }}
+          sarif_file: grype.sarif
           category: grype
 
   # --- SBOM (dependency inventory) ------------------------------------------
@@ -121,9 +148,9 @@ jobs:
     name: Syft (SBOM)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: "."
           format: cyclonedx-json

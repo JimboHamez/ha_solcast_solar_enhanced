@@ -14,13 +14,14 @@ Note that **site IDs are not PII**.
 
 | Version      | Supported          |
 | ------------ | ------------------ |
-| 1.11.x       | :white_check_mark: |
-| 1.10.x       | :white_check_mark: |
-| < 1.10       | :x:                |
+| 1.15.x (beta) | :white_check_mark: |
+| 1.14.x       | :white_check_mark: |
+| 1.13.x       | :white_check_mark: |
+| < 1.13       | :x:                |
 
 
 ## Reporting a Vulnerability
 
-Report a vulnerability by raising an issue identifying that you have discovered a security issue, outlining the nature of the issue at the high level, and providing debug logging showing the logging of PII - but with the specific PII redacted.
+Report a vulnerability privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**. Only the maintainers see the report, so this is the route for anything that should not be public until it is fixed.
 
-Only issues with debug logging attached (or with a mechanisim for the repository contributors to retrieve debug logging) will be reviewed.
+For accidental publication of PII in logs, the report needs debug logging showing it, with the specific PII redacted. Only reports with debug logging attached (or with a mechanism for the repository contributors to retrieve debug logging) will be reviewed.

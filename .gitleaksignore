@@ -1,0 +1,5 @@
+# Findings reviewed and accepted as false positives. Gitleaks scans the whole
+# history, so each entry names the commit that introduced the match.
+
+# A made-up OWM key the diagnostics test uses to prove redaction.
+9c4cdcb2fe4e71b7c83cfe998fa4a5e70bcc9725:tests/test_diagnostics.py:generic-api-key:30
