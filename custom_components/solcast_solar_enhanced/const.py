@@ -72,6 +72,12 @@ CONF_DB_ENABLED = "db_enabled"
 CONF_DB_RETENTION_DAYS = "db_retention_days"
 DEFAULT_DB_RETENTION_DAYS = 0
 DB_RETENTION_MIN_RECOMMENDED_DAYS = 400
+# A slot whose sun is at or below the horizon and that measured and forecast
+# nothing is not written: every estimator query requires pv_actual > 0, so such a
+# row is never read, and night slots are over half of all rows. A slot with any
+# output, export, battery charge or forecast is still written, so twilight and
+# overnight battery export are kept.
+NIGHT_ZENITH_DEG = 90.0
 
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"

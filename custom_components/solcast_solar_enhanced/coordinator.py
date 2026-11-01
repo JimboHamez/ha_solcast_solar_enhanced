@@ -102,6 +102,7 @@ from .const import (
     KT_GHI_CS_FLOOR,
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
+    NIGHT_ZENITH_DEG,
     OFFMPP_CURRENT_RATIO,
     OFFMPP_MIN_RUN_S,
     OFFMPP_REF_MAX_AGE_S,
@@ -134,7 +135,7 @@ from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SqliteStore
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
     from homeassistant.config_entries import ConfigEntry
 
@@ -177,6 +178,24 @@ def _site_groups(opts: Mapping[str, Any]) -> list[SiteGroup]:
     """The configured measurement groups (``CONF_SITE_GROUPS``), typed for the readers."""
     groups: list[SiteGroup] = opts.get(CONF_SITE_GROUPS) or []
     return groups
+
+
+def is_empty_night_slot(zenith: float, values: Iterable[float]) -> bool:
+    """Whether a slot has nothing worth storing: the sun is down and every value is zero.
+
+    Every estimator query requires ``pv_actual > 0``, so such a row is never read,
+    and night slots are over half of all rows. Any non-zero value keeps the slot:
+    twilight generation, overnight battery export or charge, and a forecast that
+    starts before the sun clears the horizon.
+
+    Args:
+        zenith: Solar zenith at the slot midpoint, in degrees.
+        values: The slot's measured and forecast values, property-wide and per site.
+
+    Returns:
+        True when the slot should not be written.
+    """
+    return zenith >= NIGHT_ZENITH_DEG and all(v <= 0 for v in values)
 
 
 def base_integration_available(hass: HomeAssistant) -> bool:
@@ -641,6 +660,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     period_end,
                     zen,
                 )
+            # Decided once for the whole slot, so the '_total' row and the per-site
+            # rows never disagree about whether a slot exists. Only the inserts (and
+            # the undampened-forecast lookups that feed them) are skipped: sensors,
+            # baselines and the confidence buffers below still update every cycle.
+            write_rows = not is_empty_night_slot(
+                zen,
+                (
+                    pv_actual,
+                    pv_export,
+                    pv_export_max,
+                    pv_estimate,
+                    pv_est90,
+                    battery_charge,
+                    *(kw for kw, _start in site_actuals.values()),
+                ),
+            )
+            if not write_rows:
+                _LOGGER.debug("Night slot %s has nothing to record; not written", period_end)
             # Coerce unknown weather to the excluded sentinel for the NOT NULL
             # columns (used by both the aggregate and per-site rows below).
             temp_db, clouds_db, desc_db = self._weather_for_storage()
@@ -675,12 +712,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 # The forecast before our own dampening — the shading ratio's real
                 # denominator (issue #50). 0 when the base can't supply it.
                 "pv_estimate_undampened": round(
-                    await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch), 4
+                    await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch) if write_rows else 0.0,
+                    4,
                 ),
                 **self._irradiance_for_storage(),
                 **curtailment,
             }
-            await self._db.async_insert_record(record)
+            if write_rows:
+                await self._db.async_insert_record(record)
 
             # Feed the short-horizon confidence advisory (item 3): record this
             # completed daylight slot's measured-vs-forecast pair and recompute how
@@ -705,43 +744,44 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
-                await self._db.async_insert_record(
-                    {
-                        "period_end": period_end,
-                        "period_end_epoch": period_epoch,
-                        "period_start": datetime.fromtimestamp(s_start, tz=UTC).isoformat(),
-                        "site": site_id,
-                        "pv_actual": round(site_kw, 4),
-                        "pv_export": round(pv_export, 4),
-                        "pv_export_max": round(pv_export_max, 4),
-                        "pv_estimate": round(s_est, 4),
-                        "pv_estimate10": round(s_est10, 4),
-                        "pv_estimate90": round(s_est90, 4),
-                        "azimuth": round(az, 5),
-                        "zenith": round(zen, 5),
-                        "temp": temp_db,
-                        "clouds": clouds_db,
-                        "description": desc_db,
-                        "battery_charge": 0.0,
-                        "dc_voltage1": s_dc[0],
-                        "dc_current1": s_dc[1],
-                        "dc_voltage2": s_dc[2],
-                        "dc_current2": s_dc[3],
-                        "dc_vmed1": s_vmed[0],
-                        "dc_vmed2": s_vmed[1],
-                        "dc_imed1": s_imed[0],
-                        "dc_imed2": s_imed[1],
-                        "pv_estimate_undampened": round(
-                            await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
-                        ),
-                        # Irradiance is property-wide weather: same values on every site.
-                        **self._irradiance_for_storage(),
-                        # Curtailment inputs are property-wide too, except the off-MPP
-                        # minutes, which come from the inverter this array feeds.
-                        **curtailment,
-                        "dc_offmpp_min": site_offmpp.get(site_id, CURTAILMENT_UNKNOWN),
-                    }
-                )
+                if write_rows:
+                    await self._db.async_insert_record(
+                        {
+                            "period_end": period_end,
+                            "period_end_epoch": period_epoch,
+                            "period_start": datetime.fromtimestamp(s_start, tz=UTC).isoformat(),
+                            "site": site_id,
+                            "pv_actual": round(site_kw, 4),
+                            "pv_export": round(pv_export, 4),
+                            "pv_export_max": round(pv_export_max, 4),
+                            "pv_estimate": round(s_est, 4),
+                            "pv_estimate10": round(s_est10, 4),
+                            "pv_estimate90": round(s_est90, 4),
+                            "azimuth": round(az, 5),
+                            "zenith": round(zen, 5),
+                            "temp": temp_db,
+                            "clouds": clouds_db,
+                            "description": desc_db,
+                            "battery_charge": 0.0,
+                            "dc_voltage1": s_dc[0],
+                            "dc_current1": s_dc[1],
+                            "dc_voltage2": s_dc[2],
+                            "dc_current2": s_dc[3],
+                            "dc_vmed1": s_vmed[0],
+                            "dc_vmed2": s_vmed[1],
+                            "dc_imed1": s_imed[0],
+                            "dc_imed2": s_imed[1],
+                            "pv_estimate_undampened": round(
+                                await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
+                            ),
+                            # Irradiance is property-wide weather: same values on every site.
+                            **self._irradiance_for_storage(),
+                            # Curtailment inputs are property-wide too, except the off-MPP
+                            # minutes, which come from the inverter this array feeds.
+                            **curtailment,
+                            "dc_offmpp_min": site_offmpp.get(site_id, CURTAILMENT_UNKNOWN),
+                        }
+                    )
 
                 # Surface this array's measured generation (and its forecast) for
                 # the per-site PV Power sensor.
@@ -761,8 +801,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 )
 
             self._db_record_count = await self._db.async_get_record_count()
-            # Diagnostics: newest slot written this cycle + sites seen in the store.
-            self._db_latest_period_end = period_end
+            # Diagnostics: newest slot written (an unwritten night slot leaves it on
+            # the last real row) + sites seen in the store.
+            if write_rows:
+                self._db_latest_period_end = period_end
             self._db_sites = await self._db.async_get_sites()
 
         # History retention (daily) — independent of auto-tuning, so it still
