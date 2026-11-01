@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "Er is geen weerbron ingeschakeld, dus er valt niets op te halen. Schakel Open-Meteo in (geen API-sleutel nodig) of voeg een OpenWeatherMap-sleutel toe in de integratie-opties."
+    },
+    "compact_refused": {
+      "message": "De database is niet gecomprimeerd: {reason}"
+    },
+    "database_disabled": {
+      "message": "De database staat uit in de integratie-opties, dus er is niets om te comprimeren."
     }
   }
 }

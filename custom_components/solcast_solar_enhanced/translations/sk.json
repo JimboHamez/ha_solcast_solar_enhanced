@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "Nie je zapnutý žiadny zdroj počasia, takže nie je čo načítať. Zapnite Open-Meteo (nevyžaduje API kľúč) alebo v možnostiach integrácie pridajte kľúč OpenWeatherMap."
+    },
+    "compact_refused": {
+      "message": "Databáza nebola zhutnená: {reason}"
+    },
+    "database_disabled": {
+      "message": "Databáza je v možnostiach integrácie vypnutá, takže nie je čo zhutniť."
     }
   }
 }

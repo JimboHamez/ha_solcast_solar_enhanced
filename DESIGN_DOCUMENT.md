@@ -169,6 +169,140 @@ The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs f
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at it (WAL mode — leave the `-wal`/`-shm` sidecars in place).
 
+### Schema v2 and the slot gate (1.15.0b3.dev2, private test builds)
+
+> Private dev builds only. Nothing here reaches a public release until the soak in the
+> step-2 plan passes, and every step can be reverted to 1.15.0b2.
+
+**Why.** Empty night slots were over half the rows, and every property-wide value
+(sun position, weather, irradiance, export, curtailment inputs) was copied onto each
+array's row. Schema v2 stores each value once and as a small integer: measured on the
+1 Nov 2026 store, the file goes from 4.25 MB to **0.59 MB (14%)**, about 1.6 MB a year.
+
+**Tables.** `sites (site_id, resource_id)` with `0 = '_total'`; `slot_property`, one row
+per slot keyed on `period_end_epoch`; `slot_site`, one row per slot per array, keyed on
+`(period_end_epoch, site_id)` `WITHOUT ROWID`. The `slot_rows` view joins them under the
+legacy column names and units, and every query in `SqliteStore` reads it (via
+`_source`), so the estimators did not change. `period_start` (nothing read it),
+`description` (nothing read it) and the `"index"` rowid are gone.
+
+**Scaled integers.** Each v2 column is declared once, as
+`(name, read type, default, scale)` in `V2_PROPERTY_COLUMNS` / `V2_SITE_COLUMNS`; the
+`CREATE`, the `ALTER` pass, the insert, the migration copy and the view are generated
+from those lists. Values are stored as `round(value × scale)`, half away from zero to
+match SQLite's `ROUND`, so a dual-written row and a migrated row hold the same integer.
+
+| Quantity | Scale | Stored unit |
+|---|---|---|
+| Power: `pv_*`, `pv_export*`, `battery_charge`, `export_limit` | ×1000 | W |
+| Voltage: `dc_voltage*`, `dc_vmed*`, `grid_v_*` | ×10 | 0.1 V |
+| Current: `dc_current*`, `dc_imed*` | ×100 | 0.01 A |
+| Angles: `zenith`, `azimuth` | ×100 | 0.01° |
+| Irradiance: `ghi`, `dni`, `dhi` | ×10 | 0.1 W/m² |
+| Temperature: `temp`, `inverter_temp_max` | ×10 | 0.1 °C |
+| Fractions: `inverter_limited`, `vratio_*` | ×1000 | 0.001 |
+| Minutes: `dc_offmpp_min` | ×100 | 0.01 min |
+| Seconds, counts, flags | ×1 | — |
+
+Irradiance is ×10 rather than whole W/m² because Open-Meteo's half-hour value is the
+mean of two integers: x.5 is common, and rounding it flipped rows on the Kt threshold.
+The `-1` "unknown" sentinel survives every scale, but only on the columns whose
+default is unknown; those are all non-negative when known, so no real value can round
+onto it. Temperature can be negative and has no sentinel, so -0.1 °C reads back as
+-0.1. Against the legacy table, reads differ only by rows below the stored precision:
+14 dawn rows under 0.5 W and two rows within 0.02 W/m² of the Kt threshold, out of
+about 1,500.
+
+**Lifecycle (`PRAGMA user_version`).**
+
+| Version | Meaning |
+|---|---|
+| 0–1 | Legacy only (1 = azimuth repair done) |
+| 2 | v2 tables plus the legacy table, **both written** (the soak) |
+| 3 | Compacted: the legacy table dropped on request |
+
+- *Fresh store*: starts at 2 directly.
+- *Migration 1 → 2* (`_migrate_v2`, from `async_migrate`, after the azimuth repair):
+  pre-flight `PRAGMA quick_check` and free disk of at least twice the file, else stay
+  on 1; `VACUUM INTO <db>.pre-v2.bak`; then one transaction creates, copies every
+  non-empty slot, checks per-site row counts and output totals (to within rounding)
+  and only then sets 2. Any error rolls it all back.
+- *Dual-write*: each record goes to both schemas in one transaction. 1.15.0b2 can be
+  reinstalled at any point and finds a complete table; `tests/test_store_v2.py` runs
+  the released 1.15.0b2 store module (a frozen copy in `tests/fixtures`) against
+  migrated files to prove it.
+- *Resync*: on every start at 2, every legacy slot v2 lacks is copied (`INSERT OR
+  IGNORE`), which covers a spell on 1.15.0b2 and a `tools/import_history.py` run.
+- *Compaction*: the `compact_database` action, user-triggered only. It refuses unless the
+  last `COMPACT_VERIFY_DAYS` (7) agree per site in both schemas, then drops the legacy
+  table, sets 3 and `VACUUM`s. The backup is deleted `BACKUP_KEEP_DAYS` (30) after.
+- *Back to 1.15.0b2 after compaction*: `tools/downgrade_v2.py` rebuilds the legacy table
+  from the view and returns the file to 2. Lost: `description`, the measured
+  `period_start`, precision below the scales, and the empty night rows never written.
+
+**Adding a v2 column** is one entry in `V2_*_COLUMNS` plus its `StoreRecord` key; while
+the soak lasts, a column that also exists in the legacy table still needs the legacy
+three-list edit above.
+
+#### Slot gate (record-only)
+
+Each daylight slot also records what its recorder samples show, so a later estimator
+gate (step 3) can decide which slots measure shading. **Nothing reads these yet.**
+Computed in `slot_gate.py` and `vmodel.py`, pure Python, in the executor, from the same
+batched recorder query as the DC capture (about 25 ms a slot on an i5, an estimated
+0.1–0.2 s on a Raspberry Pi 4). A failure leaves the defaults and never costs the row.
+
+| Column | Table | Meaning |
+|---|---|---|
+| `sky_dip_s` | property | seconds every array's normalised power dipped at once (cloud) |
+| `sky_dip_runs` | property | separate sky-dip episodes of at least `GATE_RUN_MIN_S` |
+| `shade_dip_s` | site | seconds this array dipped while another did not (shade) |
+| `export_pinned_s` | property | seconds export was at or above the limit's clipping band |
+| `vexcess_s` | property | steady seconds every tracker sat `VMODEL_EXCESS` (+5%) above its learned MPP voltage |
+| `vratio_p50`, `vratio_p90` | property | median and p90 of V ÷ model (lowest tracker), the evidence behind `vexcess_s` |
+| `sample_gap_s` | property | median sample interval of the inputs |
+| `gate_flags` | property | `GateFlag` bits below |
+
+Everything is **time-weighted** on the merged event timeline (a state holds until the
+next one), so 10 Hz, 1 Hz and change-only sensors give the same seconds. Power is
+divided by each array's clear-sky plane-of-array shape, which removes the sunrise and
+sunset ramp, and a dip is judged against the array's own time-weighted p90 outside
+export-pinned time. Inputs per array, best first: DC trackers (V × I), DC power sensors
+(`dc_split`), its own generation sensor (`direct`, including microinverter groups), an
+energy counter differenced over at least 300 s.
+
+`GateFlag` (`const.py`; a test pins this table to the enum, and bit positions are part
+of the stored format, so never renumber):
+
+| Bit | Name | Set when |
+|---|---|---|
+| 0 | `DC_TRACKERS` | per-tracker DC voltage and current were present |
+| 1 | `AC_ARRAYS` | per-array AC power was used instead (no DC) |
+| 2 | `CROSS_REF` | at least two independent arrays saw the same sky, so sky and shade are separable |
+| 3 | `COUNTER_SOURCE` | a series came from an energy counter (≥ 300 s windows) |
+| 4 | `COARSE` | the median sample interval was above `GATE_COARSE_GAP_S` (60 s) |
+| 5 | `PARTIAL` | an input was missing for more than `GATE_PARTIAL_FRACTION` (10%) of the slot |
+| 6 | `EXPORT_SERIES` | an export series and limit were available, so `export_pinned_s` is valid |
+| 7 | `LOW_SUN` | sun elevation below `GATE_LOW_SUN_ELEVATION` (15°): shadow edges look like cloud |
+| 8 | `POA_SHAPE` | dips were judged against the array's plane-of-array clear-sky shape |
+| 9 | `VMODEL_READY` | the voltage model was trained, so the `v*` columns are valid |
+
+The flags say what was **measurable**, never whether to keep the slot. Thresholds are
+applied at read time, so they can be retuned against stored data after the recorder's
+roughly ten days of raw samples are gone.
+
+**The learned voltage model** replaces the fixed off-MPP rule, which read 0 through two
+fully limited hours on a Fronius GEN24 (limiting raised V 7–9% and cut I 23–27%, never
+reaching its I < 0.3× test). Per tracker, `V = a + b·T_amb + c·G + d·ln G`, fitted by
+least squares on running sums (no samples stored), decayed daily by `VMODEL_FORGET`
+(about a 14-day memory) and persisted in HA `Store`. String length, panel type and the
+temperature coefficient land in the fitted numbers. It trains only on steady, unshaded,
+non-scan samples with export clear of the limit (or, with no export series, within 3σ
+of the fit), and judges nothing below `VMODEL_MIN_G` (150 W/m²). Replayed online over
+22 Oct–1 Nov 2026 against export-pinned truth: **0 false slot flags**, 15 of 57 pinned
+slots caught; the misses are broken-cloud bursts and shallow trims, where little energy
+was lost. `dc_offmpp_min` keeps its old rule during the soak, for comparison.
+
 ### Total PV energy balance
 
 ```

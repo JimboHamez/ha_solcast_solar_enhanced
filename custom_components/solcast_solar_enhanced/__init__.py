@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
@@ -12,6 +13,7 @@ from .const import (
     BASE_DOMAIN,
     DOMAIN,
     PLATFORMS,
+    SERVICE_COMPACT_DATABASE,
     SERVICE_FETCH_WEATHER,
     SERVICE_RUN_DAMPENING_UPDATE,
     SERVICE_RUN_PV_TUNING,
@@ -22,9 +24,10 @@ from .entity import main_device_info
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
     from homeassistant.helpers.device_registry import DeviceEntry
     from homeassistant.helpers.typing import ConfigType
+    from homeassistant.util.json import JsonValueType
 
     from .coordinator import SolcastEnhancedConfigEntry
 
@@ -156,6 +159,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_RUN_PV_TUNING, handle_run_pv_tuning)
     hass.services.async_register(DOMAIN, SERVICE_RUN_DAMPENING_UPDATE, handle_run_dampening_update)
     hass.services.async_register(DOMAIN, SERVICE_FETCH_WEATHER, handle_fetch_weather)
+
+    async def handle_compact_database(call: ServiceCall) -> ServiceResponse:
+        # Not wrapped in _run_on_each_entry: a refusal is the expected outcome while
+        # the schemas disagree, and it already carries its own translated message.
+        results: list[JsonValueType] = []
+        for coordinator in _loaded_coordinators(hass):
+            entry = coordinator.config_entry
+            assert entry is not None  # A loaded coordinator always carries its entry.
+            results.append({"entry_id": entry.entry_id, **await coordinator.async_compact_database()})
+        return {"entries": results}
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_COMPACT_DATABASE, handle_compact_database, supports_response=SupportsResponse.OPTIONAL
+    )
 
     return True
 

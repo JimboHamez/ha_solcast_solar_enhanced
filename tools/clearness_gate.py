@@ -71,9 +71,11 @@ def clearness_index(ghi: float, zenith_deg: float) -> float | None:
 def load_rows(db_path: str, site: str = "_total") -> list[dict]:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
+    # Schema v2 stores read through the slot_rows view (the only source once compacted).
+    table = "slot_rows" if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_rows'").fetchone() else "solcast_data"
     cur = con.execute(
         "SELECT period_end, zenith, ghi, clouds, pv_actual, pv_estimate "
-        "FROM solcast_data WHERE site = ? ORDER BY period_end_epoch",
+        f"FROM {table} WHERE site = ? ORDER BY period_end_epoch",
         (site,),
     )
     rows = [dict(r) for r in cur.fetchall()]

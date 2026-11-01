@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "No weather source is enabled, so there is nothing to fetch. Turn on Open-Meteo (no API key required) or add an OpenWeatherMap key in the integration options."
+    },
+    "compact_refused": {
+      "message": "The database was not compacted: {reason}"
+    },
+    "database_disabled": {
+      "message": "The database is turned off in the integration options, so there is nothing to compact."
     }
   }
 }

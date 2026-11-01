@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "Es ist keine Wetterquelle aktiviert, es gibt also nichts abzurufen. Aktiviere Open-Meteo (kein API-Schlüssel nötig) oder hinterlege in den Integrationsoptionen einen OpenWeatherMap-Schlüssel."
+    },
+    "compact_refused": {
+      "message": "Die Datenbank wurde nicht komprimiert: {reason}"
+    },
+    "database_disabled": {
+      "message": "Die Datenbank ist in den Integrationsoptionen deaktiviert, daher gibt es nichts zu komprimieren."
     }
   }
 }

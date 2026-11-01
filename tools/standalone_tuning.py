@@ -74,8 +74,10 @@ def _connect_sqlite(path: str):
 
 
 def _fetch_sites(conn) -> list[str]:
+    # Schema v2 stores read through the slot_rows view (the only source once compacted).
+    table = "slot_rows" if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_rows'").fetchone() else "solcast_data"
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT site FROM solcast_data")
+    cur.execute(f"SELECT DISTINCT site FROM {table}")
     sites = [r[0] for r in cur.fetchall() if r and r[0] is not None]
     cur.close()
     return sites
@@ -84,6 +86,7 @@ def _fetch_sites(conn) -> list[str]:
 def _fetch_records(
     conn, site: str | None, limit: int, kt_threshold: float | None = None
 ) -> list[dict[str, Any]]:
+    table = "slot_rows" if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_rows'").fetchone() else "solcast_data"
     cur = conn.cursor()
     clause, params = "", []
     if site is not None:
@@ -98,7 +101,7 @@ def _fetch_records(
         )
         params += [float(KT_ZENITH_MAX), float(KT_GHI_CS_FLOOR), float(kt_threshold)]
     cur.execute(
-        f"SELECT {', '.join(COLUMNS)} FROM solcast_data "
+        f"SELECT {', '.join(COLUMNS)} FROM {table} "
         f"WHERE pv_actual > 0{clause} "
         f"ORDER BY period_end_epoch DESC LIMIT ?",
         (*params, limit),

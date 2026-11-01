@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "No hay ninguna fuente meteorológica activada, así que no hay nada que descargar. Activa Open-Meteo (no requiere clave de API) o añade una clave de OpenWeatherMap en las opciones de la integración."
+    },
+    "compact_refused": {
+      "message": "La base de datos no se compactó: {reason}"
+    },
+    "database_disabled": {
+      "message": "La base de datos está desactivada en las opciones de la integración, así que no hay nada que compactar."
     }
   }
 }

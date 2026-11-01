@@ -13,6 +13,8 @@ from custom_components.solcast_solar_enhanced.sqlite_store import (
     _INSERT_COLUMNS,
     _INSERT_SQL,
     CREATE_TABLE_SQL,
+    V2_PROPERTY_NAMES,
+    V2_SITE_NAMES,
     SqliteStore,
 )
 
@@ -242,29 +244,59 @@ async def _azimuth_of(store, epoch):
     return None
 
 
-async def test_migrate_repairs_wrong_azimuth(store):
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+async def _legacy_store(hass, tmp_path, *records):
+    """A store opened over a legacy-only file at user_version 0, as an old install has.
+
+    The azimuth repair only ever meets such files: a fresh store starts on schema v2
+    (user_version 2), which postdates the bug.
+    """
+    path = str(tmp_path / "legacy_v0.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(CREATE_TABLE_SQL)
+    conn.executemany(_INSERT_SQL, [SqliteStore._row_values(r) for r in records])
+    conn.commit()
+    conn.close()
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    return s
+
+
+async def test_migrate_repairs_wrong_azimuth(hass, tmp_path):
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=316.46))
     changed = await store.async_migrate(_MELB_LAT, _MELB_LON)
     assert changed == 1
     fixed = await _azimuth_of(store, _MORNING_EPOCH)
     assert fixed == pytest.approx(43.5, abs=1.0)
     assert 0.0 <= fixed <= 180.0  # eastern half, not the mirrored ~316°
+    # The repair runs before the v2 migration, so the copy carries the fixed value.
+    assert store.schema_version == 2
+    assert store._query("SELECT azimuth FROM slot_rows", ())[0]["azimuth"] == pytest.approx(fixed)
+    await store.async_close()
 
 
-async def test_migrate_is_idempotent(store):
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+async def test_migrate_is_idempotent(hass, tmp_path):
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=316.46))
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 1
     # Second run is gated by user_version → no rescan, nothing changed.
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
+    await store.async_close()
 
 
-async def test_migrate_leaves_correct_rows_untouched(store):
+async def test_migrate_leaves_correct_rows_untouched(hass, tmp_path):
     from custom_components.solcast_solar_enhanced.pv_tuning import solar_position
 
     correct = round(solar_position(_MORNING_EPOCH - 900, _MELB_LAT, _MELB_LON)[0], 5)
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=correct))
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=correct))
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
-    assert await _azimuth_of(store, _MORNING_EPOCH) == pytest.approx(correct)
+    # Read back through v2, which stores azimuth to 0.01 degree.
+    assert await _azimuth_of(store, _MORNING_EPOCH) == pytest.approx(correct, abs=0.005)
+    await store.async_close()
+
+
+async def test_fresh_store_skips_the_repair(store):
+    """A fresh store starts at v2, after the bug, so the repair never scans it."""
+    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+    assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
 
 
 async def test_connect_failure_returns_false(hass):
@@ -715,7 +747,8 @@ def test_store_record_type_declares_every_inserted_column():
     is rejected at each write site, and a key it still carries after a column is
     dropped would let a misspelt key through unchecked.
     """
-    assert list(StoreRecord.__annotations__) == list(_INSERT_COLUMNS)
+    v2_only = [n for n in (*V2_PROPERTY_NAMES, *V2_SITE_NAMES) if n not in _INSERT_COLUMNS]
+    assert list(StoreRecord.__annotations__) == [*_INSERT_COLUMNS, *v2_only]
 
 
 def test_fresh_schema_accepts_a_full_insert_without_the_alter_pass():
@@ -821,11 +854,13 @@ async def test_records_for_shading_keeps_overcast_records(store):
 async def test_records_for_shading_drops_night_and_filters_by_site(store):
     await store.async_insert_record(_record(JUNE1, zenith=35.0))
     await store.async_insert_record(_record(JUNE1 + 1800, zenith=95.0))
-    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=20.0))
+    # Sun position is property-wide, so an array's row shares the slot's zenith; what
+    # differs per array is its output.
+    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=35.0, pv_actual=1.25))
     assert len(await store.async_get_records_for_shading()) == 2
     scoped = await store.async_get_records_for_shading(site="abc-123")
     assert len(scoped) == 1
-    assert scoped[0]["zenith"] == 20.0
+    assert scoped[0]["pv_actual"] == 1.25
 
 
 async def test_records_for_shading_honours_the_limit(store):
@@ -899,9 +934,14 @@ async def test_readonly_open_of_an_older_db_still_queries(hass, tmp_path):
     assert await writable.async_connect() is True
     await writable.async_insert_record(_record(JUNE1))
     await writable.async_close()
-    # Drop the column back off to simulate a file written by an older version.
+    # Drop the column back off, and the v2 schema with it, to simulate a file
+    # written by an older version.
     conn = sqlite3.connect(path)
     conn.execute("ALTER TABLE solcast_data DROP COLUMN pv_export_max")
+    conn.executescript(
+        "DROP VIEW slot_rows; DROP TABLE slot_site; DROP TABLE slot_property; DROP TABLE sites; "
+        "PRAGMA user_version = 1;"
+    )
     conn.commit()
     conn.close()
 

@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev2] - 2026-11-01
+
+> Private test build, not published. Step 2 of the database-size and slot-gate work. Record-only: tuning
+> and dampening read the same rows as before (through a view) and their results are unchanged to within
+> the stored precision. Going back to 1.15.0b2 stays a plain reinstall until you compact.
+
+### Changed
+
+- **New storage format, about a quarter of the size.** The history moves into normalised tables, with
+  property-wide values stored once per half-hour instead of on every array's row, and every value stored
+  as a scaled integer (W, 0.1 V, 0.01 A, 0.01°, 0.1 W/m², 0.1 °C). On the reference store: 4.25 MB today,
+  4.84 MB during the soak (both formats), **0.59 MB** after compaction, about 1.6 MB a year.
+- **Migration is automatic and checked.** It takes a backup first (`solcast_solar_enhanced.db.pre-v2.bak`),
+  copies inside one transaction, verifies each array's row count and output total against the old table,
+  and rolls back on any mismatch. It skips itself, and keeps running on the old format, if the database fails
+  an integrity check or there is less than twice its size in free disk.
+- **Both formats are written during the soak,** so 1.15.0b2 can be reinstalled at any time with its full
+  history. Coming forward again, anything 1.15.0b2 (or `tools/import_history.py`) wrote is carried over.
+
+### Added
+
+- **`compact_database` action.** Drops the old-format table once the last seven days agree in both formats,
+  and reclaims the space. Your call, never automatic. Afterwards, `tools/downgrade_v2.py` rebuilds the old
+  table if you need 1.15.0b2 again; the backup is deleted 30 days after compaction.
+- **Slot gate measures (record-only).** Each daylight half-hour records sky-dip seconds (every array dipping
+  at once), per-array shade-dip seconds, export-pinned seconds, the sample interval and a `gate_flags` bit
+  vector of what could be measured. Time-weighted, so any sensor sample rate gives the same answer. Nothing
+  reads them yet; step 3 will.
+- **Learned voltage model** for inverter-side limiting, replacing the fixed off-MPP rule that missed GEN24
+  export limiting entirely. It learns each tracker's normal voltage from temperature and irradiance and
+  records how far above it each slot sat. On 22 Oct–1 Nov it raised no false flags against export-pinned
+  truth. The old `dc_offmpp_min` keeps running alongside for comparison.
+- Diagnostics show the schema version, whether the old format is still written, the backup, the latest gate
+  measures and the voltage model's training state.
+- `tools/downgrade_v2.py`. The read-only tools and the slot-validity audit read the new format; the
+  irradiance backfill and the history import write both.
+
 ## [1.15.0b3.dev1] - 2026-11-01
 
 > Private test build, not published. First step of the database-size work: the store stops writing

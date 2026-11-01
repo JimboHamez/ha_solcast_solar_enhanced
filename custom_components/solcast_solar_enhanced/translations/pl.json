@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "Nie włączono żadnego źródła pogody, więc nie ma czego pobrać. Włącz Open-Meteo (nie wymaga klucza API) lub dodaj klucz OpenWeatherMap w opcjach integracji."
+    },
+    "compact_refused": {
+      "message": "Baza danych nie została skompaktowana: {reason}"
+    },
+    "database_disabled": {
+      "message": "Baza danych jest wyłączona w opcjach integracji, więc nie ma czego kompaktować."
     }
   }
 }

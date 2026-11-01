@@ -19,3 +19,12 @@ fetch_weather:
     Force an immediate refresh of every configured weather and irradiance
     source: Open-Meteo (keyless, on by default) and OpenWeatherMap if an API
     key is configured. Fails with an error if neither source is enabled.
+
+compact_database:
+  name: Compact Database
+  description: >
+    Drop the old-format history table once the new schema has proved itself, and
+    reclaim its space (about three quarters of the file). Refuses unless the last
+    seven days agree in both formats. After this, going back to 1.15.0b2 means
+    restoring the pre-migration backup or running tools/downgrade_v2.py. Private
+    test build only.

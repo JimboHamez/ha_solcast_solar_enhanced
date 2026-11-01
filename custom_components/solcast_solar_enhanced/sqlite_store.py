@@ -21,6 +21,9 @@ database's physical column order identical to an upgraded one's. The row's type,
 from __future__ import annotations
 
 import logging
+import math
+import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -201,6 +204,260 @@ _INSERT_SQL = (
     + ")"
 )
 
+# ----------------------------------------------------------------------
+# Schema v2 (1.15.0b3.dev2): normalised tables beside the legacy one.
+#
+# ``user_version`` 2 = the v2 tables exist and the legacy ``solcast_data`` is
+# still dual-written, so 1.15.0b2 can be reinstalled at any time and finds a
+# complete table. 3 = compacted: the legacy table has been dropped on request
+# (``async_compact``).
+#
+# Each v2 column is declared once below, as ``(name, read type, default, scale)``.
+# The CREATE statements, the ALTER pass, the inserts, the migration copy and the
+# ``slot_rows`` view are all generated from these lists, so a new column is one
+# entry here plus its ``StoreRecord`` key.
+#
+# **Every v2 column is stored as a scaled integer** (``round(value × scale)``),
+# which halves the file: SQLite spends 8 bytes on any non-integral REAL but only
+# 1-3 on a small integer. Each scale is at or below the sensor's own resolution
+# (W for kW, 0.1 V, 0.01 A, 0.01°, 0.1 °C). Irradiance is 0.1 W/m²: Open-Meteo's
+# half-hour value is the mean of two integers, so x.5 is common and must stay exact,
+# or rows on the Kt threshold flip verdict. The view divides on the way
+# out, so every reader still sees the original units. Rounding is half away from
+# zero, as SQLite's ROUND, so a dual-written row and a migrated row are identical.
+#
+# Columns whose default is ``UNKNOWN`` keep -1 as -1 at every scale. Those are all
+# non-negative when known, so a real value can never round onto the sentinel; a
+# column that can be negative (temperature) has a 0 default and no sentinel.
+# ----------------------------------------------------------------------
+SCHEMA_V2 = 2
+SCHEMA_COMPACTED = 3
+UNKNOWN = -1.0
+
+# Everything that is the same for every array in a slot.
+V2_PROPERTY_COLUMNS: tuple[tuple[str, str, float, int], ...] = (
+    ("zenith", "REAL", 0.0, 100),
+    ("azimuth", "REAL", 0.0, 100),
+    ("temp", "REAL", 0.0, 10),
+    ("clouds", "INTEGER", 100.0, 1),
+    ("ghi", "REAL", 0.0, 10),
+    ("dni", "REAL", 0.0, 10),
+    ("dhi", "REAL", 0.0, 10),
+    ("pv_export", "REAL", 0.0, 1000),
+    ("pv_export_max", "REAL", 0.0, 1000),
+    ("battery_charge", "REAL", 0.0, 1000),
+    ("grid_v_max", "REAL", 0.0, 10),
+    ("grid_v_med", "REAL", 0.0, 10),
+    ("inverter_temp_max", "REAL", 0.0, 10),
+    ("inverter_limited", "REAL", UNKNOWN, 1000),
+    ("export_limit", "REAL", UNKNOWN, 1000),
+    # Slot-gate measures (record-only). See slot_gate.py and GateFlag in const.py.
+    ("sky_dip_s", "REAL", UNKNOWN, 1),
+    ("sky_dip_runs", "INTEGER", UNKNOWN, 1),
+    ("export_pinned_s", "REAL", UNKNOWN, 1),
+    ("vexcess_s", "REAL", UNKNOWN, 1),
+    # Median and p90 of V / model (lowest tracker) over steady samples: the raw evidence
+    # behind vexcess_s, so its +5% threshold can be retuned later. A ratio near 1, not a
+    # residual near 0, so no real value can round onto the -1 sentinel.
+    ("vratio_p50", "REAL", UNKNOWN, 1000),
+    ("vratio_p90", "REAL", UNKNOWN, 1000),
+    ("sample_gap_s", "REAL", UNKNOWN, 100),
+    ("gate_flags", "INTEGER", UNKNOWN, 1),
+)
+# Everything that belongs to one array (site_id 0 is the property total).
+V2_SITE_COLUMNS: tuple[tuple[str, str, float, int], ...] = (
+    ("pv_actual", "REAL", 0.0, 1000),
+    ("pv_estimate", "REAL", 0.0, 1000),
+    ("pv_estimate10", "REAL", 0.0, 1000),
+    ("pv_estimate90", "REAL", 0.0, 1000),
+    ("pv_estimate_undampened", "REAL", 0.0, 1000),
+    ("dc_voltage1", "REAL", 0.0, 10),
+    ("dc_current1", "REAL", 0.0, 100),
+    ("dc_voltage2", "REAL", 0.0, 10),
+    ("dc_current2", "REAL", 0.0, 100),
+    ("dc_vmed1", "REAL", 0.0, 10),
+    ("dc_vmed2", "REAL", 0.0, 10),
+    ("dc_imed1", "REAL", 0.0, 100),
+    ("dc_imed2", "REAL", 0.0, 100),
+    ("dc_offmpp_min", "REAL", UNKNOWN, 100),
+    ("shade_dip_s", "REAL", UNKNOWN, 1),
+)
+V2_PROPERTY_NAMES = tuple(c[0] for c in V2_PROPERTY_COLUMNS)
+V2_SITE_NAMES = tuple(c[0] for c in V2_SITE_COLUMNS)
+V2_SCALES = {c[0]: c[3] for c in (*V2_PROPERTY_COLUMNS, *V2_SITE_COLUMNS)}
+V2_TABLES = ("sites", "slot_property", "slot_site")
+
+
+def to_stored(value: float, default: float, scale: int) -> int:
+    """A value in its original units, as the scaled integer v2 stores.
+
+    Half away from zero, matching SQLite's ``ROUND``, so a row written here and one
+    copied by the migration SQL hold the same integer.
+    """
+    if default == UNKNOWN and value == UNKNOWN:
+        return -1
+    scaled = math.floor(abs(float(value)) * scale + 0.5)
+    return int(-scaled if value < 0 else scaled)
+
+
+def _stored_default(default: float, scale: int) -> int:
+    return -1 if default == UNKNOWN else to_stored(default, default, scale)
+
+
+def _col_sql(cols: tuple[tuple[str, str, float, int], ...]) -> str:
+    return ", ".join(f"{n} INTEGER NOT NULL DEFAULT {_stored_default(d, sc)}" for n, _, d, sc in cols)
+
+
+def _read_expr(prefix: str, name: str, kind: str, default: float, scale: int) -> str:
+    """The view expression that turns a stored integer back into its original units."""
+    col = f"{prefix}.{name}"
+    unscaled = col if kind == "INTEGER" else f"({col} * 1.0)"
+    value = unscaled if scale == 1 else f"({col} / {scale}.0)"
+    if default == UNKNOWN and scale != 1:
+        value = f"CASE WHEN {col} = -1 THEN -1.0 ELSE {value} END"
+    return f"{value} AS {name}"
+
+
+def _legacy_expr(name: str, default: float, scale: int) -> str:
+    """The migration expression that scales a legacy REAL column into v2's integer."""
+    scaled = f"CAST(ROUND({name} * {scale}) AS INTEGER)"
+    return f"CASE WHEN {name} = -1 THEN -1 ELSE {scaled} END" if default == UNKNOWN else scaled
+
+
+V2_CREATE_SQL = f"""
+CREATE TABLE IF NOT EXISTS sites (
+  site_id     INTEGER PRIMARY KEY,
+  resource_id TEXT NOT NULL UNIQUE
+);
+INSERT OR IGNORE INTO sites (site_id, resource_id) VALUES (0, '{DEFAULT_SITE}');
+CREATE TABLE IF NOT EXISTS slot_property (
+  period_end_epoch INTEGER PRIMARY KEY,
+  {_col_sql(V2_PROPERTY_COLUMNS)}
+);
+CREATE TABLE IF NOT EXISTS slot_site (
+  period_end_epoch INTEGER NOT NULL,
+  site_id          INTEGER NOT NULL,
+  {_col_sql(V2_SITE_COLUMNS)},
+  PRIMARY KEY (period_end_epoch, site_id)
+) WITHOUT ROWID;
+"""
+
+# The read view: legacy column names and units, so every query below works on either schema.
+V2_VIEW_SQL = (
+    "CREATE VIEW slot_rows AS SELECT ss.period_end_epoch AS period_end_epoch, st.resource_id AS site, "
+    "strftime('%Y-%m-%dT%H:%M:%S+00:00', ss.period_end_epoch, 'unixepoch') AS period_end, "
+    + ", ".join(_read_expr("ss", *c) for c in V2_SITE_COLUMNS)
+    + ", "
+    + ", ".join(_read_expr("sp", *c) for c in V2_PROPERTY_COLUMNS)
+    + " FROM slot_site ss JOIN slot_property sp USING (period_end_epoch) JOIN sites st USING (site_id)"
+)
+
+_V2_PROPERTY_INSERT = (
+    f"INSERT OR IGNORE INTO slot_property (period_end_epoch, {', '.join(V2_PROPERTY_NAMES)}) "
+    f"VALUES ({', '.join('?' for _ in range(len(V2_PROPERTY_NAMES) + 1))})"
+)
+_V2_SITE_INSERT = (
+    f"INSERT OR IGNORE INTO slot_site (period_end_epoch, site_id, {', '.join(V2_SITE_NAMES)}) "
+    f"VALUES ({', '.join('?' for _ in range(len(V2_SITE_NAMES) + 2))})"
+)
+
+# A legacy slot with nothing in it, the same rule the coordinator applies before
+# writing (``coordinator.is_empty_night_slot``). Empty slots are not carried over.
+_LEGACY_EMPTY_ROW = (
+    "zenith >= 90 AND pv_actual <= 0 AND pv_export <= 0 AND pv_export_max <= 0 "
+    "AND pv_estimate <= 0 AND pv_estimate90 <= 0 AND battery_charge <= 0"
+)
+# Slots in which at least one row (total or any array) has something in it.
+_LEGACY_KEPT_SLOTS = (
+    f"SELECT period_end_epoch FROM solcast_data GROUP BY period_end_epoch HAVING SUM(NOT ({_LEGACY_EMPTY_ROW})) > 0"
+)
+# Days compared before the legacy table may be dropped.
+COMPACT_VERIFY_DAYS = 7
+# How long the pre-migration backup is kept once the store is compacted.
+BACKUP_KEEP_DAYS = 30
+BACKUP_SUFFIX = ".pre-v2.bak"
+
+
+def read_source(conn: sqlite3.Connection) -> str:
+    """The table or view a reader should query: the v2 view when present, else the legacy table.
+
+    For the ``tools/`` CLIs, which open the file directly; after compaction only the view exists.
+    """
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+    return "slot_rows" if "slot_rows" in names else "solcast_data"
+
+
+def copy_legacy_slots(conn: sqlite3.Connection, after_epoch: int | None = None) -> int:
+    """Copy legacy rows of every non-empty slot into the v2 tables. Returns site rows written.
+
+    ``INSERT OR IGNORE`` throughout, so a slot already in v2 is left as it is. The
+    property row comes from the slot's '_total' row where there is one, and otherwise
+    from any of its rows. Gate measures did not exist, so they keep their unknown
+    default. Values are scaled exactly as the write path scales them.
+    """
+    newer = "" if after_epoch is None else " AND period_end_epoch > ?"
+    params: tuple[Any, ...] = () if after_epoch is None else (after_epoch,)
+    kept = f"period_end_epoch IN ({_LEGACY_KEPT_SLOTS}){newer}"
+    conn.execute(
+        f"INSERT OR IGNORE INTO sites (resource_id) SELECT DISTINCT site FROM solcast_data WHERE {kept} ORDER BY site",
+        params,
+    )
+    present = {row[1] for row in conn.execute("PRAGMA table_info(solcast_data)")}
+    prop = [c for c in V2_PROPERTY_COLUMNS if c[0] in present]
+    cols = ", ".join(c[0] for c in prop)
+    exprs = ", ".join(_legacy_expr(n, d, sc) for n, _, d, sc in prop)
+    for site_clause, site_params in (("site = ?", (DEFAULT_SITE,)), ("1 = 1", ())):
+        conn.execute(
+            f"INSERT OR IGNORE INTO slot_property (period_end_epoch, {cols}) "
+            f"SELECT period_end_epoch, {exprs} FROM solcast_data WHERE {site_clause} AND {kept}",
+            (*site_params, *params),
+        )
+    site_cols = [c for c in V2_SITE_COLUMNS if c[0] in present]
+    scols = ", ".join(c[0] for c in site_cols)
+    sexprs = ", ".join(_legacy_expr(f"d.{n}", d, sc) for n, _, d, sc in site_cols)
+    cur = conn.execute(
+        f"INSERT OR IGNORE INTO slot_site (period_end_epoch, site_id, {scols}) "
+        f"SELECT d.period_end_epoch, s.site_id, {sexprs} "
+        f"FROM solcast_data d JOIN sites s ON s.resource_id = d.site WHERE d.{kept}",
+        params,
+    )
+    return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+
+def sync_v2_from_legacy(conn: sqlite3.Connection, refresh: tuple[str, ...] = ()) -> int:
+    """Bring the v2 tables in line with legacy rows a ``tools/`` CLI just wrote. Returns rows added.
+
+    During the soak a tool that writes the legacy table (an import, a backfill) must
+    reach v2 too, or every reader, which goes through the view, would not see it.
+    Missing slots are copied; ``refresh`` names property columns to overwrite on
+    slots v2 already holds (a backfill rewrites ``ghi``/``dni``/``dhi`` in place).
+    A no-op on a store without v2 tables. Commits.
+
+    Raises:
+        ValueError: If the store is compacted (no legacy table to sync from), or a
+            ``refresh`` column is not a v2 property column.
+    """
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+    if not all(t in names for t in V2_TABLES):
+        return 0
+    if "solcast_data" not in names:
+        raise ValueError("store is compacted; write through the integration or run tools/downgrade_v2.py first")
+    added = copy_legacy_slots(conn)
+    spec = {c[0]: c for c in V2_PROPERTY_COLUMNS}
+    for name in refresh:
+        if name not in spec:
+            raise ValueError(f"{name} is not a v2 property column")
+        _, _, default, scale = spec[name]
+        conn.execute(
+            f"UPDATE slot_property SET {name} = (SELECT {_legacy_expr('d.' + name, default, scale)} "
+            "FROM solcast_data d WHERE d.period_end_epoch = slot_property.period_end_epoch AND d.site = ?) "
+            "WHERE EXISTS (SELECT 1 FROM solcast_data d WHERE d.period_end_epoch = slot_property.period_end_epoch "
+            "AND d.site = ?)",
+            (DEFAULT_SITE, DEFAULT_SITE),
+        )
+    conn.commit()
+    return added
+
 
 class SqliteStore:
     """File-backed SQLite store (async API, all I/O via the executor)."""
@@ -222,6 +479,12 @@ class SqliteStore:
         # Always present on a fresh schema (kept for query-builder symmetry).
         self.has_battery_col = True
         self.has_site_col = True
+        # Which schemas the open file holds (see SCHEMA_V2). Reads go to the v2
+        # ``slot_rows`` view whenever it exists; writes go to every schema present.
+        self._version = 0
+        self._has_legacy = False
+        self._has_v2 = False
+        self._site_ids: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -241,23 +504,31 @@ class SqliteStore:
             conn.create_function("clearsky_ghi", 1, clearsky_ghi)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            self._version = int(conn.execute("PRAGMA user_version").fetchone()[0])
             if not self._readonly:
-                conn.executescript(CREATE_TABLE_SQL)
-                conn.commit()
-                self._ensure_columns(conn)
+                # A compacted store has dropped the legacy table on purpose; recreating
+                # it would restart the dual-write the user switched off.
+                if self._version < SCHEMA_COMPACTED:
+                    conn.executescript(CREATE_TABLE_SQL)
+                    conn.commit()
+                    self._ensure_columns(conn)
+                self._init_v2(conn)
             self._conn = conn
-            try:
-                self._columns = frozenset(row[1] for row in conn.execute("PRAGMA table_info(solcast_data)"))
-            except Exception:  # noqa: BLE001 — table may be absent on a read-only first open
-                self._columns = frozenset()
+            self._detect_schema()
             # Surface the file path + current row count so users know where the
             # store lives (e.g. to point sqlite-web at it) and that it loaded.
             try:
-                row = conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {self._source}").fetchone()
                 count = int(row[0]) if row else 0
             except Exception:  # noqa: BLE001 — table may be absent on a read-only first open
                 count = 0
-            _LOGGER.info("Built-in store ready at %s — %d row(s)", self._path, count)
+            _LOGGER.info(
+                "Built-in store ready at %s — %d row(s), schema v%d%s",
+                self._path,
+                count,
+                self._version,
+                " (legacy table still written)" if self._has_v2 and self._has_legacy else "",
+            )
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite open failed (%s): %s", self._path, exc)
@@ -280,6 +551,83 @@ class SqliteStore:
         if added:
             conn.commit()
             _LOGGER.info("Added column(s) to store schema: %s", ", ".join(added))
+
+    @staticmethod
+    def _objects(conn: sqlite3.Connection) -> set[str]:
+        return {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+
+    def _init_v2(self, conn: sqlite3.Connection) -> None:
+        """Bring the v2 tables up to date, or create them on a fresh store.
+
+        A store that already has v2 tables gains any column added to the
+        ``V2_*_COLUMNS`` lists since, and its view is rebuilt so it names them. A
+        **fresh** store (no legacy rows yet) starts directly on v2: there is
+        nothing to migrate. A legacy store with data is left for ``async_migrate``,
+        which takes a backup first.
+        """
+        objects = self._objects(conn)
+        if all(t in objects for t in V2_TABLES):
+            self._ensure_v2_columns(conn)
+            self._rebuild_view(conn)
+            return
+        legacy_rows = 0
+        if "solcast_data" in objects:
+            legacy_rows = int(conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()[0])
+        if legacy_rows == 0:
+            conn.executescript(V2_CREATE_SQL)
+            self._rebuild_view(conn)
+            conn.execute(f"PRAGMA user_version = {SCHEMA_V2}")
+            conn.commit()
+            self._version = SCHEMA_V2
+
+    @staticmethod
+    def _ensure_v2_columns(conn: sqlite3.Connection) -> None:
+        added: list[str] = []
+        for table, cols in (("slot_property", V2_PROPERTY_COLUMNS), ("slot_site", V2_SITE_COLUMNS)):
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for name, _kind, default, scale in cols:
+                if name not in existing:
+                    stored = _stored_default(default, scale)
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} INTEGER NOT NULL DEFAULT {stored}")
+                    added.append(f"{table}.{name}")
+        if added:
+            conn.commit()
+            _LOGGER.info("Added column(s) to store schema: %s", ", ".join(added))
+
+    @staticmethod
+    def _rebuild_view(conn: sqlite3.Connection) -> None:
+        conn.execute("DROP VIEW IF EXISTS slot_rows")
+        conn.execute(V2_VIEW_SQL)
+        conn.commit()
+
+    def _detect_schema(self) -> None:
+        """Record which schemas the open file holds, and the columns reads can name."""
+        assert self._conn is not None
+        objects = self._objects(self._conn)
+        self._has_legacy = "solcast_data" in objects
+        self._has_v2 = "slot_rows" in objects and all(t in objects for t in V2_TABLES)
+        try:
+            self._columns = frozenset(row[1] for row in self._conn.execute(f"PRAGMA table_info({self._source})"))
+        except Exception:  # noqa: BLE001 — nothing to read on a read-only first open
+            self._columns = frozenset()
+        self._site_ids = {}
+        if self._has_v2:
+            self._site_ids = {r[1]: int(r[0]) for r in self._conn.execute("SELECT site_id, resource_id FROM sites")}
+
+    @property
+    def _source(self) -> str:
+        """The table or view every read goes to."""
+        return "slot_rows" if self._has_v2 else "solcast_data"
+
+    @property
+    def schema_version(self) -> int:
+        """``PRAGMA user_version`` of the open file (see ``SCHEMA_V2``)."""
+        return self._version
+
+    @property
+    def dual_writing(self) -> bool:
+        """Whether the legacy table is still written alongside the v2 tables."""
+        return self._has_v2 and self._has_legacy
 
     async def async_close(self) -> None:
         """Close the connection."""
@@ -344,18 +692,62 @@ class SqliteStore:
     def _insert_many(self, records: list[StoreRecord]) -> bool:
         assert self._conn is not None  # Narrowed by async_insert_record's guard.
         try:
-            rows = [self._row_values(r) for r in records]
+            legacy_rows = [self._row_values(r) for r in records] if self._has_legacy else []
+            v2_rows = [self._v2_values(r) for r in records] if self._has_v2 else []
         except KeyError as exc:
             _LOGGER.error("SQLite insert skipped — record missing field %s", exc)
             return False
         try:
             with self._lock:
-                self._conn.executemany(_INSERT_SQL, rows)
+                # One transaction for both schemas, so a slot is in both or neither.
+                if legacy_rows:
+                    self._conn.executemany(_INSERT_SQL, legacy_rows)
+                for site, prop, site_vals in v2_rows:
+                    sid = self._site_id(site)
+                    self._conn.execute(_V2_PROPERTY_INSERT, prop)
+                    self._conn.execute(_V2_SITE_INSERT, (site_vals[0], sid, *site_vals[1:]))
                 self._conn.commit()
             return True
         except Exception as exc:  # noqa: BLE001
+            self._conn.rollback()
+            self._site_ids = {}  # An id assigned inside the rolled-back transaction is gone.
             _LOGGER.error("SQLite insert failed: %s", exc)
             return False
+
+    @staticmethod
+    def _v2_values(record: StoreRecord) -> tuple[str, tuple[Any, ...], tuple[Any, ...]]:
+        """Split one record into its site, property-row values and site-row values, scaled.
+
+        The property row is written ``OR IGNORE``, so the first record of a slot
+        sets it. The coordinator writes the '_total' record first, which is also
+        the only one that carries the property-wide gate measures.
+        """
+        raw = cast("dict[str, Any]", record)
+        epoch = int(raw["period_end_epoch"])
+        # Required, as for a legacy row: a record without these is malformed.
+        for required in ("pv_actual", "pv_estimate"):
+            if required not in raw:
+                raise KeyError(required)
+
+        def val(name: str, default: float, scale: int) -> int:
+            value = raw.get(name)
+            return to_stored(default if value is None else value, default, scale)
+
+        prop = (epoch, *(val(n, d, sc) for n, _, d, sc in V2_PROPERTY_COLUMNS))
+        site_vals = (epoch, *(val(n, d, sc) for n, _, d, sc in V2_SITE_COLUMNS))
+        return str(raw.get("site") or DEFAULT_SITE), prop, site_vals
+
+    def _site_id(self, resource_id: str) -> int:
+        """The integer id for a site, assigned on first sight. Caller holds the lock."""
+        assert self._conn is not None
+        sid = self._site_ids.get(resource_id)
+        if sid is None:
+            self._conn.execute("INSERT OR IGNORE INTO sites (resource_id) VALUES (?)", (resource_id,))
+            sid = int(
+                self._conn.execute("SELECT site_id FROM sites WHERE resource_id = ?", (resource_id,)).fetchone()[0]
+            )
+            self._site_ids[resource_id] = sid
+        return sid
 
     # ------------------------------------------------------------------
     # Retention
@@ -379,9 +771,17 @@ class SqliteStore:
         cutoff = int(time.time()) - retention_days * 86400
         try:
             with self._lock:
-                cur = self._conn.execute("DELETE FROM solcast_data WHERE period_end_epoch < ?", (cutoff,))
+                removed = 0
+                tables = (("solcast_data",) if self._has_legacy else ()) + (
+                    ("slot_site", "slot_property") if self._has_v2 else ()
+                )
+                for table in tables:
+                    cur = self._conn.execute(f"DELETE FROM {table} WHERE period_end_epoch < ?", (cutoff,))
+                    # Report rows in the schema reads use, so the count means the same either way.
+                    if table == ("slot_site" if self._has_v2 else "solcast_data"):
+                        removed = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
                 self._conn.commit()
-                return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+                return removed
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("SQLite prune failed: %s", exc)
             return 0
@@ -398,7 +798,191 @@ class SqliteStore:
         """
         if self._conn is None or self._readonly:
             return 0
-        return await self._hass.async_add_executor_job(self._migrate_azimuth, latitude, longitude)
+        changed = await self._hass.async_add_executor_job(self._migrate_azimuth, latitude, longitude)
+        await self._hass.async_add_executor_job(self._migrate_v2)
+        await self._hass.async_add_executor_job(self._resync_from_legacy)
+        await self._hass.async_add_executor_job(self._expire_backup)
+        return changed
+
+    @property
+    def backup_path(self) -> str:
+        """Where the pre-migration backup is written."""
+        return self._path + BACKUP_SUFFIX
+
+    def _migrate_v2(self) -> bool:
+        """Move a legacy store's data into the v2 tables. True when it ran.
+
+        Runs once, when the file is at v1 or below and holds legacy rows (a fresh
+        store starts on v2 in ``_init_v2``). The legacy table is left in place and
+        keeps being written, so reinstalling 1.15.0b2 finds a complete table.
+
+        1. Pre-flight: ``PRAGMA quick_check`` and free disk of at least twice the
+           file. On failure the store stays on v1 and runs exactly as before.
+        2. ``VACUUM INTO`` a backup: a consistent, compacted copy even under WAL.
+        3. One transaction: create, copy every non-empty slot, check that each
+           site's row count and output total match the legacy table, and only then
+           set ``user_version``. Any error rolls the whole thing back.
+        """
+        assert self._conn is not None
+        if self._version >= SCHEMA_V2 or self._has_v2 or not self._has_legacy:
+            return False
+        conn = self._conn
+        try:
+            with self._lock:
+                if not self._integrity_ok(conn):
+                    _LOGGER.error("Store integrity check failed; staying on the legacy schema")
+                    return False
+                size = os.path.getsize(self._path)
+                free = shutil.disk_usage(os.path.dirname(os.path.abspath(self._path))).free
+                if free < 2 * size:
+                    _LOGGER.error(
+                        "Not enough free disk to migrate the store (%d MB free, %d MB needed); "
+                        "staying on the legacy schema",
+                        free // 1_000_000,
+                        2 * size // 1_000_000,
+                    )
+                    return False
+                conn.commit()
+                if os.path.exists(self.backup_path):
+                    os.remove(self.backup_path)
+                conn.execute("VACUUM INTO ?", (self.backup_path,))
+                started = time.monotonic()
+                conn.execute("BEGIN")
+                try:
+                    for statement in V2_CREATE_SQL.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    copied = self._copy_legacy_slots(conn, after_epoch=None)
+                    conn.execute("DROP VIEW IF EXISTS slot_rows")
+                    conn.execute(V2_VIEW_SQL)
+                    self._verify_copy(conn, since_epoch=None)
+                    conn.execute(f"PRAGMA user_version = {SCHEMA_V2}")
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                self._version = SCHEMA_V2
+                self._detect_schema()
+            _LOGGER.info(
+                "Store migrated to schema v%d: %d row(s) copied in %.1f s; backup at %s",
+                SCHEMA_V2,
+                copied,
+                time.monotonic() - started,
+                self.backup_path,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("Store migration failed; staying on the legacy schema: %s", exc)
+            return False
+
+    def _copy_legacy_slots(self, conn: sqlite3.Connection, after_epoch: int | None) -> int:
+        """Copy legacy slots into v2; see the module-level ``copy_legacy_slots``."""
+        return copy_legacy_slots(conn, after_epoch)
+
+    @staticmethod
+    def _integrity_ok(conn: sqlite3.Connection) -> bool:
+        return bool(conn.execute("PRAGMA quick_check").fetchone()[0] == "ok")
+
+    @staticmethod
+    def _legacy_columns(conn: sqlite3.Connection) -> set[str]:
+        return {row[1] for row in conn.execute("PRAGMA table_info(solcast_data)")}
+
+    @staticmethod
+    def _site_totals(
+        conn: sqlite3.Connection, source: str, where: str, params: tuple[Any, ...]
+    ) -> dict[str, tuple[int, float]]:
+        rows = conn.execute(
+            f"SELECT site, COUNT(*), SUM(pv_actual) FROM {source} WHERE {where} GROUP BY site", params
+        ).fetchall()
+        return {r[0]: (int(r[1]), float(r[2] or 0.0)) for r in rows}
+
+    def _verify_copy(self, conn: sqlite3.Connection, since_epoch: int | None) -> None:
+        """Raise unless both schemas hold the same rows and output, per site."""
+        newer = "" if since_epoch is None else " AND period_end_epoch >= ?"
+        params: tuple[Any, ...] = () if since_epoch is None else (since_epoch,)
+        legacy = self._site_totals(conn, "solcast_data", f"period_end_epoch IN ({_LEGACY_KEPT_SLOTS}){newer}", params)
+        v2 = self._site_totals(conn, "slot_rows", f"1 = 1{newer}", params)
+        # Counts must match exactly; totals to within the scaled-integer rounding,
+        # which is at most half a unit of the scale per row.
+        half_unit = 0.5 / V2_SCALES["pv_actual"]
+        agree = legacy.keys() == v2.keys() and all(
+            legacy[k][0] == v2[k][0] and abs(legacy[k][1] - v2[k][1]) <= legacy[k][0] * half_unit + 1e-9 for k in legacy
+        )
+        if not agree:
+            raise ValueError(f"row counts or output totals differ between schemas: legacy {legacy}, v2 {v2}")
+
+    def _resync_from_legacy(self) -> int:
+        """Copy every legacy slot the v2 tables lack. Returns site rows copied.
+
+        Covers anything that wrote only the legacy table: a spell on 1.15.0b2, or a
+        ``tools/import_history.py`` run (whose history is *older* than the newest v2
+        row, so "copy what is newer" would miss it). ``INSERT OR IGNORE`` makes it
+        idempotent; the cost is one scan of the legacy table per start.
+        """
+        assert self._conn is not None
+        if not self.dual_writing:
+            return 0
+        try:
+            with self._lock:
+                copied = copy_legacy_slots(self._conn)
+                self._conn.commit()
+                self._site_ids = {}
+            if copied:
+                _LOGGER.info("Carried %d row(s) written by an older version or a tool into the v2 tables", copied)
+            return copied
+        except Exception as exc:  # noqa: BLE001
+            self._conn.rollback()
+            _LOGGER.error("Store resync failed: %s", exc)
+            return 0
+
+    def _expire_backup(self) -> bool:
+        """Delete the pre-migration backup once compacted and older than ``BACKUP_KEEP_DAYS``."""
+        if self._version < SCHEMA_COMPACTED or not os.path.exists(self.backup_path):
+            return False
+        if time.time() - os.path.getmtime(self.backup_path) < BACKUP_KEEP_DAYS * 86400:
+            return False
+        try:
+            os.remove(self.backup_path)
+        except OSError as exc:
+            _LOGGER.warning("Could not delete the old store backup %s: %s", self.backup_path, exc)
+            return False
+        _LOGGER.info("Deleted the pre-migration store backup %s", self.backup_path)
+        return True
+
+    async def async_compact(self, now_epoch: int | None = None) -> dict[str, Any]:
+        """Drop the legacy table and reclaim its space, once both schemas agree.
+
+        User-triggered (the ``compact_database`` action), never automatic. Refuses
+        unless the last ``COMPACT_VERIFY_DAYS`` days match per site in both schemas.
+        After this, going back to 1.15.0b2 needs ``tools/downgrade_v2.py`` or the
+        backup.
+        """
+        if self._conn is None or self._readonly:
+            return {"compacted": False, "reason": "store not open for writing"}
+        return await self._hass.async_add_executor_job(self._compact, now_epoch)
+
+    def _compact(self, now_epoch: int | None) -> dict[str, Any]:
+        assert self._conn is not None
+        if not self.dual_writing:
+            return {"compacted": False, "reason": "already compacted" if self._has_v2 else "not migrated yet"}
+        since = int(now_epoch if now_epoch is not None else time.time()) - COMPACT_VERIFY_DAYS * 86400
+        conn = self._conn
+        with self._lock:
+            try:
+                self._verify_copy(conn, since_epoch=since)
+            except ValueError as exc:
+                return {"compacted": False, "reason": str(exc)}
+            before = os.path.getsize(self._path)
+            conn.execute("DROP TABLE solcast_data")
+            conn.execute(f"PRAGMA user_version = {SCHEMA_COMPACTED}")
+            conn.commit()
+            conn.execute("VACUUM")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._version = SCHEMA_COMPACTED
+            self._detect_schema()
+            after = os.path.getsize(self._path)
+        _LOGGER.info("Store compacted: %.2f MB -> %.2f MB", before / 1e6, after / 1e6)
+        return {"compacted": True, "size_before_mb": round(before / 1e6, 2), "size_after_mb": round(after / 1e6, 2)}
 
     def _migrate_azimuth(self, latitude: float, longitude: float) -> int:
         assert self._conn is not None  # Narrowed by async_migrate's guard.
@@ -448,7 +1032,7 @@ class SqliteStore:
         assert self._conn is not None  # Narrowed by async_get_record_count's guard.
         try:
             with self._lock:
-                cur = self._conn.execute("SELECT COUNT(*) FROM solcast_data")
+                cur = self._conn.execute(f"SELECT COUNT(*) FROM {self._source}")
                 row = cur.fetchone()
             return int(row[0]) if row else 0
         except Exception:  # noqa: BLE001
@@ -470,7 +1054,7 @@ class SqliteStore:
         assert self._conn is not None  # Narrowed by async_get_sites' guard.
         try:
             with self._lock:
-                cur = self._conn.execute("SELECT DISTINCT site FROM solcast_data")
+                cur = self._conn.execute(f"SELECT DISTINCT site FROM {self._source}")
                 rows = cur.fetchall()
             return [r[0] for r in rows if r and r[0] is not None]
         except Exception:  # noqa: BLE001
@@ -511,7 +1095,7 @@ class SqliteStore:
             "pv_estimate90, azimuth, zenith, clouds, "
             f"{optional}, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
-            "FROM solcast_data "
+            f"FROM {self._source} "
             "WHERE pv_actual > 0 AND pv_estimate > 0 "
             # strftime('%j', epoch, 'unixepoch') renders day-of-year in UTC,
             # matching the MySQL backend's UTC-pinned FROM_UNIXTIME/DAYOFYEAR.
@@ -571,7 +1155,7 @@ class SqliteStore:
             "azimuth, zenith, clouds, "
             f"{optional}, "
             "COALESCE(battery_charge, 0.0) AS battery_charge "
-            "FROM solcast_data "
+            f"FROM {self._source} "
             f"WHERE pv_actual > 0{site_clause}{gate_clause} "
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )
@@ -614,7 +1198,7 @@ class SqliteStore:
             "SELECT period_end_epoch, pv_actual, pv_export, pv_estimate, "
             "azimuth, zenith, clouds, temp, "
             f"{optional} "
-            "FROM solcast_data "
+            f"FROM {self._source} "
             f"WHERE pv_actual > 0 AND zenith < ?{site_clause} "
             "ORDER BY period_end_epoch DESC LIMIT ?"
         )

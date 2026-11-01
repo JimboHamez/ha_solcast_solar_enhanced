@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "気象データの取得元が有効になっていないため、取得するものがありません。Open-Meteo（API キー不要）を有効にするか、統合のオプションで OpenWeatherMap のキーを設定してください。"
+    },
+    "compact_refused": {
+      "message": "データベースは圧縮されませんでした: {reason}"
+    },
+    "database_disabled": {
+      "message": "統合のオプションでデータベースが無効になっているため、圧縮するものがありません。"
     }
   }
 }

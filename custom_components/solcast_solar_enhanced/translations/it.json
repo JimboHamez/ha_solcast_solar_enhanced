@@ -363,6 +363,12 @@
     },
     "no_weather_source": {
       "message": "Nessuna fonte meteo è abilitata, quindi non c'è nulla da scaricare. Attiva Open-Meteo (non serve una chiave API) oppure inserisci una chiave OpenWeatherMap nelle opzioni dell'integrazione."
+    },
+    "compact_refused": {
+      "message": "Il database non è stato compattato: {reason}"
+    },
+    "database_disabled": {
+      "message": "Il database è disattivato nelle opzioni dell'integrazione, quindi non c'è nulla da compattare."
     }
   }
 }

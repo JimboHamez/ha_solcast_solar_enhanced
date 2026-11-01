@@ -37,6 +37,10 @@ import sqlite3
 import sys
 import urllib.parse
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from custom_components.solcast_solar_enhanced.sqlite_store import read_source, sync_v2_from_legacy  # noqa: E402
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 VARS = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation")
@@ -108,6 +112,11 @@ def main() -> int:
 
     conn = sqlite3.connect(args.sqlite)
     conn.row_factory = sqlite3.Row
+    if read_source(conn) == "slot_rows" and not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = 'solcast_data'"
+    ).fetchone():
+        print("This store is compacted (schema v3): run tools/downgrade_v2.py first, then backfill.")
+        return 1
     rng = conn.execute("SELECT MIN(period_end_epoch) a, MAX(period_end_epoch) b FROM solcast_data").fetchone()
     if not rng or rng["a"] is None:
         print("No rows in store — nothing to backfill.")
@@ -144,6 +153,9 @@ def main() -> int:
         updated += 1
     if not args.dry_run:
         conn.commit()
+        # Schema v2 during the soak: readers go through the v2 view, so the new
+        # irradiance has to reach the v2 tables as well.
+        sync_v2_from_legacy(conn, refresh=KEYS)
     conn.close()
     print(f"{'Would update' if args.dry_run else 'Updated'} {updated} timestamp(s); "
           f"{skipped} had no archive coverage (left at 0).")

@@ -327,6 +327,11 @@ def _import(
     os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(sqlite_path)
     try:
+        # Schema v3 (compacted) has dropped this table on purpose; recreating it here
+        # would restart the integration's dual-write behind the user's back.
+        if conn.execute("PRAGMA user_version").fetchone()[0] >= 3:
+            raise SystemExit("This store is compacted (schema v3): run tools/downgrade_v2.py first, then import.")
+        has_v2 = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_site'").fetchone() is not None
         conn.executescript(CREATE_TABLE_SQL)  # ensure table; commits any pending tx
         before = conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()[0]
         deleted = 0
@@ -334,12 +339,19 @@ def _import(
             # DELETE + INSERT share one implicit transaction, committed together,
             # so the table is never left empty if the insert fails.
             deleted = conn.execute("DELETE FROM solcast_data").rowcount
+            if has_v2:
+                # Schema v2 (soak): clear the v2 copy too; the integration rebuilds it
+                # from this table on its next start.
+                conn.execute("DELETE FROM slot_site")
+                conn.execute("DELETE FROM slot_property")
         conn.executemany(_INSERT_SQL, [tuple(r[c] for c in COLUMNS) for r in rows])
         after = conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()[0]
         conn.commit()
     finally:
         conn.close()
     inserted = after - (before - deleted)
+    if has_v2:
+        print("Schema v2 store: the integration copies the imported rows into its v2 tables on its next start.")
     return len(rows), inserted, fixed, deleted
 
 
