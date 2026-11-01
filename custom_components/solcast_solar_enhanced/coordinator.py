@@ -103,6 +103,7 @@ from .const import (
     ISSUE_GRANULAR_CONFLICT,
     ISSUE_ORIENTATION_DIVERGED,
     ISSUE_OWM_REQUIRED,
+    ISSUE_SCHEMA_TOO_NEW,
     KT_GHI_CS_FLOOR,
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
@@ -148,7 +149,7 @@ from .shading_dampening import average_slot_pairs, compute_dampening, compute_su
 from .shading_geometry import analyse_shading
 from .slot_gate import Samples, SourceKind, counter_power, dc_power, measure_slot
 from .solcast_api import OpenMeteoClient, OWMClient
-from .sqlite_store import SqliteStore
+from .sqlite_store import SCHEMA_KNOWN, SqliteStore
 from .vmodel import SlotVoltage, VoltageModel, evaluate_slot
 
 if TYPE_CHECKING:
@@ -487,6 +488,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     float(opts.get(CONF_LATITUDE, -37.9)),
                     float(opts.get(CONF_LONGITUDE, 145.0)),
                 )
+        self._check_schema_not_newer()
 
         if opts.get(CONF_OWM_ENABLED) and opts.get(CONF_OWM_API_KEY):
             self._owm = OWMClient(
@@ -561,6 +563,27 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_DAMPENING_GATED_LEGACY)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_SCHEMA_TOO_NEW)
+
+    def _store_too_new(self) -> bool:
+        """Whether the database was written by a newer release (opened read-only)."""
+        return bool(self._db is not None and getattr(self._db, "newer_schema", False))
+
+    def _check_schema_not_newer(self) -> None:
+        """Raise or clear the repair issue for a database written by a newer release."""
+        if not self._store_too_new():
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_SCHEMA_TOO_NEW)
+            return
+        assert self._db is not None  # Narrowed by _store_too_new.
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_SCHEMA_TOO_NEW,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_SCHEMA_TOO_NEW,
+            translation_placeholders={"found": str(self._db.schema_version), "known": str(SCHEMA_KNOWN)},
+        )
 
     # ------------------------------------------------------------------
     # Main update
@@ -1220,6 +1243,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # Cheap config sanity check on the same 6-hourly cadence as the granular
         # conflict check, and for the same reason: the failure is otherwise silent.
         self._check_capacity_is_ac(opts)
+
+        # A downgrade: the history is in a layout this release can't be sure it reads.
+        # Pushing would send factors built from whatever it could read (possibly
+        # nothing, which is a neutral curve), undoing what the newer release pushed.
+        # Leave the base's factors as they are until a newer version is back.
+        if self._store_too_new():
+            self._dampening_pushed.clear()
+            return
 
         self._sunpos_enabled = bool(opts.get(CONF_SUNPOS_DAMPENING, DEFAULT_SUNPOS_DAMPENING))
         # Aggregate table (drives the dampening sensors) — property-wide '_total' rows.

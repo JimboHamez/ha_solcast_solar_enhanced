@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev4] - 2026-11-02
+
+> Private test build, not published. A downgrade guard; storage and migration are otherwise unchanged, so
+> installing over dev2 or dev3 needs nothing else.
+
+### Added
+
+- **A database written by a newer version is opened read-only.** HACS lets anyone pick any of the last
+  five releases, downgrades included, and has no way to force an upgrade path. So from this build on, a
+  database whose schema is newer than the running version understands is left exactly as it is: nothing is
+  created, altered, migrated or recorded. A repair issue says which version wrote it, and dampening is not
+  sent to Solcast, because factors built from history this version can't read would be a neutral curve that
+  undoes what the newer version sent. Reinstalling the newer version clears it. Translated into all 11
+  languages (machine-written outside English; native review welcome).
+
 ## [1.15.0b3.dev3] - 2026-11-02
 
 > Private test build, not published. A fix to the dev2 slot gate; storage and migration are unchanged, so

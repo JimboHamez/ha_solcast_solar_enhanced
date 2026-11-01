@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "La potenza dell'impianto sembra un valore CC (moduli)",
       "description": "La potenza salvata nelle opzioni di questa integrazione è {configured} kW, ma Solcast riporta una potenza nominale CA dell'inverter di {discovered} kW. Questo scarto è tipico di un valore dei moduli (CC): il campo è rimasto etichettato \"kW CC\" fino alla versione 1.10.1, mentre il valore viene usato solo come soglia CA.\n\nIl suo unico compito è rilevare la limitazione dell'inverter — le letture pari o superiori a potenza × soglia di limitazione sono considerate limitazione ed escluse da calibrazione e ombreggiamento. Se è troppo alta, il filtro non scatta mai e le letture sature di mezzogiorno diluiscono l'ombreggiamento davvero misurato.\n\nViene invece usato il valore CA di Solcast, quindi il rilevamento funziona. Aggiorna **Potenza dell'impianto** nelle opzioni con la potenza nominale CA del tuo inverter; questo avviso sparirà al prossimo ciclo."
+    },
+    "schema_too_new": {
+      "title": "Database scritto da una versione più recente",
+      "description": "Il database della cronologia ha lo schema v{found} ed è stato scritto da una versione di questa integrazione più recente di quella installata ora, che comprende solo fino a v{known}. Di solito significa che l'integrazione è stata riportata a una versione precedente, ad esempio scegliendo una release più vecchia in HACS.\n\nPer preservare la cronologia, il database è stato aperto in sola lettura: non viene registrato nulla di nuovo e nessuno smorzamento viene inviato a Solcast, quindi restano in vigore i fattori inviati per ultimi dalla versione più recente. La cronologia non viene modificata.\n\nReinstalla la versione più recente (o una successiva) per riprendere la registrazione. Questo avviso scompare una volta installata."
     }
   },
   "exceptions": {

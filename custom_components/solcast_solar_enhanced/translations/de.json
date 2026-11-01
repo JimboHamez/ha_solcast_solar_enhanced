@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "Anlagenleistung sieht nach einem DC-Wert (Module) aus",
       "description": "Die in den Optionen dieser Integration gespeicherte Anlagenleistung beträgt {configured} kW, Solcast meldet die Wechselrichter-AC-Nennleistung jedoch mit {discovered} kW. Diese Differenz ist typisch für einen Modulwert (DC): Das Feld war bis Version 1.10.1 mit \"kW DC\" beschriftet, obwohl der Wert ausschließlich als AC-Schwelle verwendet wird.\n\nSeine einzige Aufgabe ist die Erkennung der Wechselrichter-Abregelung — Messwerte ab Leistung × Abregelungsschwelle gelten als Abregelung und werden von Tuning und Verschattung ausgeschlossen. Ist der Wert zu hoch, greift dieser Filter nie, und gesättigte Mittagswerte verwässern die tatsächlich gemessene Verschattung.\n\nStattdessen wird der AC-Wert von Solcast verwendet, die Abregelungserkennung funktioniert also. Passen Sie **Anlagenleistung** in den Optionen auf die AC-Nennleistung Ihres Wechselrichters an; der Hinweis verschwindet dann beim nächsten Dampening-Zyklus."
+    },
+    "schema_too_new": {
+      "title": "Datenbank wurde von einer neueren Version geschrieben",
+      "description": "Deine Verlaufsdatenbank hat das Schema v{found} und wurde von einer neueren Version dieser Integration geschrieben als der jetzt installierten, die nur bis v{known} versteht. Meist bedeutet das, dass die Integration herabgestuft wurde, zum Beispiel durch Auswahl einer älteren Version in HACS.\n\nDamit der Verlauf erhalten bleibt, wurde die Datenbank schreibgeschützt geöffnet: Es wird nichts Neues aufgezeichnet und keine Dämpfung an Solcast gesendet, sodass die zuletzt von der neueren Version gesendeten Faktoren bestehen bleiben. Der Verlauf selbst bleibt unverändert.\n\nInstalliere die neuere Version (oder eine spätere) erneut, um weiter aufzuzeichnen. Dieser Hinweis verschwindet, sobald sie installiert ist."
     }
   },
   "exceptions": {

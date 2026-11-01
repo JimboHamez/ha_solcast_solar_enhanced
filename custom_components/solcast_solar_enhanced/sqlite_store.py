@@ -232,6 +232,11 @@ _INSERT_SQL = (
 # ----------------------------------------------------------------------
 SCHEMA_V2 = 2
 SCHEMA_COMPACTED = 3
+# The newest layout this release understands. A file above it was written by a newer
+# release (HACS lets users pick any recent version, downgrades included), so it is
+# opened read-only: writing it would mix layouts, and running a migration this release
+# does not know about is not possible. Raise it with every new schema version.
+SCHEMA_KNOWN = SCHEMA_COMPACTED
 UNKNOWN = -1.0
 
 # Everything that is the same for every array in a slot.
@@ -485,6 +490,8 @@ class SqliteStore:
         self._has_legacy = False
         self._has_v2 = False
         self._site_ids: dict[str, int] = {}
+        # Set when the file's schema is newer than SCHEMA_KNOWN (see _connect).
+        self.newer_schema = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -505,6 +512,18 @@ class SqliteStore:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             self._version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if self._version > SCHEMA_KNOWN:
+                # A newer release wrote this file. Every write path checks _readonly,
+                # so nothing is created, altered, migrated, pruned or recorded.
+                self.newer_schema = True
+                self._readonly = True
+                _LOGGER.warning(
+                    "Database %s is schema v%d, newer than this version understands (v%d); "
+                    "opened read-only and nothing will be recorded until a newer version is installed",
+                    self._path,
+                    self._version,
+                    SCHEMA_KNOWN,
+                )
             if not self._readonly:
                 # A compacted store has dropped the legacy table on purpose; recreating
                 # it would restart the dual-write the user switched off.

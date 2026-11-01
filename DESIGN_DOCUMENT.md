@@ -220,6 +220,7 @@ about 1,500.
 | 0–1 | Legacy only (1 = azimuth repair done) |
 | 2 | v2 tables plus the legacy table, **both written** (the soak) |
 | 3 | Compacted: the legacy table dropped on request |
+| > 3 | Written by a newer release (a downgrade): opened read-only (1.15.0b3.dev4) |
 
 - *Fresh store*: starts at 2 directly.
 - *Migration 1 → 2* (`_migrate_v2`, from `async_migrate`, after the azimuth repair):
@@ -236,6 +237,15 @@ about 1,500.
 - *Compaction*: the `compact_database` action, user-triggered only. It refuses unless the
   last `COMPACT_VERIFY_DAYS` (7) agree per site in both schemas, then drops the legacy
   table, sets 3 and `VACUUM`s. The backup is deleted `BACKUP_KEEP_DAYS` (30) after.
+- *Downgrade guard (1.15.0b3.dev4)*: a file above `SCHEMA_KNOWN` (3) was written by a
+  newer release. HACS offers the last five releases, downgrades included, and has no way
+  to force an upgrade path, so every release carries the whole migration chain and
+  refuses what comes after it. The store opens read-only (nothing created, altered,
+  migrated, pruned or recorded), the coordinator raises the `schema_too_new` repair
+  issue, and dampening is not pushed: factors built from history this release can't
+  read would be a neutral curve that undoes the newer release's push. Raise
+  `SCHEMA_KNOWN` with every new layout; a test pins it. Releases before this guard
+  can't be fixed, which is why compaction stays manual.
 - *Back to 1.15.0b2 after compaction*: `tools/downgrade_v2.py` rebuilds the legacy table
   from the view and returns the file to 2. Lost: `description`, the measured
   `period_start`, precision below the scales, and the empty night rows never written.

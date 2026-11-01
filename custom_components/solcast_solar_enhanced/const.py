@@ -362,6 +362,9 @@ ISSUE_DAMPENING_GATED_LEGACY = "dampening_gated"
 # value so the clipping filter still works, but the stored number stays wrong and
 # would take over if discovery ever lapsed.
 ISSUE_CAPACITY_LOOKS_DC = "capacity_looks_dc"
+# Raised when the database was written by a newer release than the one running (a
+# downgrade): the store is opened read-only and nothing is recorded or pushed.
+ISSUE_SCHEMA_TOO_NEW = "schema_too_new"
 # Real DC/AC ratios run 1.1-1.35; 1.05 catches them while tolerating rounding and
 # the odd genuinely oversized-inverter install.
 CAPACITY_DC_SUSPECT_RATIO = 1.05
