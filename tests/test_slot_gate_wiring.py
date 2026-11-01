@@ -239,6 +239,72 @@ def test_no_arrays_falls_back_to_the_system_sensor(hass):
     assert arrays == {DEFAULT_SITE_ID: [(0.0, 6.0)]} and kinds == {DEFAULT_SITE_ID: "ac"}
 
 
+def test_a_flat_counter_is_held_to_the_slot_end(hass):
+    """A generation counter that never ticked is 0 kW for the slot, not an empty series."""
+    coord = _coordinator(hass, [{"ac_sensor": "sensor.ac_a", "site": "A"}, {"ac_sensor": "sensor.ac_b", "site": "B"}])
+    hass.states.async_set("sensor.ac_a", "2.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.ac_b", "100.0", {"unit_of_measurement": "kWh"})
+    samples = {"sensor.ac_a": [(0.0, 2.0)], "sensor.ac_b": [(0.0, 100.0)]}
+    arrays, kinds = coord._gate_arrays(coord._opts, samples, 1800.0)
+    assert arrays["B"] == [(0.0, 0.0)] and kinds["B"] == "counter"
+    assert arrays["A"] == [(0.0, 2.0)]  # A power sensor is never extended.
+
+
+def test_an_unavailable_counter_is_not_held(hass):
+    """A counter that stopped reporting is unknown, not flat: no hold, so no invented 0 kW."""
+    coord = _coordinator(hass)
+    hass.states.async_set("sensor.export_kwh", "unavailable", {"unit_of_measurement": "kWh"})
+    series, _ = coord._power_series("sensor.export_kwh", "energy_kwh", {"sensor.export_kwh": [(0.0, 12.0)]}, 1800.0)
+    assert series == []
+    hass.states.async_set("sensor.export_kwh", "12.0", {"unit_of_measurement": "kWh"})
+    series, _ = coord._power_series("sensor.export_kwh", "energy_kwh", {"sensor.export_kwh": [(0.0, 12.0)]}, 1800.0)
+    assert series == [(0.0, 0.0)]
+
+
+def test_flat_dc_split_and_system_counters_are_held(hass):
+    """Every counter input to the gate is held, not only a direct array's."""
+    groups = [{"ac_sensor": "sensor.ac", "strings": [{"site": "A", "dc_sensors": ["sensor.dc_a"]}, {"site": "B", "dc_sensors": ["sensor.dc_b"]}]}]
+    coord = _coordinator(hass, groups)
+    for e in ("sensor.dc_a", "sensor.dc_b"):
+        hass.states.async_set(e, "5.0", {"unit_of_measurement": "kWh"})
+    arrays, _ = coord._gate_arrays(coord._opts, {"sensor.dc_a": [(0.0, 5.0)], "sensor.dc_b": [(0.0, 5.0)]}, 1800.0)
+    assert arrays == {"A": [(0.0, 0.0)], "B": [(0.0, 0.0)]}
+
+    coord = _coordinator(hass)
+    hass.states.async_set("sensor.pv_power_30min", "40.0", {"unit_of_measurement": "kWh"})
+    arrays, kinds = coord._gate_arrays(coord._opts, {"sensor.pv_power_30min": [(0.0, 40.0)]}, 1800.0)
+    assert arrays == {DEFAULT_SITE_ID: [(0.0, 0.0)]} and kinds == {DEFAULT_SITE_ID: "counter"}
+
+
+async def test_flat_array_counters_reach_the_gate_held(hass, base_with_forecast):
+    """Through the update cycle: two silent generation counters are two measured arrays, not PARTIAL."""
+    groups = [{"ac_sensor": "sensor.ac_a", "site": "A"}, {"ac_sensor": "sensor.ac_b", "site": "B"}]
+    coord = _coordinator(hass, groups)
+    for e in ("sensor.ac_a", "sensor.ac_b"):
+        hass.states.async_set(e, "7.0", {"unit_of_measurement": "kWh"})
+    await _update(coord, lambda s, e: {"sensor.ac_a": [(float(s), 7.0)], "sensor.ac_b": [(float(s), 7.0)]})
+    total = next(r for r in coord._db.records if r["site"] == DEFAULT_SITE_ID)
+    flags = GateFlag(int(total["gate_flags"]))
+    assert GateFlag.CROSS_REF in flags and GateFlag.PARTIAL not in flags
+
+
+async def test_a_flat_export_counter_lands_as_a_measured_zero(hass, base_with_forecast):
+    """The 2 Nov dawn slots: the house used every watt, the export counter never ticked."""
+    coord = _coordinator(hass, _dc_groups(), **{CONF_PV_EXPORT_SENSOR: "sensor.export_kwh"})
+    hass.states.async_set("sensor.export_kwh", "12.0", {"unit_of_measurement": "kWh"})
+
+    def samples(s, e):
+        data = _samples_with_dips(s, e, dip_a=[], dip_b=[])
+        del data["sensor.export_power"]
+        data["sensor.export_kwh"] = [(float(s), 12.0)]
+        return data
+
+    await _update(coord, samples)
+    total = next(r for r in coord._db.records if r["site"] == DEFAULT_SITE_ID)
+    assert GateFlag.EXPORT_SERIES in GateFlag(int(total["gate_flags"]))
+    assert total["export_pinned_s"] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # compact_database
 # ---------------------------------------------------------------------------

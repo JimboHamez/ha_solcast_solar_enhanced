@@ -269,7 +269,11 @@ divided by each array's clear-sky plane-of-array shape, which removes the sunris
 sunset ramp, and a dip is judged against the array's own time-weighted p90 outside
 export-pinned time. Inputs per array, best first: DC trackers (V × I), DC power sensors
 (`dc_split`), its own generation sensor (`direct`, including microinverter groups), an
-energy counter differenced over at least 300 s.
+energy counter differenced over at least 300 s. A counter's last reading is held to the
+slot end while the sensor still reports a number (1.15.0b3.dev3). The recorder logs a
+counter only when it changes, so export that never ticked because the house used every
+watt is a measured 0 kW rather than a missing series, and the minutes after the last tick
+count too. An unavailable counter is not held: it is unknown, not flat.
 
 `GateFlag` (`const.py`; a test pins this table to the enum, and bit positions are part
 of the stored format, so never renumber):

@@ -84,14 +84,26 @@ def dc_power(trackers: Sequence[tuple[Samples, Samples]]) -> list[tuple[float, f
     return out
 
 
-def counter_power(samples: Samples, window_s: float = GATE_COUNTER_WINDOW_S) -> list[tuple[float, float]]:
+def counter_power(
+    samples: Samples, window_s: float = GATE_COUNTER_WINDOW_S, end: float | None = None
+) -> list[tuple[float, float]]:
     """A cumulative energy counter (kWh) as average power (kW) over windows of at least ``window_s``.
 
     Differencing adjacent samples would turn the counter's resolution into spikes
     (a 10 Wh tick 0.3 s after the last read is 120 kW), so each step spans at least
     a full window; the error is then bounded by resolution ÷ window.
+
+    With ``end``, the last reading is held until then, because a recorded state holds
+    until the next one. The recorder logs a counter only when it changes, so one that
+    never ticks in the slot (export while the house uses every watt) has a single
+    reading: without the hold it yields no series and the slot reads as unmeasured,
+    when it measured exactly 0 kW. The hold also counts the minutes after the last
+    tick. Pass ``end`` only while the sensor is still reporting: a counter that went
+    unavailable is unknown, not flat.
     """
     out: list[tuple[float, float]] = []
+    if end is not None and samples and samples[-1][0] < end:
+        samples = [*samples, (end, samples[-1][1])]
     if len(samples) < 2:
         return out
     anchor_t, anchor_v = samples[0]

@@ -215,6 +215,15 @@ def is_empty_night_slot(zenith: float, values: Iterable[float]) -> bool:
     return zenith >= NIGHT_ZENITH_DEG and all(v <= 0 for v in values)
 
 
+def _is_number(value: str) -> bool:
+    """Whether a state string is a reading, not ``unavailable``, ``unknown`` or empty."""
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _sum_series(series: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
     """Several held-value series summed on their merged timeline (from when all have a value)."""
     times = sorted({t for s in series for t, _ in s})
@@ -2330,9 +2339,18 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         return ids
 
     def _power_series(
-        self, entity_id: str | None, configured_mode: str, samples: dict[str, list[tuple[float, float]]]
+        self,
+        entity_id: str | None,
+        configured_mode: str,
+        samples: dict[str, list[tuple[float, float]]],
+        end_epoch: float | None = None,
     ) -> tuple[list[tuple[float, float]], SourceKind]:
-        """A sensor's samples as a kW series, and whether they came from power or a counter."""
+        """A sensor's samples as a kW series, and whether they came from power or a counter.
+
+        A counter's last reading is held to ``end_epoch`` while the sensor still
+        reports a number, so a counter that never ticked reads 0 kW rather than
+        no series (see ``counter_power``).
+        """
         pairs = samples.get(entity_id or "") or []
         state = self.hass.states.get(entity_id) if entity_id else None
         if not pairs or state is None:
@@ -2340,7 +2358,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         mode = self._resolve_input_mode(state, configured_mode)
         if mode.startswith("power"):
             return [(t, self._to_kw(v, mode)) for t, v in pairs], "ac"
-        return counter_power([(t, self._to_kwh(max(0.0, v), mode)) for t, v in pairs]), "counter"
+        hold_to = end_epoch if end_epoch is not None and _is_number(state.state) else None
+        return counter_power([(t, self._to_kwh(max(0.0, v), mode)) for t, v in pairs], end=hold_to), "counter"
 
     @staticmethod
     def _tracker_pairs(
@@ -2354,7 +2373,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         return out
 
     def _gate_arrays(
-        self, opts: dict[str, Any], samples: dict[str, list[tuple[float, float]]]
+        self, opts: dict[str, Any], samples: dict[str, list[tuple[float, float]]], end_epoch: float | None = None
     ) -> tuple[dict[str, Samples], dict[str, SourceKind]]:
         """Each configured array's power series, from the best input it has.
 
@@ -2377,7 +2396,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     arrays[site], kinds[site] = dc_power(pairs), "dc"
                 else:
                     arrays[site], kinds[site] = self._power_series(
-                        group.get("ac_sensor"), group.get("ac_mode", DEFAULT_PV_INPUT_MODE), samples
+                        group.get("ac_sensor"), group.get("ac_mode", DEFAULT_PV_INPUT_MODE), samples, end_epoch
                     )
                 continue
             for string in strings:  # dc_split: arrays sharing one inverter.
@@ -2392,7 +2411,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     *(string.get("dc_sensors") or []),
                     *([string["dc_sensor"]] if string.get("dc_sensor") else []),
                 ]
-                dc_series = [self._power_series(e, DEFAULT_PV_INPUT_MODE, samples)[0] for e in dc_ids]
+                dc_series = [self._power_series(e, DEFAULT_PV_INPUT_MODE, samples, end_epoch)[0] for e in dc_ids]
                 arrays[site] = _sum_series(dc_series) if dc_series and all(dc_series) else []
                 kinds[site] = "dc"
         if arrays:
@@ -2401,7 +2420,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if pairs:
             return {DEFAULT_SITE_ID: dc_power(pairs)}, {DEFAULT_SITE_ID: "dc"}
         series, kind = self._power_series(
-            opts.get(CONF_PV_ACTUAL_SENSOR), opts.get(CONF_PV_ACTUAL_INPUT_MODE, DEFAULT_PV_INPUT_MODE), samples
+            opts.get(CONF_PV_ACTUAL_SENSOR),
+            opts.get(CONF_PV_ACTUAL_INPUT_MODE, DEFAULT_PV_INPUT_MODE),
+            samples,
+            end_epoch,
         )
         return ({DEFAULT_SITE_ID: series}, {DEFAULT_SITE_ID: kind}) if series else ({}, {})
 
@@ -2442,11 +2464,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         """
         lat = float(opts.get(CONF_LATITUDE, -37.9))
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
-        arrays, kinds = self._gate_arrays(opts, samples)
+        arrays, kinds = self._gate_arrays(opts, samples, float(end_epoch))
         orientations = {site: self._array_orientation(opts, site) for site in arrays}
         has_shape = bool(arrays) and all(orientations.values())
         export, _ = self._power_series(
-            export_entity, str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)), samples
+            export_entity, str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)), samples, float(end_epoch)
         )
         limit_kw = self._resolve_export_limit(opts)
         clip = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))

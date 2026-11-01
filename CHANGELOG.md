@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev3] - 2026-11-02
+
+> Private test build, not published. A fix to the dev2 slot gate; storage and migration are unchanged, so
+> installing over dev2 needs nothing else.
+
+### Fixed
+
+- **A quiet energy counter now reads 0 kW instead of "unmeasured".** The recorder logs a counter only when
+  it changes, so while the house used every watt of solar the export counter never ticked, the gate saw a
+  single reading, and the slot recorded no export series (`export_pinned_s` −1, `EXPORT_SERIES` unset; seen
+  at 06:30 and 07:00 on 2 Nov). The last reading is now held to the end of the slot, which is what a
+  recorded state means. The same applies to generation counters used as gate inputs, and the minutes after
+  a counter's last tick now count. A counter whose sensor is unavailable is not held, so an outage still
+  reads as unknown.
+
 ## [1.15.0b3.dev2] - 2026-11-01
 
 > Private test build, not published. Step 2 of the database-size and slot-gate work. Record-only: tuning

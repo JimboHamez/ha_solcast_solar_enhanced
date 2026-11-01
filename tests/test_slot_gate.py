@@ -214,6 +214,51 @@ def test_counter_power_skips_a_reset():
     ]
 
 
+def test_counter_power_without_an_end_needs_two_readings():
+    """The pure differencing contract is unchanged when no end is given."""
+    assert counter_power([(0.0, 50.0)]) == []
+    assert counter_power([(0.0, 50.0), (100.0, 50.0)]) == []
+
+
+def test_a_counter_that_never_ticks_holds_to_the_end_as_zero():
+    """Export while the house uses every watt: one reading, held, is 0 kW, not no series."""
+    assert counter_power([(0.0, 50.0)], end=1800.0) == [(0.0, 0.0)]
+
+
+def test_the_hold_counts_the_minutes_after_the_last_tick():
+    """0.5 kWh in the first 400 s, then nothing: the last 1400 s read 0 kW, not missing."""
+    assert counter_power([(0.0, 50.0), (400.0, 50.5)], end=1800.0) == [
+        (0.0, pytest.approx(4.5)),
+        (400.0, 0.0),
+    ]
+
+
+def test_the_hold_never_shortens_a_window_below_the_minimum():
+    """A tick 100 s before the end must not become a 100 s window (resolution spikes)."""
+    p = counter_power([(0.0, 50.0), (1700.0, 50.85)], end=1800.0)
+    assert p == [(0.0, pytest.approx(1.8))]
+
+
+def test_an_end_at_or_before_the_last_reading_adds_nothing():
+    samples = [(0.0, 50.0), (400.0, 50.5)]
+    assert counter_power(samples, end=400.0) == counter_power(samples) == [(0.0, pytest.approx(4.5))]
+
+
+def test_a_flat_export_counter_measures_zero_pinned_seconds():
+    """End to end through measure_slot: a held flat export is a measured series, pinned 0 s."""
+    m = measure_slot(
+        0.0,
+        1800.0,
+        {"A": [(0.0, 1.0)], "B": [(0.0, 1.0)]},
+        {"A": "dc", "B": "dc"},
+        None,
+        export=counter_power([(0.0, 12.0)], end=1800.0),
+        export_limit_kw=5.0,
+    )
+    assert GateFlag.EXPORT_SERIES in GateFlag(m["gate_flags"])
+    assert m["export_pinned_s"] == 0.0
+
+
 def test_the_design_document_flag_table_matches_the_enum():
     """The bits are part of the stored format; the documented table and the code must agree."""
     import re
