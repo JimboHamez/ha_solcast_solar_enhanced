@@ -95,13 +95,14 @@ class GateFlag(IntFlag):
     DC_TRACKERS = 1 << 0  # Per-tracker DC voltage and current were present.
     AC_ARRAYS = 1 << 1  # Per-array AC power was used instead (no DC).
     CROSS_REF = 1 << 2  # At least two independent arrays saw the same sky.
-    COUNTER_SOURCE = 1 << 3  # A series came from an energy counter (>= 300 s windows).
+    COUNTER_SOURCE = 1 << 3  # An array's series came from an energy counter (>= 300 s windows).
     COARSE = 1 << 4  # Median sample interval above GATE_COARSE_GAP_S.
     PARTIAL = 1 << 5  # An input was missing for more than GATE_PARTIAL_FRACTION of the slot.
     EXPORT_SERIES = 1 << 6  # An export series and limit were available (export_pinned_s is valid).
     LOW_SUN = 1 << 7  # Sun elevation below GATE_LOW_SUN_ELEVATION (shadow-edge ambiguity).
     POA_SHAPE = 1 << 8  # Dips were judged against the array's plane-of-array clear-sky shape.
     VMODEL_READY = 1 << 9  # The voltage model was trained, so vexcess_s is valid.
+    EXPORT_COUNTER = 1 << 10  # The export series came from an energy counter, so export_pinned_s is >= 300 s coarse.
 
 
 # A normalised power below this share of the slot's own p90 counts as a dip.

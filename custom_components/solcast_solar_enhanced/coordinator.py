@@ -2498,7 +2498,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         arrays, kinds = self._gate_arrays(opts, samples, float(end_epoch))
         orientations = {site: self._array_orientation(opts, site) for site in arrays}
         has_shape = bool(arrays) and all(orientations.values())
-        export, _ = self._power_series(
+        export, export_kind = self._power_series(
             export_entity, str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)), samples, float(end_epoch)
         )
         limit_kw = self._resolve_export_limit(opts)
@@ -2532,6 +2532,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 kinds,
                 shape if has_shape else None,
                 export=export or None,
+                export_kind=export_kind,
                 export_limit_kw=limit_kw,
                 clipping_threshold=clip,
                 low_sun=(90.0 - zenith) < GATE_LOW_SUN_ELEVATION,

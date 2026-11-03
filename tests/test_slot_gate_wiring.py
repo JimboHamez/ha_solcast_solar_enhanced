@@ -143,6 +143,7 @@ async def test_gate_measures_land_on_the_total_and_site_rows(hass, base_with_for
     assert total["export_pinned_s"] == 0.0
     flags = GateFlag(int(total["gate_flags"]))
     assert GateFlag.DC_TRACKERS in flags and GateFlag.CROSS_REF in flags and GateFlag.EXPORT_SERIES in flags
+    assert GateFlag.EXPORT_COUNTER not in flags  # The fixture's export is a kW sensor.
     assert rows["A"]["shade_dip_s"] == pytest.approx(200.0, abs=2)
     assert rows["B"]["shade_dip_s"] == 0.0
     assert "sky_dip_s" not in rows["A"]  # Property-wide: carried once, on the '_total' row.
@@ -302,6 +303,7 @@ async def test_a_flat_export_counter_lands_as_a_measured_zero(hass, base_with_fo
     await _update(coord, samples)
     total = next(r for r in coord._db.records if r["site"] == DEFAULT_SITE_ID)
     assert GateFlag.EXPORT_SERIES in GateFlag(int(total["gate_flags"]))
+    assert GateFlag.EXPORT_COUNTER in GateFlag(int(total["gate_flags"]))
     assert total["export_pinned_s"] == 0.0
 
 

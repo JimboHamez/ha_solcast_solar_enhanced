@@ -124,6 +124,7 @@ def measure_slot(
     kinds: Mapping[str, SourceKind],
     shape: Callable[[str, float], float] | None,
     export: Samples | None = None,
+    export_kind: SourceKind = "ac",
     export_limit_kw: float = 0.0,
     clipping_threshold: float = 0.95,
     dip_threshold: float = GATE_DIP_THRESHOLD,
@@ -139,6 +140,7 @@ def measure_slot(
         shape: Clear-sky plane-of-array shape per array and time, or None to judge
             dips against the raw power (``POA_SHAPE`` stays unset).
         export: Grid export samples in kW, if a series exists.
+        export_kind: How the export series was obtained; ``counter`` sets ``EXPORT_COUNTER``.
         export_limit_kw: The limit in force; 0 or less means none.
         clipping_threshold: Share of the limit that counts as pinned.
         dip_threshold: Share of the array's p90 below which it is in a dip.
@@ -155,6 +157,8 @@ def measure_slot(
         flags |= GateFlag.AC_ARRAYS
     if any(k == "counter" for k in kinds.values()):
         flags |= GateFlag.COUNTER_SOURCE
+    if export and export_kind == "counter":
+        flags |= GateFlag.EXPORT_COUNTER
     if low_sun:
         flags |= GateFlag.LOW_SUN
 

@@ -160,6 +160,31 @@ def test_flags_describe_the_inputs():
     assert counter["gate_flags"] == GateFlag.AC_ARRAYS | GateFlag.COUNTER_SOURCE
 
 
+def test_an_export_counter_is_flagged_apart_from_the_arrays():
+    """The export's resolution is its own fact: a counter export beside DC arrays, and a
+    counter array beside a power export, must each set only their own bit."""
+    s = _sampled(_signal([]), 1.0)
+    held = counter_power([(0.0, 12.0)], end=END)
+    counter_export = measure_slot(START, END, {"a": s}, _kinds("a"), shape=None, export=held, export_kind="counter", export_limit_kw=5.0)
+    assert GateFlag.EXPORT_COUNTER in GateFlag(counter_export["gate_flags"])
+    assert GateFlag.COUNTER_SOURCE not in GateFlag(counter_export["gate_flags"])
+    power_export = measure_slot(START, END, {"a": s}, {"a": "counter"}, shape=None, export=[(0.0, 2.0)], export_limit_kw=5.0)
+    assert GateFlag.COUNTER_SOURCE in GateFlag(power_export["gate_flags"])
+    assert GateFlag.EXPORT_COUNTER not in GateFlag(power_export["gate_flags"])
+
+
+def test_the_export_counter_bit_needs_a_series_but_not_a_limit():
+    """It describes the series, so no series means no bit; a missing limit leaves the series as it was."""
+    s = _sampled(_signal([]), 1.0)
+    for missing in (None, []):
+        m = measure_slot(START, END, {"a": s}, _kinds("a"), shape=None, export=missing, export_kind="counter", export_limit_kw=5.0)
+        assert GateFlag.EXPORT_COUNTER not in GateFlag(m["gate_flags"])
+    no_limit = measure_slot(START, END, {"a": s}, _kinds("a"), shape=None, export=[(0.0, 0.0)], export_kind="counter")
+    assert GateFlag.EXPORT_COUNTER in GateFlag(no_limit["gate_flags"])
+    no_arrays = measure_slot(START, END, {"a": []}, _kinds("a"), shape=None, export=[(0.0, 0.0)], export_kind="counter", export_limit_kw=5.0)
+    assert GateFlag.EXPORT_COUNTER in GateFlag(no_arrays["gate_flags"])
+
+
 def test_an_input_that_starts_late_marks_the_slot_partial():
     late = [(600.0, 1000.0), (1200.0, 1000.0)]
     m = measure_slot(START, END, {"a": late}, _kinds("a"), shape=None)

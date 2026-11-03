@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev5] - 2026-11-03
+
+> Private test build, not published. One new record-only flag; storage and migration are unchanged, so
+> installing over dev2, dev3 or dev4 needs nothing else (dev5 includes dev4's downgrade guard).
+
+### Added
+
+- **`gate_flags` bit 10, `EXPORT_COUNTER`: the export series came from an energy counter.** A counter is
+  differenced over windows of at least 300 s, so `export_pinned_s` can't resolve a pinned stretch finer
+  than that, and whatever reads it later needs to know. `COUNTER_SOURCE` (bit 3) never covered this: it is
+  set only when an *array's* series came from a counter, so a counter export beside DC arrays left both bits
+  clear (seen on the 3 Nov upload). Bit 3's description now says "an array's series" to match what it has
+  always done. Rows written before this build have bit 10 clear whatever the export source, so read its
+  absence on older rows as unknown.
+
 ## [1.15.0b3.dev4] - 2026-11-02
 
 > Private test build, not published. A downgrade guard; storage and migration are otherwise unchanged, so

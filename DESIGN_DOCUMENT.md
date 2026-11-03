@@ -293,13 +293,14 @@ of the stored format, so never renumber):
 | 0 | `DC_TRACKERS` | per-tracker DC voltage and current were present |
 | 1 | `AC_ARRAYS` | per-array AC power was used instead (no DC) |
 | 2 | `CROSS_REF` | at least two independent arrays saw the same sky, so sky and shade are separable |
-| 3 | `COUNTER_SOURCE` | a series came from an energy counter (≥ 300 s windows) |
+| 3 | `COUNTER_SOURCE` | an array's series came from an energy counter (≥ 300 s windows) |
 | 4 | `COARSE` | the median sample interval was above `GATE_COARSE_GAP_S` (60 s) |
 | 5 | `PARTIAL` | an input was missing for more than `GATE_PARTIAL_FRACTION` (10%) of the slot |
 | 6 | `EXPORT_SERIES` | an export series and limit were available, so `export_pinned_s` is valid |
 | 7 | `LOW_SUN` | sun elevation below `GATE_LOW_SUN_ELEVATION` (15°): shadow edges look like cloud |
 | 8 | `POA_SHAPE` | dips were judged against the array's plane-of-array clear-sky shape |
 | 9 | `VMODEL_READY` | the voltage model was trained, so the `v*` columns are valid |
+| 10 | `EXPORT_COUNTER` | the export series came from an energy counter, so `export_pinned_s` resolves no finer than 300 s (1.15.0b3.dev5) |
 
 The flags say what was **measurable**, never whether to keep the slot. Thresholds are
 applied at read time, so they can be retuned against stored data after the recorder's
