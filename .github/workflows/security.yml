@@ -104,16 +104,39 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The action pins its own Trivy (v0.70.0 in v0.36.0) and Dependabot does not move
+      # the `version` input, so bump it by hand alongside the action.
       - name: Scan
+        id: scan
+        # A vulnerability-DB outage must not fail the job on the first try. Trivy only
+        # falls back across registries on 429/5xx, and a 404 from mirror.gcr.io
+        # (2 Nov 2026) is fatal, so the retry below names other registries outright.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.76.1
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy.sarif
+          exit-code: "0" # report-only
+      - name: Scan (fallback DB registries)
+        if: steps.scan.outcome == 'failure'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+        with:
+          version: v0.76.1
           scan-type: fs
           scanners: vuln,secret,misconfig
           format: sarif
           output: trivy.sarif
           exit-code: "0" # report-only
       - name: Upload SARIF
-        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        # `hashFiles` keeps a failed scan from failing a second time on a missing file.
+        if: >-
+          always() && hashFiles('trivy.sarif') != '' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy.sarif
