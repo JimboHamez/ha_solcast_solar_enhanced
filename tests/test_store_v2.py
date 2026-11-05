@@ -11,6 +11,8 @@ import importlib.util
 import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 import time
 from collections import namedtuple
 from datetime import UTC, datetime
@@ -86,6 +88,16 @@ def _legacy_file(path: Path, records: list[dict], user_version: int = 1) -> str:
     return str(path)
 
 
+def _upgraded_file(path: Path) -> str:
+    """An install from before schema v2 with no rows yet: the legacy table exists but is empty.
+
+    It dual-writes from its first start, exactly as a migrated store does, so the
+    soak behaviours (compaction, revert, resync, prune of both schemas) are tested on
+    it. A brand-new file starts compacted instead (``test_fresh_store_starts_compacted``).
+    """
+    return _legacy_file(path, [])
+
+
 def _history() -> list[dict]:
     """Three slots: a daytime slot, an empty night slot, and a twilight slot where only one array produced."""
     return [
@@ -122,8 +134,56 @@ def _count(path: str, table: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-async def test_fresh_store_starts_on_v2_and_dual_writes(hass, tmp_path):
+def _tables(path: str) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+    finally:
+        conn.close()
+
+
+async def test_fresh_store_starts_compacted(hass, tmp_path):
+    """A new install has no history to protect, so it never creates the legacy table."""
     path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    assert s.schema_version == SCHEMA_COMPACTED
+    assert not s.dual_writing
+    assert await s.async_insert_record(_record(T0, sky_dip_s=420.0, gate_flags=5))
+    assert await s.async_insert_record(_record(T0, "site-a", pv_actual=2.0, shade_dip_s=90.0))
+    assert not os.path.exists(s.backup_path)  # Nothing was migrated, so nothing to back up.
+    await s.async_close()
+
+    assert "solcast_data" not in _tables(path)
+    assert _count(path, "slot_site") == 2
+    assert _count(path, "slot_property") == 1
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    rows = {r["site"]: r for r in conn.execute("SELECT * FROM slot_rows")}
+    conn.close()
+    assert rows["_total"]["sky_dip_s"] == 420.0 and rows["_total"]["gate_flags"] == 5
+    assert rows["site-a"]["shade_dip_s"] == 90.0 and rows["site-a"]["pv_actual"] == 2.0
+
+    s = await _open(hass, path)  # Every later start leaves it compacted.
+    assert s.schema_version == SCHEMA_COMPACTED and not s._has_legacy
+    assert len(await s.async_get_records_for_tuning(limit=10, site="_total")) == 1
+    await s.async_close()
+    assert "solcast_data" not in _tables(path)
+
+
+async def test_a_failed_create_leaves_a_new_file_that_starts_cleanly(hass, tmp_path):
+    """Tables and version are one transaction: a half-built file would otherwise reopen as a legacy store."""
+    path = str(tmp_path / "fresh.db")
+    with patch.object(store_mod, "V2_VIEW_SQL", "THIS IS NOT SQL"):
+        assert await SqliteStore(hass, path).async_connect() is False
+    assert _tables(path) == set()
+    s = await _open(hass, path)
+    assert s.schema_version == SCHEMA_COMPACTED and not s._has_legacy
+    await s.async_close()
+
+
+async def test_an_empty_legacy_table_starts_on_v2_and_dual_writes(hass, tmp_path):
+    """An earlier release created the table: that release may be reinstalled, so keep it complete."""
+    path = _upgraded_file(tmp_path / "upgraded.db")
     s = await _open(hass, path)
     assert s.schema_version == SCHEMA_V2
     assert s.dual_writing
@@ -155,7 +215,7 @@ async def test_missing_gate_values_store_the_unknown_sentinel(hass, tmp_path):
 
 
 async def test_a_failed_insert_writes_neither_schema(hass, tmp_path):
-    path = str(tmp_path / "s.db")
+    path = _upgraded_file(tmp_path / "s.db")
     s = await _open(hass, path)
     with patch.object(store_mod, "_V2_SITE_INSERT", "INSERT INTO no_such_table VALUES (?)"):
         assert await s.async_insert_record(_record(T0)) is False
@@ -314,7 +374,7 @@ async def test_coming_back_from_b2_carries_its_rows_over(hass, tmp_path):
 
 
 async def test_compact_drops_legacy_and_shrinks_the_file(hass, tmp_path):
-    path = str(tmp_path / "c.db")
+    path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     for i in range(300):
         await s.async_insert_record(_record(T0 + 1800 * i))
@@ -336,7 +396,7 @@ async def test_compact_drops_legacy_and_shrinks_the_file(hass, tmp_path):
 
 
 async def test_compact_refuses_when_the_schemas_disagree(hass, tmp_path):
-    path = str(tmp_path / "c.db")
+    path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0))
     s._conn.execute(_INSERT_SQL, SqliteStore._row_values(_record(T0 + 1800)))  # Legacy-only row.
@@ -348,7 +408,7 @@ async def test_compact_refuses_when_the_schemas_disagree(hass, tmp_path):
 
 
 async def test_compact_twice_is_refused(hass, tmp_path):
-    s = await _open(hass, str(tmp_path / "c.db"))
+    s = await _open(hass, _upgraded_file(tmp_path / "c.db"))
     await s.async_insert_record(_record(T0))
     assert (await s.async_compact(now_epoch=T0))["compacted"] is True
     assert (await s.async_compact(now_epoch=T0)) == {"compacted": False, "reason": "already compacted"}
@@ -357,7 +417,7 @@ async def test_compact_twice_is_refused(hass, tmp_path):
 
 async def test_released_b2_still_starts_on_a_compacted_file(hass, tmp_path):
     """After compaction b2 loses the history (that is what the backup and tools/downgrade_v2.py are for), but it starts."""
-    path = str(tmp_path / "c.db")
+    path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0))
     await s.async_compact(now_epoch=T0)
@@ -414,7 +474,7 @@ def test_view_exposes_every_v2_column_once():
 
 
 async def test_prune_removes_old_rows_from_both_schemas(hass, tmp_path):
-    path = str(tmp_path / "s.db")
+    path = _upgraded_file(tmp_path / "s.db")
     s = await _open(hass, path)
     now = int(time.time())
     await s.async_insert_record(_record(now - 40 * 86400))
@@ -515,7 +575,7 @@ async def test_migrated_and_dual_written_rows_store_identical_integers(hass, tmp
 
 async def test_imported_older_history_reaches_v2_on_the_next_start(hass, tmp_path):
     """An import writes rows *older* than everything in v2; copying only newer rows would miss them."""
-    path = str(tmp_path / "s.db")
+    path = _upgraded_file(tmp_path / "s.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0 + 86400))
     await s.async_close()
@@ -530,7 +590,7 @@ async def test_imported_older_history_reaches_v2_on_the_next_start(hass, tmp_pat
 
 
 async def test_a_backfill_rewrite_reaches_v2_scaled(hass, tmp_path):
-    path = str(tmp_path / "s.db")
+    path = _upgraded_file(tmp_path / "s.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0))
     await s.async_close()
@@ -572,7 +632,7 @@ def _downgrade_module():
 
 
 async def test_downgrade_gives_b2_its_history_back(hass, tmp_path):
-    path = str(tmp_path / "c.db")
+    path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     for i in range(5):
         await s.async_insert_record(_record(T0 + 1800 * i, pv_actual=3.5 + i / 10))
@@ -595,8 +655,206 @@ async def test_downgrade_gives_b2_its_history_back(hass, tmp_path):
 
 
 async def test_downgrade_refuses_a_store_that_does_not_need_it(hass, tmp_path):
-    path = str(tmp_path / "s.db")
-    s = await _open(hass, path)  # Fresh v2, legacy table present.
+    path = _upgraded_file(tmp_path / "s.db")
+    s = await _open(hass, path)  # v2, legacy table present.
     await s.async_close()
     with pytest.raises(SystemExit, match="already use it"):
         _downgrade_module().downgrade(path)
+
+
+# ---------------------------------------------------------------------------
+# A brand-new file (compacted from the start): b2, downgrade and the tools
+# ---------------------------------------------------------------------------
+
+
+async def test_b2_on_a_fresh_store_and_back_again(hass, tmp_path):
+    """A new install that goes back to b2 and returns keeps what b2 recorded, and stays one copy."""
+    path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    await s.async_insert_record(_record(T0))
+    await s.async_close()
+
+    b2 = _b2_store_class()(hass, path)
+    assert await b2.async_connect() is True  # It creates its own, empty, legacy table.
+    assert await b2.async_insert_record(_record(T0 + 1800, pv_actual=2.8)) is True
+    assert await b2.async_insert_record(_record(T0 + 1800, "site-a", pv_actual=1.4)) is True
+    await b2.async_close()
+
+    s = await _open(hass, path)
+    rows = s._query("SELECT period_end_epoch, site, pv_actual FROM slot_rows ORDER BY 1, 2", ())
+    assert [(r["period_end_epoch"], r["site"], r["pv_actual"]) for r in rows] == [
+        (T0, "_total", 3.5),
+        (T0 + 1800, "_total", 2.8),
+        (T0 + 1800, "site-a", 1.4),
+    ]
+    assert await s.async_insert_record(_record(T0 + 3600))
+    await s.async_close()
+    assert _count(path, "slot_property") == 3
+
+
+async def test_downgrade_of_a_fresh_store_gives_b2_its_history(hass, tmp_path):
+    path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    for i in range(3):
+        await s.async_insert_record(_record(T0 + 1800 * i, pv_actual=3.5 + i / 10))
+    await s.async_close()
+
+    assert _downgrade_module().downgrade(path) == 3
+
+    b2 = _b2_store_class()(hass, path)
+    assert await b2.async_connect() is True
+    rows = await b2.async_get_records_for_tuning(limit=100, site="_total")
+    await b2.async_close()
+    assert sorted(r["pv_actual"] for r in rows) == pytest.approx([3.5, 3.6, 3.7])
+
+    s = await _open(hass, path)  # Downgraded, so this version dual-writes from here on.
+    assert s.schema_version == SCHEMA_V2 and s.dual_writing
+    await s.async_close()
+
+
+def _tool_module(name: str):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parents[1] / "tools" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _import_rows(module, records: list[dict]) -> list[dict]:
+    """Records as ``import_history`` holds them after reading a CSV."""
+    return [module._normalise({k: str(v) for k, v in r.items()}) for r in records]
+
+
+@pytest.mark.parametrize("replace", [False, True])
+async def test_import_into_a_compacted_store_writes_v2_only(hass, tmp_path, replace):
+    path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    await s.async_insert_record(_record(T0))
+    await s.async_insert_record(_record(T0, "site-a", pv_actual=2.0))
+    await s.async_close()
+
+    imp = _tool_module("import_history")
+    older = [
+        _record(T0 - 86400, pv_export=0.83, temp=17.25),
+        _record(T0 - 86400, "site-a", pv_actual=1.7),
+        _empty_night(T0 - 86400 + 1800),
+        _record(T0, pv_actual=9.9, temp=30.0),  # Same slot as a live row (live temp 22.5).
+    ]
+    read, inserted, _, deleted = imp._import(
+        _import_rows(imp, older), path, -37.9, 145.0,
+        recompute_azimuth=False, dry_run=False, replace=replace, sql_out=None,
+    )
+    assert read == 4
+    assert "solcast_data" not in _tables(path)  # No legacy table reappears, so no dual-write restarts.
+
+    s = await _open(hass, path)
+    assert s.schema_version == SCHEMA_COMPACTED and not s.dual_writing
+    rows = s._query(
+        "SELECT period_end_epoch, site, pv_actual, pv_export, temp, ghi FROM slot_rows ORDER BY 1, 2", ()
+    )
+    await s.async_close()
+    got = {(r["period_end_epoch"], r["site"]): r for r in rows}
+    assert got[(T0 - 86400, "_total")]["pv_export"] == pytest.approx(0.83)
+    assert got[(T0 - 86400, "_total")]["temp"] == pytest.approx(17.3)  # 0.1 °C, half away from zero, as live.
+    assert got[(T0 - 86400, "_total")]["ghi"] == 0.0  # Not in a legacy export; tools/backfill_irradiance.py fills it.
+    assert got[(T0 - 86400, "site-a")]["pv_actual"] == pytest.approx(1.7)
+    assert (T0 - 86400 + 1800, "_total") not in got  # The empty night slot is not kept.
+    if replace:
+        assert deleted == 2
+        assert set(got) == {(T0 - 86400, "_total"), (T0 - 86400, "site-a"), (T0, "_total")}
+        assert got[(T0, "_total")]["pv_actual"] == pytest.approx(9.9)  # The import replaced it...
+        assert got[(T0, "_total")]["temp"] == pytest.approx(30.0)  # ...the property-wide half too.
+        assert inserted == 3
+    else:
+        assert deleted == 0
+        assert got[(T0, "_total")]["pv_actual"] == pytest.approx(3.5)  # Live data wins: INSERT OR IGNORE.
+        assert got[(T0, "_total")]["temp"] == pytest.approx(22.5)
+        assert got[(T0, "site-a")]["pv_actual"] == pytest.approx(2.0)
+        assert inserted == 2
+
+
+async def test_backfill_into_a_compacted_store_writes_scaled_irradiance(hass, tmp_path, monkeypatch):
+    path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    await s.async_insert_record(_record(T0))  # No irradiance: backfilled.
+    await s.async_insert_record(_record(T0, "site-a", pv_actual=2.0))
+    await s.async_insert_record(_record(T0 + 1800, ghi=500.0, dni=400.0, dhi=100.0))  # Has it: left alone.
+    await s.async_close()
+
+    bf = _tool_module("backfill_irradiance")
+    hour = T0 - 3600
+    series = [{"epoch": hour + 3600 * i, "ghi": 800.0, "dni": 790.26, "dhi": 70.04} for i in range(4)]
+    monkeypatch.setattr(bf, "fetch_archive", lambda *a: series)
+    monkeypatch.setattr("sys.argv", ["backfill_irradiance", "--sqlite", path, "--lat", "-37.9", "--lon", "145.0"])
+    assert bf.main() == 0
+
+    assert "solcast_data" not in _tables(path)
+    conn = sqlite3.connect(path)
+    raw = conn.execute("SELECT ghi, dni, dhi FROM slot_property ORDER BY period_end_epoch").fetchall()
+    conn.close()
+    assert raw == [(8000, 7903, 700), (5000, 4000, 1000)]  # Scaled at 0.1 W/m², like the live write.
+    s = await _open(hass, path)
+    rows = {r["site"]: r for r in s._query("SELECT site, ghi FROM slot_rows WHERE period_end_epoch = ?", (T0,))}
+    await s.async_close()
+    assert rows["_total"]["ghi"] == rows["site-a"]["ghi"] == pytest.approx(800.0)  # Property-wide, on every array.
+
+
+def test_the_design_document_column_reference_matches_the_code():
+    """Every v2 column is documented with its table, scale and missing value, and nothing else is."""
+    import re
+
+    text = (Path(__file__).parents[1] / "DESIGN_DOCUMENT.md").read_text(encoding="utf-8")
+    section = text.split("#### Column reference", 1)[1].split("####", 1)[0]
+    documented = {
+        name: (table, int(scale), -1.0 if missing.startswith("−1") else float(missing))
+        for name, table, scale, missing in re.findall(
+            r"^\| `(\w+)` \| (property|site) \| ×(\d+) \| ([^|]+?) \|", section, re.M
+        )
+    }
+    expected = {name: ("property", scale, default) for name, _, default, scale in store_mod.V2_PROPERTY_COLUMNS}
+    expected |= {name: ("site", scale, default) for name, _, default, scale in store_mod.V2_SITE_COLUMNS}
+    assert documented == expected
+
+
+# A subprocess that cannot import Home Assistant, as on a plain Python install.
+_WITHOUT_HA = """
+import runpy, sys
+class _NoHomeAssistant:
+    def find_spec(self, name, path=None, target=None):
+        if name == "homeassistant" or name.startswith("homeassistant."):
+            raise ImportError(f"Home Assistant is not installed: {name}")
+sys.meta_path.insert(0, _NoHomeAssistant())
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def _run_without_ha(tool: str, *args: str) -> subprocess.CompletedProcess:
+    script = str(Path(__file__).parents[1] / "tools" / f"{tool}.py")
+    return subprocess.run(
+        [sys.executable, "-I", "-c", _WITHOUT_HA, script, *args], capture_output=True, text=True, timeout=60
+    )
+
+
+async def test_the_user_facing_tools_run_without_home_assistant(hass, tmp_path):
+    """Users run these against a copied database, often with no Home Assistant installed."""
+    path = str(tmp_path / "fresh.db")
+    s = await _open(hass, path)
+    await s.async_close()
+    columns = ["period_end_epoch", "site", "pv_actual", "pv_estimate", "pv_estimate10", "pv_estimate90", "zenith"]
+    csv_path = tmp_path / "history.csv"
+    csv_path.write_text(",".join(columns) + f"\n{T0},_total,3.5,4.0,3.0,5.0,35.0\n")
+
+    imported = _run_without_ha("import_history", "--sqlite", path, "--csv", str(csv_path), "--no-recompute-azimuth")
+    assert imported.returncode == 0, imported.stderr
+    assert _count(path, "slot_site") == 1
+
+    empty = str(tmp_path / "empty.db")
+    s = await _open(hass, empty)
+    await s.async_close()
+    backfill = _run_without_ha("backfill_irradiance", "--sqlite", empty, "--lat", "-37.9", "--lon", "145.0")
+    assert backfill.returncode == 0, backfill.stderr
+    assert "nothing to backfill" in backfill.stdout
+
+    downgraded = _run_without_ha("downgrade_v2", "--sqlite", path)
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert _count(path, "solcast_data") == 1

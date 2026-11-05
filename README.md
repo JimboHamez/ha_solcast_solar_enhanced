@@ -940,7 +940,7 @@ Requires `numpy`. Run `--help` for all options.
 
 ### Backfill irradiance
 
-`tools/backfill_irradiance.py` fills the `ghi`/`dni`/`dhi` columns on existing rows from Open-Meteo's free historical archive, so transposition-based tilt tuning is useful immediately instead of waiting months for fresh data to accumulate. Stdlib-only; safe to re-run (fills only rows still missing irradiance).
+`tools/backfill_irradiance.py` fills the `ghi`/`dni`/`dhi` columns on existing rows from Open-Meteo's free historical archive, so transposition-based tilt tuning is useful immediately instead of waiting months for fresh data to accumulate. Safe to re-run (fills only rows still missing irradiance). Needs only plain Python 3, but run it from a checkout of this repository: it reads the store through the integration's own storage module.
 
 ```bash
 python tools/backfill_irradiance.py --sqlite config/solcast_solar_enhanced.db \

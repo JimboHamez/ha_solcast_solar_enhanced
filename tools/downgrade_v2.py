@@ -23,10 +23,19 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
+# The store module and what it imports are stdlib-only (numpy is optional), but the
+# package __init__ imports Home Assistant. Register the package without running it, so
+# this tool works on plain Python too. A package already imported is used as it is.
+_PKG = "custom_components.solcast_solar_enhanced"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [str(_ROOT / "custom_components" / "solcast_solar_enhanced")]
+    sys.modules[_PKG] = _pkg
 from custom_components.solcast_solar_enhanced.sqlite_store import (  # noqa: E402
     _INSERT_COLUMNS,
     CREATE_TABLE_SQL,

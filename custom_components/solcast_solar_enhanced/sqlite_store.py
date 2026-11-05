@@ -209,8 +209,9 @@ _INSERT_SQL = (
 #
 # ``user_version`` 2 = the v2 tables exist and the legacy ``solcast_data`` is
 # still dual-written, so 1.15.0b2 can be reinstalled at any time and finds a
-# complete table. 3 = compacted: the legacy table has been dropped on request
-# (``async_compact``).
+# complete table. 3 = compacted: there is no legacy table, either because it was
+# dropped on request (``async_compact``) or because the file was brand new
+# (``_create_compacted``: a new install has no history to protect).
 #
 # Each v2 column is declared once below, as ``(name, read type, default, scale)``.
 # The CREATE statements, the ALTER pass, the inserts, the migration copy and the
@@ -525,9 +526,11 @@ class SqliteStore:
                     SCHEMA_KNOWN,
                 )
             if not self._readonly:
+                if self._version == 0 and not self._objects(conn):
+                    self._create_compacted(conn)
                 # A compacted store has dropped the legacy table on purpose; recreating
                 # it would restart the dual-write the user switched off.
-                if self._version < SCHEMA_COMPACTED:
+                elif self._version < SCHEMA_COMPACTED:
                     conn.executescript(CREATE_TABLE_SQL)
                     conn.commit()
                     self._ensure_columns(conn)
@@ -575,14 +578,39 @@ class SqliteStore:
     def _objects(conn: sqlite3.Connection) -> set[str]:
         return {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
 
+    def _create_compacted(self, conn: sqlite3.Connection) -> None:
+        """Start a brand-new file directly on the compacted layout (schema v3).
+
+        A new install has no history to protect and no earlier release to go back
+        to, so dual-writing the legacy table would only multiply the file's size
+        until someone ran ``compact_database``. Going back to 1.15.0b2 still works:
+        it creates its own empty legacy table, and ``_resync_from_legacy`` carries
+        what it wrote into the v2 tables on the next start. The tables, the view and
+        the version are written in one transaction (``user_version`` is
+        transactional), so a crash part-way leaves an empty file that is created
+        again on the next start.
+        """
+        try:
+            conn.executescript(
+                f"BEGIN;\n{V2_CREATE_SQL}\n{V2_VIEW_SQL};\nPRAGMA user_version = {SCHEMA_COMPACTED};\nCOMMIT;"
+            )
+        except sqlite3.Error:
+            # Release the write lock now rather than when the connection is collected.
+            conn.rollback()
+            raise
+        self._version = SCHEMA_COMPACTED
+        _LOGGER.info("Created a new store at %s on the compacted schema v%d", self._path, SCHEMA_COMPACTED)
+
     def _init_v2(self, conn: sqlite3.Connection) -> None:
-        """Bring the v2 tables up to date, or create them on a fresh store.
+        """Bring the v2 tables up to date, or create them beside an empty legacy table.
 
         A store that already has v2 tables gains any column added to the
         ``V2_*_COLUMNS`` lists since, and its view is rebuilt so it names them. A
-        **fresh** store (no legacy rows yet) starts directly on v2: there is
-        nothing to migrate. A legacy store with data is left for ``async_migrate``,
-        which takes a backup first.
+        store whose legacy table exists but holds no rows (an earlier release
+        created it) starts on v2 dual-writing: there is nothing to migrate, but that
+        release may still be reinstalled. A brand-new file never gets here below v3
+        (``_create_compacted``). A legacy store with data is left for
+        ``async_migrate``, which takes a backup first.
         """
         objects = self._objects(conn)
         if all(t in objects for t in V2_TABLES):

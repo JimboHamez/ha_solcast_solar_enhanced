@@ -5,6 +5,40 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev6] - 2026-11-05
+
+> Private test build, not published. Changes what a brand-new database looks like, and fixes three
+> `tools/` scripts. An existing store, on any earlier build, is opened exactly as before, so installing
+> over dev2 to dev5 needs nothing else.
+
+### Fixed
+
+- **`tools/backfill_irradiance.py`, `tools/import_history.py` and `tools/downgrade_v2.py` run on plain
+  Python again.** Since dev2 they read the store through the integration's storage module, and importing it
+  ran the integration's package setup, which needs Home Assistant. So a copied database on a laptop gave
+  `No module named 'homeassistant'`. The tools now load the storage module on its own, which needs nothing
+  outside the standard library. They still have to run from a checkout of this repository. A test runs
+  all three with Home Assistant blocked from importing.
+
+### Changed
+
+- **A new install starts compacted.** A brand-new database file now gets only the v2 tables and goes
+  straight to schema v3, the layout `compact_database` leaves. There's no history to protect and no earlier
+  release to go back to, so dual-writing the legacy table would only have doubled the file until someone
+  ran the action. The tables and the version are written in one transaction, so a failure part-way leaves
+  an empty file, and the next start creates it again. A file whose legacy table already exists, even empty,
+  still starts on v2 and dual-writes, since an earlier release created it and may be reinstalled.
+- **Going back to 1.15.0b2 from a new install** still works. 1.15.0b2 creates its own empty legacy table,
+  and on the next start this version copies what 1.15.0b2 recorded into the v2 tables. To give 1.15.0b2
+  the history as well, run `tools/downgrade_v2.py` first, as after compaction.
+- **`tools/import_history.py` and `tools/backfill_irradiance.py` work on a compacted store.** Both used
+  to stop and ask for `tools/downgrade_v2.py` first. An import now goes through a temporary legacy table and
+  the integration's own copy into the v2 tables, so values are scaled exactly as the live write scales
+  them, empty night slots are dropped, and no legacy table reappears (`--replace` clears the v2 tables
+  instead). A backfill writes the irradiance once per slot, at 0.1 W/m². `tools/build_test_fixtures.py`
+  refuses a compacted source with a pointer to `tools/downgrade_v2.py`, since its fixtures are cut in the
+  legacy layout.
+
 ## [1.15.0b3.dev5] - 2026-11-03
 
 > Private test build, not published. One new record-only flag; storage and migration are unchanged, so

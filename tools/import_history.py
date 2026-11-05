@@ -39,7 +39,10 @@ import csv
 import math
 import os
 import sqlite3
+import sys
+import types
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 
@@ -285,6 +288,39 @@ def _emit_sql(rows: list[dict[str, Any]], replace: bool, path: str) -> None:
         f.write("COMMIT;\n")
 
 
+def _import_compacted(conn: sqlite3.Connection, rows: list[dict[str, Any]], replace: bool) -> tuple[int, int]:
+    """Import into a compacted (schema v3) store. Returns (site rows inserted, deleted).
+
+    A v3 store has no legacy table, and recreating one would restart the
+    integration's dual-write. So the rows go into a TEMP table of the legacy name
+    and the integration's own ``copy_legacy_slots`` moves them into the v2 tables,
+    scaled exactly as the live write path scales them. The temp table disappears
+    with the connection. DELETE, INSERT and copy share one transaction. This path
+    imports the integration's store module, so it needs the repository checkout (plain
+    Python is enough), as ``tools/backfill_irradiance.py`` does.
+    """
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
+    # The store module is stdlib-only, but the package __init__ imports Home Assistant:
+    # register the package without running it. A package already imported is used as it is.
+    pkg_name = "custom_components.solcast_solar_enhanced"
+    if pkg_name not in sys.modules:
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(root / "custom_components" / "solcast_solar_enhanced")]
+        sys.modules[pkg_name] = pkg
+    from custom_components.solcast_solar_enhanced.sqlite_store import copy_legacy_slots
+
+    conn.executescript(CREATE_TABLE_SQL.replace("CREATE TABLE IF NOT EXISTS solcast_data", "CREATE TEMP TABLE solcast_data", 1))
+    deleted = 0
+    if replace:
+        deleted = conn.execute("DELETE FROM slot_site").rowcount
+        conn.execute("DELETE FROM slot_property")
+    conn.executemany(_INSERT_SQL, [tuple(r[c] for c in COLUMNS) for r in rows])
+    inserted = copy_legacy_slots(conn)
+    conn.commit()
+    return inserted, deleted
+
+
 def _import(
     rows: Iterable[dict[str, Any]], sqlite_path: str, lat: float, lon: float,
     recompute_azimuth: bool, dry_run: bool, replace: bool, sql_out: str | None,
@@ -327,10 +363,10 @@ def _import(
     os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(sqlite_path)
     try:
-        # Schema v3 (compacted) has dropped this table on purpose; recreating it here
-        # would restart the integration's dual-write behind the user's back.
         if conn.execute("PRAGMA user_version").fetchone()[0] >= 3:
-            raise SystemExit("This store is compacted (schema v3): run tools/downgrade_v2.py first, then import.")
+            inserted, deleted = _import_compacted(conn, rows, replace)
+            print("Compacted store: rows written straight to the v2 tables (empty night slots are not kept).")
+            return len(rows), inserted, fixed, deleted
         has_v2 = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_site'").fetchone() is not None
         conn.executescript(CREATE_TABLE_SQL)  # ensure table; commits any pending tx
         before = conn.execute("SELECT COUNT(*) FROM solcast_data").fetchone()[0]
@@ -429,7 +465,7 @@ def main() -> None:
     elif args.dry_run:
         print(f"Dry run           : no rows written ({'replace' if args.replace else 'append'} mode)")
     elif args.replace:
-        print(f"Deleted (DROP)    : {deleted}  (ran: DELETE FROM solcast_data;)")
+        print(f"Deleted           : {deleted}  (every existing row, before the insert)")
         print(f"Inserted          : {inserted}")
         print(f"Destination       : {args.sqlite}")
     else:

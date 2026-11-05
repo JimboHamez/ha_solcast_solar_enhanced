@@ -35,12 +35,27 @@ import datetime as dt
 import json
 import sqlite3
 import sys
+import types
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from custom_components.solcast_solar_enhanced.sqlite_store import read_source, sync_v2_from_legacy  # noqa: E402
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
+# The store module and what it imports are stdlib-only (numpy is optional), but the
+# package __init__ imports Home Assistant. Register the package without running it, so
+# this tool works on plain Python too. A package already imported is used as it is.
+_PKG = "custom_components.solcast_solar_enhanced"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [str(_ROOT / "custom_components" / "solcast_solar_enhanced")]
+    sys.modules[_PKG] = _pkg
+from custom_components.solcast_solar_enhanced.sqlite_store import (  # noqa: E402
+    V2_SCALES,
+    read_source,
+    sync_v2_from_legacy,
+    to_stored,
+)
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 VARS = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation")
@@ -112,12 +127,18 @@ def main() -> int:
 
     conn = sqlite3.connect(args.sqlite)
     conn.row_factory = sqlite3.Row
-    if read_source(conn) == "slot_rows" and not conn.execute(
+    # A compacted (schema v3) store has no legacy table: the irradiance lives once per
+    # slot in slot_property, as scaled integers. Otherwise write the legacy table and
+    # carry the change into v2 afterwards (schema v2, dual-writing).
+    compacted = read_source(conn) == "slot_rows" and not conn.execute(
         "SELECT 1 FROM sqlite_master WHERE name = 'solcast_data'"
-    ).fetchone():
-        print("This store is compacted (schema v3): run tools/downgrade_v2.py first, then backfill.")
-        return 1
-    rng = conn.execute("SELECT MIN(period_end_epoch) a, MAX(period_end_epoch) b FROM solcast_data").fetchone()
+    ).fetchone()
+    table = "slot_property" if compacted else "solcast_data"
+
+    def stored(name: str, value: float) -> float:
+        return to_stored(value, 0.0, V2_SCALES[name]) if compacted else round(value, 2)
+
+    rng = conn.execute(f"SELECT MIN(period_end_epoch) a, MAX(period_end_epoch) b FROM {table}").fetchone()
     if not rng or rng["a"] is None:
         print("No rows in store — nothing to backfill.")
         return 0
@@ -133,7 +154,7 @@ def main() -> int:
     # Distinct timestamps (all sites at one epoch share the property-wide irradiance).
     where = "" if args.all_rows else " WHERE ghi = 0 AND dni = 0 AND dhi = 0"
     rows = conn.execute(
-        f"SELECT DISTINCT period_end_epoch FROM solcast_data{where}"
+        f"SELECT DISTINCT period_end_epoch FROM {table}{where}"
     ).fetchall()
     print(f"{len(rows)} timestamp(s) to fill ({'all rows' if args.all_rows else 'missing only'}).")
 
@@ -146,16 +167,17 @@ def main() -> int:
             continue
         if not args.dry_run:
             conn.execute(
-                "UPDATE solcast_data SET ghi=?, dni=?, dhi=? WHERE period_end_epoch=?"
+                f"UPDATE {table} SET ghi=?, dni=?, dhi=? WHERE period_end_epoch=?"
                 + ("" if args.all_rows else " AND ghi=0 AND dni=0 AND dhi=0"),
-                (round(vals["ghi"], 2), round(vals["dni"], 2), round(vals["dhi"], 2), ep),
+                (stored("ghi", vals["ghi"]), stored("dni", vals["dni"]), stored("dhi", vals["dhi"]), ep),
             )
         updated += 1
     if not args.dry_run:
         conn.commit()
-        # Schema v2 during the soak: readers go through the v2 view, so the new
-        # irradiance has to reach the v2 tables as well.
-        sync_v2_from_legacy(conn, refresh=KEYS)
+        if not compacted:
+            # Schema v2 during the soak: readers go through the v2 view, so the new
+            # irradiance has to reach the v2 tables as well.
+            sync_v2_from_legacy(conn, refresh=KEYS)
     conn.close()
     print(f"{'Would update' if args.dry_run else 'Updated'} {updated} timestamp(s); "
           f"{skipped} had no archive coverage (left at 0).")

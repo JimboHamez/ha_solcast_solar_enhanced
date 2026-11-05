@@ -219,10 +219,15 @@ about 1,500.
 |---|---|
 | 0–1 | Legacy only (1 = azimuth repair done) |
 | 2 | v2 tables plus the legacy table, **both written** (the soak) |
-| 3 | Compacted: the legacy table dropped on request |
+| 3 | Compacted: no legacy table, either dropped on request or never created (a new file, 1.15.0b3.dev6) |
 | > 3 | Written by a newer release (a downgrade): opened read-only (1.15.0b3.dev4) |
 
-- *Fresh store*: starts at 2 directly.
+- *New file* (1.15.0b3.dev6): a file with no tables starts at **3**, the v2 tables and view only,
+  created with the version in one transaction (`_create_compacted`). A new install has no history to
+  protect, so dual-writing would only double the file. A file whose legacy table exists but is empty
+  (an earlier release created it) starts at 2 and dual-writes, since that release may come back.
+  1.15.0b2 on a new file creates its own empty legacy table. The next start then sees it, dual-writes
+  and resyncs what 1.15.0b2 wrote.
 - *Migration 1 → 2* (`_migrate_v2`, from `async_migrate`, after the azimuth repair):
   pre-flight `PRAGMA quick_check` and free disk of at least twice the file, else stay
   on 1; `VACUUM INTO <db>.pre-v2.bak`; then one transaction creates, copies every
@@ -232,7 +237,7 @@ about 1,500.
   reinstalled at any point and finds a complete table; `tests/test_store_v2.py` runs
   the released 1.15.0b2 store module (a frozen copy in `tests/fixtures`) against
   migrated files to prove it.
-- *Resync*: on every start at 2, every legacy slot v2 lacks is copied (`INSERT OR
+- *Resync*: on every start while a legacy table exists, every legacy slot v2 lacks is copied (`INSERT OR
   IGNORE`), which covers a spell on 1.15.0b2 and a `tools/import_history.py` run.
 - *Compaction*: the `compact_database` action, user-triggered only. It refuses unless the
   last `COMPACT_VERIFY_DAYS` (7) agree per site in both schemas, then drops the legacy
@@ -253,6 +258,79 @@ about 1,500.
 **Adding a v2 column** is one entry in `V2_*_COLUMNS` plus its `StoreRecord` key; while
 the soak lasts, a column that also exists in the legacy table still needs the legacy
 three-list edit above.
+
+#### Column reference
+
+Generated from `V2_PROPERTY_COLUMNS` / `V2_SITE_COLUMNS`, and a test pins it to them.
+**Scale** is what a value is multiplied by before it is stored as an integer, and the
+view divides it back out. **Missing** is the default a slot gets when the value was
+not measured, in the view's units. Where that is `−1`, 0 is a real reading; where it
+is 0, a 0 can mean either, and the meaning column says which. Keys: `slot_property` on
+`period_end_epoch`, `slot_site` on `(period_end_epoch, site_id)`, `sites` maps `site_id`
+to the Solcast `resource_id`, with `0 = '_total'`.
+
+| Column | Table | Scale | Missing | Meaning |
+|---|---|---|---|---|
+| `zenith` | property | ×100 | 0 | solar zenith at the slot midpoint (°) |
+| `azimuth` | property | ×100 | 0 | solar azimuth at the slot midpoint (°) |
+| `temp` | property | ×10 | 0 | air temperature (°C), OWM or Open-Meteo |
+| `clouds` | property | ×1 | 100 | cloud cover (%); 100 when no weather source answered |
+| `ghi` | property | ×10 | 0 | Open-Meteo global horizontal irradiance, half-hour mean (W/m²) |
+| `dni` | property | ×10 | 0 | Open-Meteo direct normal irradiance, half-hour mean (W/m²) |
+| `dhi` | property | ×10 | 0 | Open-Meteo diffuse horizontal irradiance, half-hour mean (W/m²) |
+| `pv_export` | property | ×1000 | 0 | export, half-hour mean (kW) |
+| `pv_export_max` | property | ×1000 | 0 | export, interval peak (kW); 0 = unknown |
+| `battery_charge` | property | ×1000 | 0 | battery charge, half-hour mean (kW); display only |
+| `grid_v_max` | property | ×10 | 0 | grid voltage, slot max (V); 0 = unknown |
+| `grid_v_med` | property | ×10 | 0 | grid voltage, slot median (V); 0 = unknown |
+| `inverter_temp_max` | property | ×10 | 0 | inverter temperature, slot max (°C); 0 = unknown |
+| `inverter_limited` | property | ×1000 | −1 (unknown) | share of the slot the "limited" input was on (0–1) |
+| `export_limit` | property | ×1000 | −1 (unknown) | export limit in force (kW) |
+| `sky_dip_s` | property | ×1 | −1 (unknown) | gate: seconds every array dipped at once |
+| `sky_dip_runs` | property | ×1 | −1 (unknown) | gate: separate sky-dip episodes |
+| `export_pinned_s` | property | ×1 | −1 (unknown) | gate: seconds export sat in the limit's clipping band |
+| `vexcess_s` | property | ×1 | −1 (unknown) | gate: steady seconds every tracker sat +5% above its learned Vmp |
+| `vratio_p50` | property | ×1000 | −1 (unknown) | gate: median V ÷ model, lowest tracker |
+| `vratio_p90` | property | ×1000 | −1 (unknown) | gate: p90 V ÷ model, lowest tracker |
+| `sample_gap_s` | property | ×100 | −1 (unknown) | gate: median sample interval of the inputs (s) |
+| `gate_flags` | property | ×1 | −1 (unknown) | gate: `GateFlag` bits (below) |
+| `pv_actual` | site | ×1000 | 0 | generation, half-hour mean (kW) |
+| `pv_estimate` | site | ×1000 | 0 | Solcast forecast as `detailedForecast` shows it, dampened (kW) |
+| `pv_estimate10` | site | ×1000 | 0 | Solcast p10 (kW) |
+| `pv_estimate90` | site | ×1000 | 0 | Solcast p90 (kW) |
+| `pv_estimate_undampened` | site | ×1000 | 0 | Solcast forecast before our pushed factors (kW); 0 = unavailable |
+| `dc_voltage1` | site | ×10 | 0 | MPPT 1 DC voltage, slot max (V) |
+| `dc_current1` | site | ×100 | 0 | MPPT 1 DC current, slot min (A) |
+| `dc_voltage2` | site | ×10 | 0 | MPPT 2 DC voltage, slot max (V) |
+| `dc_current2` | site | ×100 | 0 | MPPT 2 DC current, slot min (A) |
+| `dc_vmed1` | site | ×10 | 0 | MPPT 1 DC voltage, slot median (V) |
+| `dc_vmed2` | site | ×10 | 0 | MPPT 2 DC voltage, slot median (V) |
+| `dc_imed1` | site | ×100 | 0 | MPPT 1 DC current, slot median (A) |
+| `dc_imed2` | site | ×100 | 0 | MPPT 2 DC current, slot median (A) |
+| `dc_offmpp_min` | site | ×100 | −1 (unknown) | minutes every tracker on the inverter was off-MPP at once |
+| `shade_dip_s` | site | ×1 | −1 (unknown) | gate: seconds this array dipped while another did not |
+
+**The `slot_rows` view** joins `slot_site` to `slot_property` on the slot and to `sites`
+for the `resource_id`, and returns one row per slot per array (with `_total` as an array)
+under the legacy names: `period_end_epoch`, `site`, `period_end` (rebuilt as ISO-8601
+UTC from the epoch) and every column above divided back to its legacy unit. A `−1`
+default is passed through unscaled, so "unknown" reads as `−1.0` at every scale. Every
+`SqliteStore` query and every `tools/` reader goes through it (`_source`, `read_source`).
+
+**What changed from `solcast_data`.**
+- *Gone*: the `"index"` rowid, `period_start` and `description` (nothing read either),
+  and the `UNIQUE(period_end_epoch, site)` constraint, which the two primary keys replace.
+- *Stored once per slot*: every property-wide value. The legacy table copied it onto
+  every array's row, and the `_total` row's copy wins when they differed.
+- *Not written*: empty night slots (1.15.0b3.dev1). A slot is skipped only when the sun
+  is down (zenith ≥ 90°) and every measured and forecast value, property-wide and per
+  array, is zero (`coordinator.is_empty_night_slot`; the migration copy applies the same
+  rule).
+- *New, v2 only*: the gate columns. They have no legacy counterpart, so 1.15.0b2 never
+  sees them. `tools/downgrade_v2.py` rebuilds only the legacy table and leaves the v2
+  tables, gate values included, in place.
+- *Precision*: values round to the scale. A migrated row and a dual-written one hold
+  the same integer (see above).
 
 #### Slot gate (record-only)
 

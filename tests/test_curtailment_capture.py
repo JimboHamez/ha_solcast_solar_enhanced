@@ -44,7 +44,7 @@ from custom_components.solcast_solar_enhanced.const import (
     OFFMPP_REF_MAX_AGE_S,
 )
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
-from custom_components.solcast_solar_enhanced.sqlite_store import SqliteStore
+from custom_components.solcast_solar_enhanced.sqlite_store import SqliteStore, read_source
 
 SLOT = 1800
 # Healthy operating point and the curtailed one from the 19 Oct trace (North string).
@@ -438,7 +438,7 @@ async def test_store_round_trips_the_columns_and_defaults_unknown(hass, tmp_path
     cols = "grid_v_max, grid_v_med, inverter_temp_max, inverter_limited, export_limit, dc_offmpp_min"
     conn = sqlite3.connect(path)
     try:
-        rows = conn.execute(f"SELECT {cols} FROM solcast_data ORDER BY period_end_epoch").fetchall()
+        rows = conn.execute(f"SELECT {cols} FROM {read_source(conn)} ORDER BY period_end_epoch").fetchall()
     finally:
         conn.close()
     # A real 0 survives the write; a missing key reads back as unknown, not as 0.
