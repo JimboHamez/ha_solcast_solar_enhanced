@@ -42,6 +42,12 @@ CONF_INVERTER_TEMP_SENSOR = "inverter_temp_sensor"
 # A binary_sensor that is on while the inverter holds its output down, for any
 # reason. Brands report this differently, so a template maps each one onto it.
 CONF_INVERTER_LIMITED_SENSOR = "inverter_limited_sensor"
+# Signed grid power (positive while importing) and instantaneous generation power,
+# for the planned export-hold measures. Not yet shown in the config flow; the input
+# suggester already proposes them from the Energy dashboard so the fields arrive
+# pre-filled.
+CONF_GRID_POWER_SENSOR = "grid_power_sensor"
+CONF_GENERATION_POWER_SENSOR = "generation_power_sensor"
 # Stored when a curtailment input is not configured or could not be read. The
 # limited fraction and the export limit both have a meaningful 0, so 0 cannot
 # stand for "unknown" the way it does for voltage and temperature.

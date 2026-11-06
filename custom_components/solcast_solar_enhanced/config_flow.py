@@ -96,6 +96,7 @@ from .const import (
     SITE_TOPOLOGY_DIRECT,
     SITE_TOPOLOGY_SHARED_NO_DC,
 )
+from .input_suggest import async_suggest_inputs
 from .solcast_api import OWMAuthError, OWMClient, OWMConnectionError
 
 if TYPE_CHECKING:
@@ -700,6 +701,11 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialise the config flow with empty collected data."""
         self._data: dict[str, Any] = {}
+        # Pre-fills for empty fields on a first-time setup only. Kept apart from
+        # ``_data`` so a suggestion the user clears is not saved anyway: an empty
+        # optional field is absent from ``user_input``, and ``_data.update`` would
+        # otherwise keep the suggestion.
+        self._suggested: dict[str, Any] = {}
         self._discovered: list[DiscoveredSite] | None = None
         self._sites_mode: str | None = None
 
@@ -717,7 +723,14 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return len(self._discovered) <= 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
-        """Entry point — start the wizard at the Site & System step."""
+        """Entry point — start the wizard at the Site & System step.
+
+        Suggests inputs from the Energy dashboard and known integrations first, so
+        the empty fields arrive pre-filled. Reconfigure never does this: there an
+        empty field may be a deliberate choice.
+        """
+        if user_input is None and not self._suggested:
+            self._suggested = dict(await async_suggest_inputs(self.hass))
         return await self.async_step_site(user_input)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -749,7 +762,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System."""
-        schema = _build_site_schema(self._data, single_site=self._is_single_site())
+        schema = _build_site_schema({**self._suggested, **self._data}, single_site=self._is_single_site())
         if user_input is not None:
             _apply_submission(self._data, user_input, schema)
             return await self.async_step_database()
@@ -838,7 +851,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self._finish()
 
         existing = _groups_to_assignments(self._data.get(CONF_SITE_GROUPS))
-        existing = _seed_flat_mppt(discovered, existing, self._data)
+        existing = _seed_flat_mppt(discovered, existing, {**self._suggested, **self._data})
         mode = self._data.get(CONF_SITE_TOPOLOGY) or _infer_topology(self._data.get(CONF_SITE_GROUPS))
         return self._show_sites_form(discovered, existing, default_ac, mode)
 

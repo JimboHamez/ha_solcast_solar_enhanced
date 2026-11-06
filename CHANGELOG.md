@@ -5,6 +5,33 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3.dev7] - 2026-11-06
+
+> Private test build, not published. A setup convenience only: storage, migration and every reading are
+> unchanged, so installing over dev2 to dev6 needs nothing else. It only does anything when the
+> integration is added for the first time.
+
+### Added
+
+- **A first-time setup pre-fills inputs Home Assistant already knows.** Two sources, in order of trust:
+  - **The Energy dashboard.** Its solar production counter becomes the PV generation sensor and its grid
+    export counter the PV export sensor. Its grid and solar *power* sensors are also picked up, ready for
+    the planned export-hold measures (they have no field yet). Home Assistant has already turned the grid
+    power sensor into "positive while importing", whatever the sensor's own sign.
+  - **The Fronius integration's DC sensors**, matched by unique id: MPPT 1 is `voltage_dc`/`current_dc`
+    and MPPT 2 the `_2` pair. On a multi-array system they are offered on the first array in the per-array
+    step, as the existing MPPT hand-over already does. Nothing is offered when several Fronius inverters
+    report DC data.
+- **Tariff and daily meters are never offered as counters.** A utility meter split into peak and off-peak
+  (or reset daily) counts only part of the time. A meter created in the UI is traced back to the sensor it
+  meters, and split meters that share a source count as one. A meter defined in YAML can't be traced, so
+  that field is left empty. Two solar sources with different counters are taken to be two arrays, and no
+  property-wide counter is offered.
+- **A suggestion is only ever a pre-fill.** It fills an empty field on a first-time setup and nothing else:
+  the options flow and Reconfigure never suggest, since an empty field there may be deliberate. Clearing a
+  suggested field leaves it empty. Entity names are never used, because entity ids follow the install's
+  language and users rename them.
+
 ## [1.15.0] - 2026-11-09
 
 > Stable. Promotes `1.15.0b3` with one fix, for a rare way back to 1.14.0 (below). The history database

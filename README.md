@@ -627,6 +627,11 @@ The wizard has 5 steps (a 6th, **Per-site sensor mapping**, appears only when mo
 
 ### Step 1 — Site & System
 
+> **Pre-filled for you on first setup.** If your Energy dashboard already lists your solar production and
+> grid export, those counters are filled in here. A Fronius inverter's MPPT sensors are filled in too.
+> Peak/off-peak or daily utility meters are traced back to the sensor they meter, or left blank if they
+> can't be. Check each pre-filled field and change it if it's wrong. Reconfigure never pre-fills.
+
 <p align="center">
   <a href="images/config-step1-site.png"><img width="420" alt="Step 1 — Site & System" src="images/config-step1-site.png"></a>
 </p>

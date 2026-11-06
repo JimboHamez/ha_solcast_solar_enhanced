@@ -143,6 +143,23 @@ class DiscoveredSite(TypedDict, total=False):
     tilt: float
 
 
+class InputSuggestions(TypedDict, total=False):
+    """Entities proposed for empty fields on a first-time setup, keyed by config key.
+
+    Each key is the matching ``CONF_*`` string, which a test pins. Only keys with a
+    confident suggestion are present.
+    """
+
+    generation_power_sensor: str
+    grid_power_sensor: str
+    mppt1_current_sensor: str
+    mppt1_voltage_sensor: str
+    mppt2_current_sensor: str
+    mppt2_voltage_sensor: str
+    pv_actual_sensor: str
+    pv_export_sensor: str
+
+
 class MpptTracker(TypedDict, total=False):
     """One MPPT tracker's DC sensors in a site group (either may be unset)."""
 
