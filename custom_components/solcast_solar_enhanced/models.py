@@ -61,6 +61,16 @@ class StoreRecord(TypedDict, total=False):
     inverter_limited: float
     export_limit: float
     dc_offmpp_min: float
+    # Schema v2 only (record-only slot gate; see slot_gate.py). -1 = unknown.
+    sky_dip_s: float
+    sky_dip_runs: float
+    export_pinned_s: float
+    vexcess_s: float
+    vratio_p50: float
+    vratio_p90: float
+    sample_gap_s: float
+    gate_flags: int
+    shade_dip_s: float
 
 
 class StoredIrradiance(TypedDict):

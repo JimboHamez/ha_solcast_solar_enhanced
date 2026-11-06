@@ -84,6 +84,9 @@
     },
     "run_pv_tuning": {
       "service": "mdi:tune"
+    },
+    "compact_database": {
+      "service": "mdi:database-minus"
     }
   }
 }

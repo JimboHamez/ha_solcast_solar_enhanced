@@ -13,6 +13,10 @@ from custom_components.solcast_solar_enhanced.sqlite_store import (
     _INSERT_COLUMNS,
     _INSERT_SQL,
     CREATE_TABLE_SQL,
+    SCHEMA_COMPACTED,
+    SCHEMA_V2,
+    V2_PROPERTY_NAMES,
+    V2_SITE_NAMES,
     SqliteStore,
 )
 
@@ -53,9 +57,28 @@ JUNE1 = int(datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc).timestamp())
 JUNE1_DOY = 153
 
 
-@pytest.fixture
-async def store(hass, tmp_path):
-    s = SqliteStore(hass, str(tmp_path / "test.db"))
+def _upgraded_file(path: Path) -> str:
+    """An install from before schema v2 with no rows yet: an empty legacy table, so it dual-writes."""
+    conn = sqlite3.connect(path)
+    conn.executescript(CREATE_TABLE_SQL)
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+    return str(path)
+
+
+@pytest.fixture(params=["fresh", "upgraded"])
+async def store(hass, tmp_path, request):
+    """A store on each layout a writable install can be on.
+
+    ``fresh`` is a brand-new file, which starts compacted (no legacy table);
+    ``upgraded`` began before schema v2 and dual-writes. Reads go through
+    ``store._source`` so the same assertion holds on both.
+    """
+    path = tmp_path / "test.db"
+    if request.param == "upgraded":
+        _upgraded_file(path)
+    s = SqliteStore(hass, str(path))
     assert await s.async_connect() is True
     yield s
     await s.async_close()
@@ -65,9 +88,14 @@ async def store(hass, tmp_path):
 # connect / schema
 # ---------------------------------------------------------------------------
 
-async def test_connect_creates_schema_and_is_available(store):
+async def test_connect_creates_schema_and_is_available(store, request):
     assert store.available is True
     assert await store.async_get_record_count() == 0
+    # Pins what each fixture layout is, so a change to either cannot quietly halve the coverage.
+    if request.node.callspec.params["store"] == "fresh":
+        assert store.schema_version == SCHEMA_COMPACTED and not store.dual_writing
+    else:
+        assert store.schema_version == SCHEMA_V2 and store.dual_writing
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +109,7 @@ async def test_insert_and_read_dc_telemetry(store):
     await store.async_insert_record(_record(
         JUNE1, dc_voltage1=412.5, dc_current1=6.2, dc_voltage2=398.0, dc_current2=5.1,
     ))
-    rows = store._query(f"SELECT {_DC_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    rows = store._query(f"SELECT {_DC_COLS} FROM {store._source} WHERE site = ?", ("_total",))
     assert rows == [{
         "dc_voltage1": 412.5, "dc_current1": 6.2,
         "dc_voltage2": 398.0, "dc_current2": 5.1,
@@ -91,7 +119,7 @@ async def test_insert_and_read_dc_telemetry(store):
 async def test_insert_dc_telemetry_defaults_to_zero(store):
     # A record without DC fields stores 0 via NOT NULL DEFAULT (no crash).
     await store.async_insert_record(_record(JUNE1))
-    rows = store._query(f"SELECT {_DC_COLS} FROM solcast_data", ())
+    rows = store._query(f"SELECT {_DC_COLS} FROM {store._source}", ())
     assert rows == [{
         "dc_voltage1": 0.0, "dc_current1": 0.0, "dc_voltage2": 0.0, "dc_current2": 0.0,
     }]
@@ -102,14 +130,14 @@ _IRR_COLS = "ghi, dni, dhi"
 
 async def test_insert_and_read_irradiance(store):
     await store.async_insert_record(_record(JUNE1, ghi=712.0, dni=540.5, dhi=158.0))
-    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    rows = store._query(f"SELECT {_IRR_COLS} FROM {store._source} WHERE site = ?", ("_total",))
     assert rows == [{"ghi": 712.0, "dni": 540.5, "dhi": 158.0}]
 
 
 async def test_insert_irradiance_defaults_to_zero(store):
     # A record without irradiance fields stores 0 via NOT NULL DEFAULT (no crash).
     await store.async_insert_record(_record(JUNE1))
-    rows = store._query(f"SELECT {_IRR_COLS} FROM solcast_data", ())
+    rows = store._query(f"SELECT {_IRR_COLS} FROM {store._source}", ())
     assert rows == [{"ghi": 0.0, "dni": 0.0, "dhi": 0.0}]
 
 
@@ -118,13 +146,13 @@ _VMED_COLS = "dc_vmed1, dc_vmed2"
 
 async def test_insert_and_read_vmed(store):
     await store.async_insert_record(_record(JUNE1, dc_vmed1=355.5, dc_vmed2=318.0))
-    rows = store._query(f"SELECT {_VMED_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    rows = store._query(f"SELECT {_VMED_COLS} FROM {store._source} WHERE site = ?", ("_total",))
     assert rows == [{"dc_vmed1": 355.5, "dc_vmed2": 318.0}]
 
 
 async def test_insert_vmed_defaults_to_zero(store):
     await store.async_insert_record(_record(JUNE1))
-    rows = store._query(f"SELECT {_VMED_COLS} FROM solcast_data", ())
+    rows = store._query(f"SELECT {_VMED_COLS} FROM {store._source}", ())
     assert rows == [{"dc_vmed1": 0.0, "dc_vmed2": 0.0}]
 
 
@@ -242,29 +270,59 @@ async def _azimuth_of(store, epoch):
     return None
 
 
-async def test_migrate_repairs_wrong_azimuth(store):
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+async def _legacy_store(hass, tmp_path, *records):
+    """A store opened over a legacy-only file at user_version 0, as an old install has.
+
+    The azimuth repair only ever meets such files: a fresh store starts on schema v2
+    (user_version 2), which postdates the bug.
+    """
+    path = str(tmp_path / "legacy_v0.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(CREATE_TABLE_SQL)
+    conn.executemany(_INSERT_SQL, [SqliteStore._row_values(r) for r in records])
+    conn.commit()
+    conn.close()
+    s = SqliteStore(hass, path)
+    assert await s.async_connect() is True
+    return s
+
+
+async def test_migrate_repairs_wrong_azimuth(hass, tmp_path):
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=316.46))
     changed = await store.async_migrate(_MELB_LAT, _MELB_LON)
     assert changed == 1
     fixed = await _azimuth_of(store, _MORNING_EPOCH)
     assert fixed == pytest.approx(43.5, abs=1.0)
     assert 0.0 <= fixed <= 180.0  # eastern half, not the mirrored ~316°
+    # The repair runs before the v2 migration, so the copy carries the fixed value.
+    assert store.schema_version == 2
+    assert store._query("SELECT azimuth FROM slot_rows", ())[0]["azimuth"] == pytest.approx(fixed)
+    await store.async_close()
 
 
-async def test_migrate_is_idempotent(store):
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+async def test_migrate_is_idempotent(hass, tmp_path):
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=316.46))
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 1
     # Second run is gated by user_version → no rescan, nothing changed.
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
+    await store.async_close()
 
 
-async def test_migrate_leaves_correct_rows_untouched(store):
+async def test_migrate_leaves_correct_rows_untouched(hass, tmp_path):
     from custom_components.solcast_solar_enhanced.pv_tuning import solar_position
 
     correct = round(solar_position(_MORNING_EPOCH - 900, _MELB_LAT, _MELB_LON)[0], 5)
-    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=correct))
+    store = await _legacy_store(hass, tmp_path, _record(_MORNING_EPOCH, azimuth=correct))
     assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
-    assert await _azimuth_of(store, _MORNING_EPOCH) == pytest.approx(correct)
+    # Read back through v2, which stores azimuth to 0.01 degree.
+    assert await _azimuth_of(store, _MORNING_EPOCH) == pytest.approx(correct, abs=0.005)
+    await store.async_close()
+
+
+async def test_fresh_store_skips_the_repair(store):
+    """A fresh store starts at v2, after the bug, so the repair never scans it."""
+    await store.async_insert_record(_record(_MORNING_EPOCH, azimuth=316.46))
+    assert await store.async_migrate(_MELB_LAT, _MELB_LON) == 0
 
 
 async def test_connect_failure_returns_false(hass):
@@ -580,14 +638,14 @@ _UNDAMP_COL = "pv_estimate_undampened"
 async def test_insert_and_read_undampened_estimate(store):
     """The pre-dampening forecast round-trips (issue #50 denominator)."""
     await store.async_insert_record(_record(JUNE1, pv_estimate_undampened=8.25))
-    rows = store._query(f"SELECT {_UNDAMP_COL} FROM solcast_data WHERE site = ?", ("_total",))
+    rows = store._query(f"SELECT {_UNDAMP_COL} FROM {store._source} WHERE site = ?", ("_total",))
     assert rows == [{"pv_estimate_undampened": 8.25}]
 
 
 async def test_insert_undampened_estimate_defaults_to_zero(store):
     """0 is the 'base couldn't supply it' sentinel; dampening falls back to pv_estimate."""
     await store.async_insert_record(_record(JUNE1))
-    rows = store._query(f"SELECT {_UNDAMP_COL} FROM solcast_data", ())
+    rows = store._query(f"SELECT {_UNDAMP_COL} FROM {store._source}", ())
     assert rows == [{"pv_estimate_undampened": 0.0}]
 
 
@@ -644,13 +702,13 @@ _IMED_COLS = "dc_imed1, dc_imed2"
 
 async def test_insert_and_read_imed(store):
     await store.async_insert_record(_record(JUNE1, dc_imed1=6.25, dc_imed2=4.5))
-    rows = store._query(f"SELECT {_IMED_COLS} FROM solcast_data WHERE site = ?", ("_total",))
+    rows = store._query(f"SELECT {_IMED_COLS} FROM {store._source} WHERE site = ?", ("_total",))
     assert rows == [{"dc_imed1": 6.25, "dc_imed2": 4.5}]
 
 
 async def test_insert_imed_defaults_to_zero(store):
     await store.async_insert_record(_record(JUNE1))
-    rows = store._query(f"SELECT {_IMED_COLS} FROM solcast_data", ())
+    rows = store._query(f"SELECT {_IMED_COLS} FROM {store._source}", ())
     assert rows == [{"dc_imed1": 0.0, "dc_imed2": 0.0}]
 
 
@@ -659,7 +717,7 @@ async def test_imed_is_independent_of_the_min_reduced_current(store):
     for shading) are separate columns: a slot whose minimum collapsed to zero still
     records a representative median."""
     await store.async_insert_record(_record(JUNE1, dc_current1=0.0, dc_imed1=6.1))
-    assert store._query("SELECT dc_current1, dc_imed1 FROM solcast_data", ()) == [
+    assert store._query(f"SELECT dc_current1, dc_imed1 FROM {store._source}", ()) == [
         {"dc_current1": 0.0, "dc_imed1": 6.1}
     ]
 
@@ -715,7 +773,8 @@ def test_store_record_type_declares_every_inserted_column():
     is rejected at each write site, and a key it still carries after a column is
     dropped would let a misspelt key through unchecked.
     """
-    assert list(StoreRecord.__annotations__) == list(_INSERT_COLUMNS)
+    v2_only = [n for n in (*V2_PROPERTY_NAMES, *V2_SITE_NAMES) if n not in _INSERT_COLUMNS]
+    assert list(StoreRecord.__annotations__) == [*_INSERT_COLUMNS, *v2_only]
 
 
 def test_fresh_schema_accepts_a_full_insert_without_the_alter_pass():
@@ -821,11 +880,13 @@ async def test_records_for_shading_keeps_overcast_records(store):
 async def test_records_for_shading_drops_night_and_filters_by_site(store):
     await store.async_insert_record(_record(JUNE1, zenith=35.0))
     await store.async_insert_record(_record(JUNE1 + 1800, zenith=95.0))
-    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=20.0))
+    # Sun position is property-wide, so an array's row shares the slot's zenith; what
+    # differs per array is its output.
+    await store.async_insert_record(_record(JUNE1, site="abc-123", zenith=35.0, pv_actual=1.25))
     assert len(await store.async_get_records_for_shading()) == 2
     scoped = await store.async_get_records_for_shading(site="abc-123")
     assert len(scoped) == 1
-    assert scoped[0]["zenith"] == 20.0
+    assert scoped[0]["pv_actual"] == 1.25
 
 
 async def test_records_for_shading_honours_the_limit(store):
@@ -894,14 +955,19 @@ async def test_readonly_open_of_an_older_db_still_queries(hass, tmp_path):
     columns. Naming one would fail the whole query and return no records at all —
     the tools/ CLIs and the checked-in fixtures both open read-only — so the SELECT
     substitutes the 0.0 sentinel instead."""
-    path = str(tmp_path / "old.db")
+    path = _upgraded_file(tmp_path / "old.db")
     writable = SqliteStore(hass, path)
     assert await writable.async_connect() is True
     await writable.async_insert_record(_record(JUNE1))
     await writable.async_close()
-    # Drop the column back off to simulate a file written by an older version.
+    # Drop the column back off, and the v2 schema with it, to simulate a file
+    # written by an older version.
     conn = sqlite3.connect(path)
     conn.execute("ALTER TABLE solcast_data DROP COLUMN pv_export_max")
+    conn.executescript(
+        "DROP VIEW slot_rows; DROP TABLE slot_site; DROP TABLE slot_property; DROP TABLE sites; "
+        "PRAGMA user_version = 1;"
+    )
     conn.commit()
     conn.close()
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import os
 import statistics
 import time
 from collections import Counter, deque
@@ -26,6 +28,7 @@ from .const import (
     BASE_GRANULAR_ALL_KEY,
     BATTERY_MODE_NET,
     CAPACITY_DC_SUSPECT_RATIO,
+    CLEAR_DIFFUSE_SHARE,
     CONF_ALBEDO,
     CONF_AUTO_DAMPENING,
     CONF_AUTO_TUNING,
@@ -92,6 +95,7 @@ from .const import (
     ENERGY_DT_MAX_FRACTION,
     ENERGY_DT_MIN_FRACTION,
     EXPORT_PEAK_WINDOW_S,
+    GATE_LOW_SUN_ELEVATION,
     HALF_HOUR_REFRESH_OFFSET_SECONDS,
     HOURLY_FACTOR_COUNT,
     ISSUE_CAPACITY_LOOKS_DC,
@@ -99,9 +103,11 @@ from .const import (
     ISSUE_GRANULAR_CONFLICT,
     ISSUE_ORIENTATION_DIVERGED,
     ISSUE_OWM_REQUIRED,
+    ISSUE_SCHEMA_TOO_NEW,
     KT_GHI_CS_FLOOR,
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
+    NIGHT_ZENITH_DEG,
     OFFMPP_CURRENT_RATIO,
     OFFMPP_MIN_RUN_S,
     OFFMPP_REF_MAX_AGE_S,
@@ -111,6 +117,9 @@ from .const import (
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
+    VMODEL_FORGET,
+    VMODEL_SAVE_DELAY_S,
+    GateFlag,
 )
 from .load_advisory import CONFIDENCE_HORIZON_HOURS, RECENT_BIAS_LOOKBACK_S, compute_confidence
 from .models import (
@@ -127,14 +136,24 @@ from .models import (
     StoreRecord,
     TuningResult,
 )
-from .pv_tuning import normalize_epoch, panel_azimuth_to_internal, panel_azimuth_to_solcast, run_tuning, solar_position
+from .pv_tuning import (
+    clearsky_ghi,
+    cos_incidence,
+    normalize_epoch,
+    panel_azimuth_to_internal,
+    panel_azimuth_to_solcast,
+    run_tuning,
+    solar_position,
+)
 from .shading_dampening import average_slot_pairs, compute_dampening, compute_sunpos_dampening
 from .shading_geometry import analyse_shading
+from .slot_gate import Samples, SourceKind, counter_power, dc_power, measure_slot
 from .solcast_api import OpenMeteoClient, OWMClient
-from .sqlite_store import SqliteStore
+from .sqlite_store import SCHEMA_KNOWN, SqliteStore
+from .vmodel import SlotVoltage, VoltageModel, evaluate_slot
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
     from homeassistant.config_entries import ConfigEntry
 
@@ -177,6 +196,49 @@ def _site_groups(opts: Mapping[str, Any]) -> list[SiteGroup]:
     """The configured measurement groups (``CONF_SITE_GROUPS``), typed for the readers."""
     groups: list[SiteGroup] = opts.get(CONF_SITE_GROUPS) or []
     return groups
+
+
+def is_empty_night_slot(zenith: float, values: Iterable[float]) -> bool:
+    """Whether a slot has nothing worth storing: the sun is down and every value is zero.
+
+    Every estimator query requires ``pv_actual > 0``, so such a row is never read,
+    and night slots are over half of all rows. Any non-zero value keeps the slot:
+    twilight generation, overnight battery export or charge, and a forecast that
+    starts before the sun clears the horizon.
+
+    Args:
+        zenith: Solar zenith at the slot midpoint, in degrees.
+        values: The slot's measured and forecast values, property-wide and per site.
+
+    Returns:
+        True when the slot should not be written.
+    """
+    return zenith >= NIGHT_ZENITH_DEG and all(v <= 0 for v in values)
+
+
+def _is_number(value: str) -> bool:
+    """Whether a state string is a reading, not ``unavailable``, ``unknown`` or empty."""
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _sum_series(series: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
+    """Several held-value series summed on their merged timeline (from when all have a value)."""
+    times = sorted({t for s in series for t, _ in s})
+    idx = [0] * len(series)
+    current: list[float | None] = [None] * len(series)
+    out: list[tuple[float, float]] = []
+    for t in times:
+        for n, s in enumerate(series):
+            while idx[n] < len(s) and s[idx[n]][0] <= t:
+                current[n] = s[idx[n]][1]
+                idx[n] += 1
+        if all(v is not None for v in current):
+            out.append((t, sum(v for v in current if v is not None)))
+    return out
 
 
 def base_integration_available(hass: HomeAssistant) -> bool:
@@ -380,6 +442,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._energy_baselines: dict[str, Any] = {}
         self._baselines_dirty: bool = False
 
+        # Learned per-tracker MPP voltage (vmodel.py), persisted so a restart keeps
+        # the training, plus the newest slot's gate measures for diagnostics.
+        self._vmodel_store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}_vmodel")
+        self._vmodel = VoltageModel()
+        self._vmodel_last_decay = 0
+        self._gate_latest: dict[str, Any] = {}
+
         # Unsubscribe handle for the half-hour wall-clock refresh listener.
         self._unsub_timer: CALLBACK_TYPE | None = None
 
@@ -398,6 +467,13 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 self._energy_baselines = stored
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not load energy baselines: %s", exc)
+        try:
+            stored_model = await self._vmodel_store.async_load()
+            if isinstance(stored_model, dict):
+                self._vmodel = VoltageModel.from_dict(stored_model.get("model"))
+                self._vmodel_last_decay = int(stored_model.get("last_decay", 0) or 0)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Could not load the voltage model: %s", exc)
 
         if opts.get(CONF_DB_ENABLED, DEFAULT_DB_ENABLED):
             self._db = SqliteStore(self.hass, self.hass.config.path(DEFAULT_DB_FILENAME))
@@ -412,6 +488,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     float(opts.get(CONF_LATITUDE, -37.9)),
                     float(opts.get(CONF_LONGITUDE, 145.0)),
                 )
+        self._check_schema_not_newer()
 
         if opts.get(CONF_OWM_ENABLED) and opts.get(CONF_OWM_API_KEY):
             self._owm = OWMClient(
@@ -486,6 +563,27 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_DAMPENING_GATED_LEGACY)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_GRANULAR_CONFLICT)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CAPACITY_LOOKS_DC)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_SCHEMA_TOO_NEW)
+
+    def _store_too_new(self) -> bool:
+        """Whether the database was written by a newer release (opened read-only)."""
+        return bool(self._db is not None and getattr(self._db, "newer_schema", False))
+
+    def _check_schema_not_newer(self) -> None:
+        """Raise or clear the repair issue for a database written by a newer release."""
+        if not self._store_too_new():
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_SCHEMA_TOO_NEW)
+            return
+        assert self._db is not None  # Narrowed by _store_too_new.
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_SCHEMA_TOO_NEW,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_SCHEMA_TOO_NEW,
+            translation_placeholders={"found": str(self._db.schema_version), "known": str(SCHEMA_KNOWN)},
+        )
 
     # ------------------------------------------------------------------
     # Main update
@@ -599,7 +697,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             grid_v_entity = str(opts.get(CONF_GRID_VOLTAGE_SENSOR, "") or "")
             temp_entity = str(opts.get(CONF_INVERTER_TEMP_SENSOR, "") or "")
             samples = await self._interval_samples(
-                dc_entities | {e for e in (export_entity, grid_v_entity, temp_entity) if e},
+                dc_entities | self._gate_entities(opts) | {e for e in (export_entity, grid_v_entity, temp_entity) if e},
                 slot_start_epoch,
                 period_epoch,
             )
@@ -641,6 +739,31 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     period_end,
                     zen,
                 )
+            # Decided once for the whole slot, so the '_total' row and the per-site
+            # rows never disagree about whether a slot exists. Only the inserts (and
+            # the undampened-forecast lookups that feed them) are skipped: sensors,
+            # baselines and the confidence buffers below still update every cycle.
+            write_rows = not is_empty_night_slot(
+                zen,
+                (
+                    pv_actual,
+                    pv_export,
+                    pv_export_max,
+                    pv_estimate,
+                    pv_est90,
+                    battery_charge,
+                    *(kw for kw, _start in site_actuals.values()),
+                ),
+            )
+            if not write_rows:
+                _LOGGER.debug("Night slot %s has nothing to record; not written", period_end)
+            # Record-only slot gate (schema v2). Skipped with the row: nothing to judge at night.
+            self._maybe_decay_vmodel(now_epoch)
+            gate_prop, gate_shade = (
+                await self._async_slot_gate(opts, samples, slot_start_epoch, period_epoch, zen, export_entity)
+                if write_rows
+                else ({}, {})
+            )
             # Coerce unknown weather to the excluded sentinel for the NOT NULL
             # columns (used by both the aggregate and per-site rows below).
             temp_db, clouds_db, desc_db = self._weather_for_storage()
@@ -675,12 +798,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 # The forecast before our own dampening — the shading ratio's real
                 # denominator (issue #50). 0 when the base can't supply it.
                 "pv_estimate_undampened": round(
-                    await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch), 4
+                    await self._fetch_undampened_estimate(DEFAULT_SITE_ID, slot_start_epoch) if write_rows else 0.0,
+                    4,
                 ),
                 **self._irradiance_for_storage(),
                 **curtailment,
+                **gate_prop,
             }
-            await self._db.async_insert_record(record)
+            if write_rows:
+                await self._db.async_insert_record(record)
 
             # Feed the short-horizon confidence advisory (item 3): record this
             # completed daylight slot's measured-vs-forecast pair and recompute how
@@ -705,43 +831,45 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 # Match the forecast on the snapped slot boundary (as above), while
                 # period_start below keeps the real per-site measurement window.
                 s_est, s_est10, s_est90 = self._site_forecast_for_period(site_id, slot_start_epoch)
-                await self._db.async_insert_record(
-                    {
-                        "period_end": period_end,
-                        "period_end_epoch": period_epoch,
-                        "period_start": datetime.fromtimestamp(s_start, tz=UTC).isoformat(),
-                        "site": site_id,
-                        "pv_actual": round(site_kw, 4),
-                        "pv_export": round(pv_export, 4),
-                        "pv_export_max": round(pv_export_max, 4),
-                        "pv_estimate": round(s_est, 4),
-                        "pv_estimate10": round(s_est10, 4),
-                        "pv_estimate90": round(s_est90, 4),
-                        "azimuth": round(az, 5),
-                        "zenith": round(zen, 5),
-                        "temp": temp_db,
-                        "clouds": clouds_db,
-                        "description": desc_db,
-                        "battery_charge": 0.0,
-                        "dc_voltage1": s_dc[0],
-                        "dc_current1": s_dc[1],
-                        "dc_voltage2": s_dc[2],
-                        "dc_current2": s_dc[3],
-                        "dc_vmed1": s_vmed[0],
-                        "dc_vmed2": s_vmed[1],
-                        "dc_imed1": s_imed[0],
-                        "dc_imed2": s_imed[1],
-                        "pv_estimate_undampened": round(
-                            await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
-                        ),
-                        # Irradiance is property-wide weather: same values on every site.
-                        **self._irradiance_for_storage(),
-                        # Curtailment inputs are property-wide too, except the off-MPP
-                        # minutes, which come from the inverter this array feeds.
-                        **curtailment,
-                        "dc_offmpp_min": site_offmpp.get(site_id, CURTAILMENT_UNKNOWN),
-                    }
-                )
+                if write_rows:
+                    await self._db.async_insert_record(
+                        {
+                            "period_end": period_end,
+                            "period_end_epoch": period_epoch,
+                            "period_start": datetime.fromtimestamp(s_start, tz=UTC).isoformat(),
+                            "site": site_id,
+                            "pv_actual": round(site_kw, 4),
+                            "pv_export": round(pv_export, 4),
+                            "pv_export_max": round(pv_export_max, 4),
+                            "pv_estimate": round(s_est, 4),
+                            "pv_estimate10": round(s_est10, 4),
+                            "pv_estimate90": round(s_est90, 4),
+                            "azimuth": round(az, 5),
+                            "zenith": round(zen, 5),
+                            "temp": temp_db,
+                            "clouds": clouds_db,
+                            "description": desc_db,
+                            "battery_charge": 0.0,
+                            "dc_voltage1": s_dc[0],
+                            "dc_current1": s_dc[1],
+                            "dc_voltage2": s_dc[2],
+                            "dc_current2": s_dc[3],
+                            "dc_vmed1": s_vmed[0],
+                            "dc_vmed2": s_vmed[1],
+                            "dc_imed1": s_imed[0],
+                            "dc_imed2": s_imed[1],
+                            "pv_estimate_undampened": round(
+                                await self._fetch_undampened_estimate(site_id, slot_start_epoch), 4
+                            ),
+                            # Irradiance is property-wide weather: same values on every site.
+                            **self._irradiance_for_storage(),
+                            # Curtailment inputs are property-wide too, except the off-MPP
+                            # minutes, which come from the inverter this array feeds.
+                            **curtailment,
+                            "dc_offmpp_min": site_offmpp.get(site_id, CURTAILMENT_UNKNOWN),
+                            "shade_dip_s": gate_shade.get(site_id, CURTAILMENT_UNKNOWN),
+                        }
+                    )
 
                 # Surface this array's measured generation (and its forecast) for
                 # the per-site PV Power sensor.
@@ -761,8 +889,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 )
 
             self._db_record_count = await self._db.async_get_record_count()
-            # Diagnostics: newest slot written this cycle + sites seen in the store.
-            self._db_latest_period_end = period_end
+            # Diagnostics: newest slot written (an unwritten night slot leaves it on
+            # the last real row) + sites seen in the store.
+            if write_rows:
+                self._db_latest_period_end = period_end
             self._db_sites = await self._db.async_get_sites()
 
         # History retention (daily) — independent of auto-tuning, so it still
@@ -1113,6 +1243,14 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # Cheap config sanity check on the same 6-hourly cadence as the granular
         # conflict check, and for the same reason: the failure is otherwise silent.
         self._check_capacity_is_ac(opts)
+
+        # A downgrade: the history is in a layout this release can't be sure it reads.
+        # Pushing would send factors built from whatever it could read (possibly
+        # nothing, which is a neutral curve), undoing what the newer release pushed.
+        # Leave the base's factors as they are until a newer version is back.
+        if self._store_too_new():
+            self._dampening_pushed.clear()
+            return
 
         self._sunpos_enabled = bool(opts.get(CONF_SUNPOS_DAMPENING, DEFAULT_SUNPOS_DAMPENING))
         # Aggregate table (drives the dampening sensors) — property-wide '_total' rows.
@@ -2211,6 +2349,262 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             "max_voltage": max(voltages),
             "sites": {s: _pairs(t) for s, t in sites.items()},
         }
+
+    # ------------------------------------------------------------------
+    # Slot gate (schema v2, record-only): sky/shade dips, export-pinned time
+    # and the learned voltage model, measured from the slot's recorder samples.
+    # ------------------------------------------------------------------
+
+    def _gate_entities(self, opts: dict[str, Any]) -> set[str]:
+        """Entities the gate needs beyond the DC trackers: per-array AC and DC power sensors."""
+        ids: set[str] = set()
+        for group in _site_groups(opts):
+            if ac := group.get("ac_sensor"):
+                ids.add(ac)
+            for string in group.get("strings") or []:
+                ids.update(e for e in string.get("dc_sensors") or [] if e)
+                if dc := string.get("dc_sensor"):
+                    ids.add(dc)
+        if pv := opts.get(CONF_PV_ACTUAL_SENSOR):
+            ids.add(str(pv))
+        return ids
+
+    def _power_series(
+        self,
+        entity_id: str | None,
+        configured_mode: str,
+        samples: dict[str, list[tuple[float, float]]],
+        end_epoch: float | None = None,
+    ) -> tuple[list[tuple[float, float]], SourceKind]:
+        """A sensor's samples as a kW series, and whether they came from power or a counter.
+
+        A counter's last reading is held to ``end_epoch`` while the sensor still
+        reports a number, so a counter that never ticked reads 0 kW rather than
+        no series (see ``counter_power``).
+        """
+        pairs = samples.get(entity_id or "") or []
+        state = self.hass.states.get(entity_id) if entity_id else None
+        if not pairs or state is None:
+            return [], "ac"
+        mode = self._resolve_input_mode(state, configured_mode)
+        if mode.startswith("power"):
+            return [(t, self._to_kw(v, mode)) for t, v in pairs], "ac"
+        hold_to = end_epoch if end_epoch is not None and _is_number(state.state) else None
+        return counter_power([(t, self._to_kwh(max(0.0, v), mode)) for t, v in pairs], end=hold_to), "counter"
+
+    @staticmethod
+    def _tracker_pairs(
+        mppts: list[MpptTracker] | None, samples: dict[str, list[tuple[float, float]]]
+    ) -> list[tuple[Samples, Samples]]:
+        out: list[tuple[Samples, Samples]] = []
+        for m in mppts or []:
+            v_id, i_id = m.get("voltage_sensor"), m.get("current_sensor")
+            if v_id and i_id and samples.get(v_id) and samples.get(i_id):
+                out.append((samples[v_id], samples[i_id]))
+        return out
+
+    def _gate_arrays(
+        self, opts: dict[str, Any], samples: dict[str, list[tuple[float, float]]], end_epoch: float | None = None
+    ) -> tuple[dict[str, Samples], dict[str, SourceKind]]:
+        """Each configured array's power series, from the best input it has.
+
+        Best first: its DC trackers (V × I); its DC power sensors (``dc_split``);
+        its own generation sensor (``direct``, e.g. one microinverter group per
+        array). With no arrays configured, the property is one array on the flat
+        trackers or the system generation sensor. An array with none of these is
+        listed with no samples, which marks the slot ``PARTIAL``.
+        """
+        arrays: dict[str, Samples] = {}
+        kinds: dict[str, SourceKind] = {}
+        for group in _site_groups(opts):
+            strings = group.get("strings") or []
+            if not strings:  # direct: one array, with its own generation sensor.
+                site = group.get("site")
+                if not site:
+                    continue
+                pairs = self._tracker_pairs(group.get("mppts"), samples)
+                if pairs:
+                    arrays[site], kinds[site] = dc_power(pairs), "dc"
+                else:
+                    arrays[site], kinds[site] = self._power_series(
+                        group.get("ac_sensor"), group.get("ac_mode", DEFAULT_PV_INPUT_MODE), samples, end_epoch
+                    )
+                continue
+            for string in strings:  # dc_split: arrays sharing one inverter.
+                site = string.get("site")
+                if not site:
+                    continue
+                pairs = self._tracker_pairs(string.get("mppts"), samples)
+                if pairs:
+                    arrays[site], kinds[site] = dc_power(pairs), "dc"
+                    continue
+                dc_ids = [
+                    *(string.get("dc_sensors") or []),
+                    *([string["dc_sensor"]] if string.get("dc_sensor") else []),
+                ]
+                dc_series = [self._power_series(e, DEFAULT_PV_INPUT_MODE, samples, end_epoch)[0] for e in dc_ids]
+                arrays[site] = _sum_series(dc_series) if dc_series and all(dc_series) else []
+                kinds[site] = "dc"
+        if arrays:
+            return arrays, kinds
+        pairs = self._tracker_pairs(self._property_mppt_list(opts), samples)
+        if pairs:
+            return {DEFAULT_SITE_ID: dc_power(pairs)}, {DEFAULT_SITE_ID: "dc"}
+        series, kind = self._power_series(
+            opts.get(CONF_PV_ACTUAL_SENSOR),
+            opts.get(CONF_PV_ACTUAL_INPUT_MODE, DEFAULT_PV_INPUT_MODE),
+            samples,
+            end_epoch,
+        )
+        return ({DEFAULT_SITE_ID: series}, {DEFAULT_SITE_ID: kind}) if series else ({}, {})
+
+    def _array_orientation(self, opts: dict[str, Any], site: str) -> tuple[float, float] | None:
+        """``(tilt, internal azimuth)`` for an array, from discovery or, for the property, the options."""
+        meta = next((s for s in self._sites if s.get("resource_id") == site), None)
+        if meta and meta.get("tilt") is not None and meta.get("azimuth") is not None:
+            return float(meta["tilt"]), panel_azimuth_to_internal(float(meta["azimuth"]))
+        if site == DEFAULT_SITE_ID and opts.get(CONF_TILT) is not None:
+            return float(opts[CONF_TILT]), panel_azimuth_to_internal(float(opts.get(CONF_AZIMUTH, 0.0)))
+        return None
+
+    def _clear_sky_poa(self, lat: float, lon: float, orientation: tuple[float, float], t: float) -> float:
+        """Clear-sky plane-of-array irradiance (W/m²); only its shape over a slot is used."""
+        sun_az, zen = solar_position(int(t), lat, lon)
+        ghi = clearsky_ghi(zen)
+        if ghi <= 0:
+            return 0.0
+        tilt, azimuth = orientation
+        cos_z = max(math.cos(math.radians(zen)), 0.035)
+        beam = (1 - CLEAR_DIFFUSE_SHARE) * cos_incidence(tilt, azimuth, zen, sun_az) / cos_z
+        sky = CLEAR_DIFFUSE_SHARE * (1 + math.cos(math.radians(tilt))) / 2
+        return ghi * (beam + sky)
+
+    async def _async_slot_gate(
+        self,
+        opts: dict[str, Any],
+        samples: dict[str, list[tuple[float, float]]],
+        start_epoch: int,
+        end_epoch: int,
+        zenith: float,
+        export_entity: str,
+    ) -> tuple[StoreRecord, dict[str, float]]:
+        """The slot's gate measures: ``(property-wide columns, {site: shade_dip_s})``.
+
+        Never raises: a failure is logged and the slot keeps its unknown defaults,
+        because a record-only measure must not cost the row it rides on.
+        """
+        lat = float(opts.get(CONF_LATITUDE, -37.9))
+        lon = float(opts.get(CONF_LONGITUDE, 145.0))
+        arrays, kinds = self._gate_arrays(opts, samples, float(end_epoch))
+        orientations = {site: self._array_orientation(opts, site) for site in arrays}
+        has_shape = bool(arrays) and all(orientations.values())
+        export, export_kind = self._power_series(
+            export_entity, str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)), samples, float(end_epoch)
+        )
+        limit_kw = self._resolve_export_limit(opts)
+        clip = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
+        trackers = {
+            str(m["voltage_sensor"]): pair
+            for m, pair in zip(
+                (m for m in self._property_mppt_list(opts) if m.get("voltage_sensor") and m.get("current_sensor")),
+                self._tracker_pairs(self._property_mppt_list(opts), samples),
+                strict=False,
+            )
+        }
+        temp = self._weather.get("temp")
+        ghi = self._irradiance.get("ghi")
+        cs_mid = clearsky_ghi(zenith)
+        kt = (float(ghi) / cs_mid) if ghi and cs_mid >= KT_GHI_CS_FLOOR else None
+        total_orientation = self._array_orientation(opts, DEFAULT_SITE_ID) or next(
+            (o for o in orientations.values() if o), None
+        )
+
+        def shape(site: str, t: float) -> float:
+            orientation = orientations.get(site)
+            assert orientation is not None  # Only passed when every array has one.
+            return self._clear_sky_poa(lat, lon, orientation, t)
+
+        def run() -> tuple[StoreRecord, dict[str, float]]:
+            measures = measure_slot(
+                float(start_epoch),
+                float(end_epoch),
+                arrays,
+                kinds,
+                shape if has_shape else None,
+                export=export or None,
+                export_kind=export_kind,
+                export_limit_kw=limit_kw,
+                clipping_threshold=clip,
+                low_sun=(90.0 - zenith) < GATE_LOW_SUN_ELEVATION,
+            )
+            voltage: SlotVoltage = {"vexcess_s": -1.0, "vratio_p50": -1.0, "vratio_p90": -1.0, "ready": False}
+            if trackers and temp is not None and kt is not None and total_orientation is not None:
+                voltage = evaluate_slot(
+                    float(start_epoch),
+                    float(end_epoch),
+                    trackers,
+                    float(temp),
+                    lambda t: kt * self._clear_sky_poa(lat, lon, total_orientation, t),
+                    self._vmodel,
+                    export or None,
+                    limit_kw,
+                )
+            flags = measures["gate_flags"] | (int(GateFlag.VMODEL_READY) if voltage["ready"] else 0)
+            prop: StoreRecord = {
+                "sky_dip_s": measures["sky_dip_s"],
+                "sky_dip_runs": float(measures["sky_dip_runs"]),
+                "export_pinned_s": measures["export_pinned_s"],
+                "sample_gap_s": measures["sample_gap_s"],
+                "gate_flags": int(flags),
+                "vexcess_s": float(voltage["vexcess_s"]),
+                "vratio_p50": float(voltage["vratio_p50"]),
+                "vratio_p90": float(voltage["vratio_p90"]),
+            }
+            return prop, dict(measures["shade_dip_s"])
+
+        try:
+            prop, shade = await self.hass.async_add_executor_job(run)
+        except Exception as exc:  # noqa: BLE001 — record-only: never cost the row
+            _LOGGER.debug("Slot gate measures unavailable: %s", exc)
+            return {}, {}
+        self._gate_latest = {"period_end_epoch": end_epoch, **prop, "shade_dip_s": shade}
+        self._vmodel_store.async_delay_save(self._vmodel_data, VMODEL_SAVE_DELAY_S)
+        return prop, shade
+
+    def _existing_backup(self) -> str | None:
+        """The pre-migration backup's path, when one is on disk."""
+        path = getattr(self._db, "backup_path", None)
+        return path if isinstance(path, str) and os.path.exists(path) else None
+
+    def _vmodel_data(self) -> dict[str, Any]:
+        return {"model": self._vmodel.to_dict(), "last_decay": self._vmodel_last_decay}
+
+    def _maybe_decay_vmodel(self, now_epoch: int) -> None:
+        """Fade the voltage model's evidence once a day, so it follows the season."""
+        if self._vmodel_last_decay and now_epoch - self._vmodel_last_decay < 86400:
+            return
+        if self._vmodel_last_decay:
+            self._vmodel.decay(VMODEL_FORGET)
+        self._vmodel_last_decay = now_epoch
+
+    async def async_compact_database(self) -> dict[str, Any]:
+        """Drop the legacy table once both schemas agree (the ``compact_database`` action).
+
+        Raises:
+            ServiceValidationError: If the database is off, or the store refuses
+                (already compacted, not yet migrated, or the schemas disagree).
+        """
+        if self._db is None:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="database_disabled")
+        result = await self._db.async_compact()
+        if not result.get("compacted"):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="compact_refused",
+                translation_placeholders={"reason": str(result.get("reason", ""))},
+            )
+        self._db_record_count = await self._db.async_get_record_count()
+        return result
 
     def _read_site_dc_telemetry(
         self, opts: dict[str, Any], hist: dict[str, list[float]]
@@ -3415,6 +3809,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 "record_count": self._db_record_count,
                 "latest_period_end": self._db_latest_period_end,
                 "sites_in_db": self._db_sites,
+                "schema_version": getattr(self._db, "schema_version", None),
+                "legacy_table_written": getattr(self._db, "dual_writing", None),
+                "backup": self._existing_backup(),
             },
             "tuning": {
                 "tilt": self.tuning_tilt,
@@ -3453,4 +3850,16 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             },
             "dc_telemetry": self._dc_telemetry,
             "curtailment": self._curtailment_capture,
+            "slot_gate": {
+                "latest": self._gate_latest,
+                "voltage_model": {
+                    tracker: {
+                        "ready": fit.coef is not None,
+                        "samples": round(fit.n),
+                        "residual_sd_v": round(fit.sigma, 2) if fit.sigma is not None else None,
+                    }
+                    for tracker, fit in self._vmodel.trackers.items()
+                },
+                "last_decay": self._vmodel_last_decay,
+            },
         }

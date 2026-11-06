@@ -57,9 +57,11 @@ def _fetch(conn: sqlite3.Connection, site: str) -> list[dict]:
         "clouds", "temp", "zenith",
         "dc_voltage1", "dc_current1", "dc_voltage2", "dc_current2",
     ]
+    # Schema v2 stores read through the slot_rows view (the only source once compacted).
+    table = "slot_rows" if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_rows'").fetchone() else "solcast_data"
     cur = conn.cursor()
     cur.execute(
-        f"SELECT {', '.join(cols)} FROM solcast_data WHERE site = ? ORDER BY period_end_epoch",
+        f"SELECT {', '.join(cols)} FROM {table} WHERE site = ? ORDER BY period_end_epoch",
         (site,),
     )
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]

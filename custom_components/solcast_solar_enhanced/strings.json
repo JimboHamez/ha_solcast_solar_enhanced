@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "System capacity looks like a DC (panel) figure",
       "description": "The system capacity stored in this integration's options is {configured} kW, but Solcast reports your inverter AC rating as {discovered} kW. That gap is the signature of a panel (DC) figure: the field was labelled \"kW DC\" until version 1.10.1, while its value is only ever used as an AC threshold.\n\nIts only job is inverter-clipping detection — readings at or above capacity × the clipping threshold are treated as clipping and excluded from tuning and shading. Set too high, that filter never fires, and saturated midday records dilute the shading you actually measured.\n\nSolcast's AC value is being used instead, so clipping detection is working. Update **System capacity** in this integration's options to your inverter's AC nameplate rating so the stored value agrees, and this notice will clear on the next dampening cycle."
+    },
+    "schema_too_new": {
+      "title": "Database written by a newer version",
+      "description": "Your history database is schema v{found}, written by a newer version of this integration than the one now installed, which understands up to v{known}. This usually means the integration was downgraded, for example by picking an older release in HACS.\n\nTo keep the history intact, the database has been opened read-only: nothing new is recorded, and no dampening is sent to Solcast, so the factors the newer version last sent stay in place. The history itself is untouched.\n\nReinstall the newer version (or any later one) to carry on recording. This notice clears once it is installed."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "No weather source is enabled, so there is nothing to fetch. Turn on Open-Meteo (no API key required) or add an OpenWeatherMap key in the integration options."
+    },
+    "compact_refused": {
+      "message": "The database was not compacted: {reason}"
+    },
+    "database_disabled": {
+      "message": "The database is turned off in the integration options, so there is nothing to compact."
     }
   }
 }

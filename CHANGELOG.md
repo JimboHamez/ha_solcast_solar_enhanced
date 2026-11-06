@@ -5,6 +5,62 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0b3] - 2026-11-06
+
+**Beta: a history database about a quarter of the size, and more record-only groundwork for telling
+inverter curtailment apart from shading.** Tuning and dampening read the same values as before, through a
+view, so their results are unchanged to within the stored precision. Thanks to @BJReplay for testing the
+upgrade on a battery system before release.
+
+### Changed
+
+- **New storage format, about a quarter of the size.** The history moves into normalised tables. Values that
+  are the same for the whole property (sun position, weather, irradiance, export, curtailment inputs) are
+  stored once per half-hour instead of on every array's row, and every value is stored as a scaled integer.
+  On the reference store: 4.25 MB before, **0.59 MB** once compacted, about 1.6 MB a year.
+- **The upgrade migrates your history automatically, and checks it.** It first takes a backup
+  (`solcast_solar_enhanced.db.pre-v2.bak`, next to the database), then copies inside one transaction,
+  verifies each array's row count and output total against the old table, and rolls back on any mismatch.
+  It skips itself, and carries on in the old format, if the database fails an integrity check or there is
+  less than twice its size in free disk. It migrated real databases from four installs cleanly, the largest
+  in under half a second.
+- **Both formats are written until you compact,** so reinstalling 1.15.0b2 keeps working with its full
+  history, and anything it records meanwhile is carried over when you come back.
+- **Empty night slots are no longer written.** A half-hour is skipped when the sun is down and nothing was
+  measured or forecast, on the system or on any array. No calculation reads these rows, and they were over
+  half of the file. Twilight output and overnight battery export still keep a slot. The **Database
+  Records** sensor now grows about half as fast.
+- **A new install starts in the compact format** straight away, since there is no history to protect.
+
+### Added
+
+- **`compact_database` action.** Drops the old-format table once the last seven days agree in both formats,
+  and reclaims the space. Your call, never automatic. Afterwards, `tools/downgrade_v2.py` rebuilds the old
+  table if you need 1.15.0b2 again, and the backup is deleted 30 days after compaction.
+- **A database written by a newer version is opened read-only.** HACS and the Marketplace let you install
+  an older release over a newer one. If the database is newer than the installed version understands,
+  nothing is changed or recorded, a repair issue says which version wrote it, and no dampening is sent to
+  Solcast. Reinstalling the newer version clears it. Translated into all 11 languages.
+- **Slot gate measures (record-only).** Each daylight half-hour records how long every array dipped at once
+  (cloud), how long each array dipped while another did not (shade), how long export sat at the limit, the
+  sample interval, and a `gate_flags` record of what could be measured. They are time-weighted, so any
+  sensor sample rate gives the same answer, and a counter that did not tick in a slot reads 0 kW rather than
+  "unmeasured". Nothing reads them yet.
+- **A learned voltage model for inverter-side limiting (record-only).** It learns each MPPT tracker's normal
+  voltage from temperature and irradiance and records how far above it each half-hour sat, the signature of
+  an inverter holding back. The fixed off-MPP rule from 1.15.0b2 keeps running alongside for comparison.
+- **Diagnostics** show the schema version, whether the old format is still written, the backup, the latest
+  gate measures and the voltage model's training state.
+- **`tools/downgrade_v2.py`**, and the history import and irradiance backfill work on a compacted store.
+  All the `tools/` scripts run on plain Python again, from a checkout of this repository.
+
+### Fixed
+
+- **Clearing an optional sensor in the options flow, or in Reconfigure, now sticks.** An empty field is
+  missing from what the form submits, so the old value stayed in the entry and the integration kept
+  reading a sensor the user had just removed (for example a grid voltage or battery sensor). Every
+  cleared entity field on the Site & System and Battery steps is now stored as empty.
+
 ## [1.15.0b2] - 2026-10-30
 
 > Beta. Groundwork for telling inverter-side curtailment apart from shading (issue #109).

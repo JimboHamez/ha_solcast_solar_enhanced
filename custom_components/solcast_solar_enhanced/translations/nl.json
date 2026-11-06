@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "Systeemvermogen lijkt een DC-waarde (panelen)",
       "description": "Het systeemvermogen in de opties van deze integratie is {configured} kW, maar Solcast meldt een AC-nominaal omvormervermogen van {discovered} kW. Dat verschil is kenmerkend voor een paneelwaarde (DC): het veld heette tot versie 1.10.1 \"kW DC\", terwijl de waarde uitsluitend als AC-drempel wordt gebruikt.\n\nDe enige taak is het herkennen van omvormerbegrenzing — metingen op of boven vermogen × de begrenzingsdrempel gelden als begrenzing en worden uitgesloten van afstemming en beschaduwing. Te hoog ingesteld werkt dat filter nooit en verdunnen verzadigde middagmetingen de beschaduwing die je echt hebt gemeten.\n\nIn plaats daarvan wordt de AC-waarde van Solcast gebruikt, dus de detectie werkt. Werk **Systeemvermogen** in de opties bij naar het AC-nominale vermogen van je omvormer; deze melding verdwijnt bij de volgende cyclus."
+    },
+    "schema_too_new": {
+      "title": "Database geschreven door een nieuwere versie",
+      "description": "Je geschiedenisdatabase heeft schema v{found} en is geschreven door een nieuwere versie van deze integratie dan de nu geïnstalleerde, die alleen tot en met v{known} begrijpt. Meestal betekent dit dat de integratie is teruggezet naar een oudere versie, bijvoorbeeld door in HACS een oudere release te kiezen.\n\nOm de geschiedenis intact te houden, is de database alleen-lezen geopend: er wordt niets nieuws vastgelegd en er wordt geen demping naar Solcast gestuurd, zodat de factoren die de nieuwere versie het laatst stuurde blijven staan. De geschiedenis zelf blijft ongewijzigd.\n\nInstalleer de nieuwere versie (of een latere) opnieuw om verder te registreren. Deze melding verdwijnt zodra die is geïnstalleerd."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "Er is geen weerbron ingeschakeld, dus er valt niets op te halen. Schakel Open-Meteo in (geen API-sleutel nodig) of voeg een OpenWeatherMap-sleutel toe in de integratie-opties."
+    },
+    "compact_refused": {
+      "message": "De database is niet gecomprimeerd: {reason}"
+    },
+    "database_disabled": {
+      "message": "De database staat uit in de integratie-opties, dus er is niets om te comprimeren."
     }
   }
 }

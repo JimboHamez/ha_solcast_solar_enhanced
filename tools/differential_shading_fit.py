@@ -72,8 +72,10 @@ def load(db: Path, site: str) -> list[dict]:
     """Every daylight row for one site, as plain dicts."""
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
+    # Schema v2 stores read through the slot_rows view (the only source once compacted).
+    table = "slot_rows" if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_rows'").fetchone() else "solcast_data"
     rows = con.execute(
-        f"SELECT {COLUMNS} FROM solcast_data WHERE site = ? AND zenith < 90 ORDER BY period_end_epoch", (site,)
+        f"SELECT {COLUMNS} FROM {table} WHERE site = ? AND zenith < 90 ORDER BY period_end_epoch", (site,)
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]

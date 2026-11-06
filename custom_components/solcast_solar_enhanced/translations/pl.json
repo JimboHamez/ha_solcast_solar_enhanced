@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "Moc systemu wygląda na wartość DC (paneli)",
       "description": "Moc systemu zapisana w opcjach tej integracji to {configured} kW, ale Solcast podaje moc znamionową AC falownika jako {discovered} kW. Ta różnica jest typowa dla wartości paneli (DC): pole było opisane jako „kW DC” do wersji 1.10.1, choć wartość służy wyłącznie jako próg AC.\n\nJej jedynym zadaniem jest wykrywanie ograniczenia falownika — odczyty równe lub wyższe od mocy × próg ograniczenia są traktowane jako ograniczenie i wykluczane ze strojenia oraz zacienienia. Ustawiona zbyt wysoko sprawia, że filtr nigdy nie działa, a nasycone odczyty południowe rozmywają rzeczywiście zmierzone zacienienie.\n\nZamiast tego używana jest wartość AC z Solcast, więc wykrywanie działa. Zaktualizuj **Moc systemu** w opcjach do mocy znamionowej AC falownika; to powiadomienie zniknie w kolejnym cyklu."
+    },
+    "schema_too_new": {
+      "title": "Baza danych zapisana przez nowszą wersję",
+      "description": "Twoja baza danych historii ma schemat v{found} i została zapisana przez nowszą wersję tej integracji niż obecnie zainstalowana, która obsługuje tylko do v{known}. Zwykle oznacza to, że integracja została cofnięta do starszej wersji, na przykład przez wybranie starszego wydania w HACS.\n\nAby zachować historię, baza danych została otwarta tylko do odczytu: nic nowego nie jest zapisywane i żadne tłumienie nie jest wysyłane do Solcast, więc współczynniki wysłane ostatnio przez nowszą wersję pozostają bez zmian. Sama historia nie jest modyfikowana.\n\nZainstaluj ponownie nowszą wersję (lub dowolną późniejszą), aby wznowić zapisywanie. To powiadomienie zniknie po jej zainstalowaniu."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "Nie włączono żadnego źródła pogody, więc nie ma czego pobrać. Włącz Open-Meteo (nie wymaga klucza API) lub dodaj klucz OpenWeatherMap w opcjach integracji."
+    },
+    "compact_refused": {
+      "message": "Baza danych nie została skompaktowana: {reason}"
+    },
+    "database_disabled": {
+      "message": "Baza danych jest wyłączona w opcjach integracji, więc nie ma czego kompaktować."
     }
   }
 }

@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "La capacidad del sistema parece una cifra CC (paneles)",
       "description": "La capacidad guardada en las opciones de esta integración es {configured} kW, pero Solcast indica una potencia nominal CA del inversor de {discovered} kW. Esa diferencia es la firma de una cifra de paneles (CC): el campo estuvo etiquetado como «kW CC» hasta la versión 1.10.1, mientras que el valor solo se usa como umbral CA.\n\nSu única función es detectar el recorte del inversor: las lecturas iguales o superiores a capacidad × umbral de recorte se consideran recorte y se excluyen del ajuste y del sombreado. Si es demasiado alta, ese filtro nunca actúa y las lecturas saturadas del mediodía diluyen el sombreado realmente medido.\n\nEn su lugar se usa el valor CA de Solcast, así que la detección funciona. Actualice **Capacidad del sistema** en las opciones con la potencia nominal CA de su inversor; este aviso desaparecerá en el siguiente ciclo."
+    },
+    "schema_too_new": {
+      "title": "Base de datos escrita por una versión más reciente",
+      "description": "Tu base de datos de historial tiene el esquema v{found} y la escribió una versión de esta integración más reciente que la instalada ahora, que solo entiende hasta v{known}. Normalmente significa que la integración se ha bajado de versión, por ejemplo al elegir una versión anterior en HACS.\n\nPara conservar el historial, la base de datos se ha abierto en modo de solo lectura: no se registra nada nuevo y no se envía amortiguación a Solcast, así que se mantienen los factores que envió por última vez la versión más reciente. El historial no se modifica.\n\nVuelve a instalar la versión más reciente (o cualquier posterior) para seguir registrando. Este aviso desaparece cuando esté instalada."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "No hay ninguna fuente meteorológica activada, así que no hay nada que descargar. Activa Open-Meteo (no requiere clave de API) o añade una clave de OpenWeatherMap en las opciones de la integración."
+    },
+    "compact_refused": {
+      "message": "La base de datos no se compactó: {reason}"
+    },
+    "database_disabled": {
+      "message": "La base de datos está desactivada en las opciones de la integración, así que no hay nada que compactar."
     }
   }
 }

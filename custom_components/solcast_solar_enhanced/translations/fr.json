@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "La puissance du système ressemble à une valeur CC (panneaux)",
       "description": "La puissance enregistrée dans les options de cette intégration est de {configured} kW, mais Solcast indique une puissance nominale CA d'onduleur de {discovered} kW. Cet écart est la signature d'une valeur panneaux (CC) : le champ était étiqueté « kW CC » jusqu'à la version 1.10.1, alors que la valeur ne sert que de seuil CA.\n\nSon seul rôle est la détection de l'écrêtage onduleur — les relevés atteignant ou dépassant puissance × seuil d'écrêtage sont considérés comme de l'écrêtage et exclus du calibrage et de l'ombrage. Trop élevée, ce filtre ne se déclenche jamais et les relevés saturés de midi diluent l'ombrage réellement mesuré.\n\nLa valeur CA de Solcast est utilisée à la place, la détection fonctionne donc. Mettez à jour **Puissance du système** dans les options avec la puissance nominale CA de votre onduleur ; cet avis disparaîtra au prochain cycle d'ombrage."
+    },
+    "schema_too_new": {
+      "title": "Base de données écrite par une version plus récente",
+      "description": "Votre base de données d'historique est au schéma v{found}, écrite par une version de cette intégration plus récente que celle installée actuellement, qui ne comprend que jusqu'à v{known}. Cela signifie généralement que l'intégration a été rétrogradée, par exemple en choisissant une version antérieure dans HACS.\n\nPour préserver l'historique, la base de données a été ouverte en lecture seule : rien de nouveau n'est enregistré et aucun amortissement n'est envoyé à Solcast, de sorte que les facteurs envoyés en dernier par la version plus récente restent en place. L'historique lui-même n'est pas modifié.\n\nRéinstallez la version plus récente (ou une version ultérieure) pour reprendre l'enregistrement. Cet avis disparaît une fois celle-ci installée."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "Aucune source météo n'est activée, il n'y a donc rien à récupérer. Activez Open-Meteo (aucune clé API requise) ou renseignez une clé OpenWeatherMap dans les options de l'intégration."
+    },
+    "compact_refused": {
+      "message": "La base de données n'a pas été compactée : {reason}"
+    },
+    "database_disabled": {
+      "message": "La base de données est désactivée dans les options de l'intégration ; il n'y a donc rien à compacter."
     }
   }
 }

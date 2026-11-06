@@ -169,6 +169,234 @@ The three irradiance columns (`ghi`/`dni`/`dhi`) are the plane-of-array inputs f
 
 To browse the file, point the [sqlite-web add-on](https://github.com/hassio-addons/addon-sqlite-web) at it (WAL mode — leave the `-wal`/`-shm` sidecars in place).
 
+### Schema v2 and the slot gate (1.15.0b3)
+
+> Released in 1.15.0b3 after a private soak on dev builds 1–6 (1–6 Nov 2026). Every step
+> can be reverted to 1.15.0b2: before compaction by reinstalling it, after compaction with
+> `tools/downgrade_v2.py`.
+
+**Why.** Empty night slots were over half the rows, and every property-wide value
+(sun position, weather, irradiance, export, curtailment inputs) was copied onto each
+array's row. Schema v2 stores each value once and as a small integer: measured on the
+1 Nov 2026 store, the file goes from 4.25 MB to **0.59 MB (14%)**, about 1.6 MB a year.
+
+**Tables.** `sites (site_id, resource_id)` with `0 = '_total'`; `slot_property`, one row
+per slot keyed on `period_end_epoch`; `slot_site`, one row per slot per array, keyed on
+`(period_end_epoch, site_id)` `WITHOUT ROWID`. The `slot_rows` view joins them under the
+legacy column names and units, and every query in `SqliteStore` reads it (via
+`_source`), so the estimators did not change. `period_start` (nothing read it),
+`description` (nothing read it) and the `"index"` rowid are gone.
+
+**Scaled integers.** Each v2 column is declared once, as
+`(name, read type, default, scale)` in `V2_PROPERTY_COLUMNS` / `V2_SITE_COLUMNS`; the
+`CREATE`, the `ALTER` pass, the insert, the migration copy and the view are generated
+from those lists. Values are stored as `round(value × scale)`, half away from zero to
+match SQLite's `ROUND`, so a dual-written row and a migrated row hold the same integer.
+
+| Quantity | Scale | Stored unit |
+|---|---|---|
+| Power: `pv_*`, `pv_export*`, `battery_charge`, `export_limit` | ×1000 | W |
+| Voltage: `dc_voltage*`, `dc_vmed*`, `grid_v_*` | ×10 | 0.1 V |
+| Current: `dc_current*`, `dc_imed*` | ×100 | 0.01 A |
+| Angles: `zenith`, `azimuth` | ×100 | 0.01° |
+| Irradiance: `ghi`, `dni`, `dhi` | ×10 | 0.1 W/m² |
+| Temperature: `temp`, `inverter_temp_max` | ×10 | 0.1 °C |
+| Fractions: `inverter_limited`, `vratio_*` | ×1000 | 0.001 |
+| Minutes: `dc_offmpp_min` | ×100 | 0.01 min |
+| Seconds, counts, flags | ×1 | — |
+
+Irradiance is ×10 rather than whole W/m² because Open-Meteo's half-hour value is the
+mean of two integers: x.5 is common, and rounding it flipped rows on the Kt threshold.
+The `-1` "unknown" sentinel survives every scale, but only on the columns whose
+default is unknown; those are all non-negative when known, so no real value can round
+onto it. Temperature can be negative and has no sentinel, so -0.1 °C reads back as
+-0.1. Against the legacy table, reads differ only by rows below the stored precision:
+14 dawn rows under 0.5 W and two rows within 0.02 W/m² of the Kt threshold, out of
+about 1,500.
+
+**Lifecycle (`PRAGMA user_version`).**
+
+| Version | Meaning |
+|---|---|
+| 0–1 | Legacy only (1 = azimuth repair done) |
+| 2 | v2 tables plus the legacy table, **both written** (the soak) |
+| 3 | Compacted: no legacy table, either dropped on request or never created (a new file, 1.15.0b3.dev6) |
+| > 3 | Written by a newer release (a downgrade): opened read-only (1.15.0b3.dev4) |
+
+- *New file* (1.15.0b3.dev6): a file with no tables starts at **3**, the v2 tables and view only,
+  created with the version in one transaction (`_create_compacted`). A new install has no history to
+  protect, so dual-writing would only double the file. A file whose legacy table exists but is empty
+  (an earlier release created it) starts at 2 and dual-writes, since that release may come back.
+  1.15.0b2 on a new file creates its own empty legacy table. The next start then sees it, dual-writes
+  and resyncs what 1.15.0b2 wrote.
+- *Migration 1 → 2* (`_migrate_v2`, from `async_migrate`, after the azimuth repair):
+  pre-flight `PRAGMA quick_check` and free disk of at least twice the file, else stay
+  on 1; `VACUUM INTO <db>.pre-v2.bak`; then one transaction creates, copies every
+  non-empty slot, checks per-site row counts and output totals (to within rounding)
+  and only then sets 2. Any error rolls it all back.
+- *Dual-write*: each record goes to both schemas in one transaction. 1.15.0b2 can be
+  reinstalled at any point and finds a complete table; `tests/test_store_v2.py` runs
+  the released 1.15.0b2 store module (a frozen copy in `tests/fixtures`) against
+  migrated files to prove it.
+- *Resync*: on every start while a legacy table exists, every legacy slot v2 lacks is copied (`INSERT OR
+  IGNORE`), which covers a spell on 1.15.0b2 and a `tools/import_history.py` run.
+- *Compaction*: the `compact_database` action, user-triggered only. It refuses unless the
+  last `COMPACT_VERIFY_DAYS` (7) agree per site in both schemas, then drops the legacy
+  table, sets 3 and `VACUUM`s. The backup is deleted `BACKUP_KEEP_DAYS` (30) after.
+- *Downgrade guard (1.15.0b3.dev4)*: a file above `SCHEMA_KNOWN` (3) was written by a
+  newer release. HACS offers the last five releases, downgrades included, and has no way
+  to force an upgrade path, so every release carries the whole migration chain and
+  refuses what comes after it. The store opens read-only (nothing created, altered,
+  migrated, pruned or recorded), the coordinator raises the `schema_too_new` repair
+  issue, and dampening is not pushed: factors built from history this release can't
+  read would be a neutral curve that undoes the newer release's push. Raise
+  `SCHEMA_KNOWN` with every new layout; a test pins it. Releases before this guard
+  can't be fixed, which is why compaction stays manual.
+- *Back to 1.15.0b2 after compaction*: `tools/downgrade_v2.py` rebuilds the legacy table
+  from the view and returns the file to 2. Lost: `description`, the measured
+  `period_start`, precision below the scales, and the empty night rows never written.
+
+**Adding a v2 column** is one entry in `V2_*_COLUMNS` plus its `StoreRecord` key; while
+the soak lasts, a column that also exists in the legacy table still needs the legacy
+three-list edit above.
+
+#### Column reference
+
+Generated from `V2_PROPERTY_COLUMNS` / `V2_SITE_COLUMNS`, and a test pins it to them.
+**Scale** is what a value is multiplied by before it is stored as an integer, and the
+view divides it back out. **Missing** is the default a slot gets when the value was
+not measured, in the view's units. Where that is `−1`, 0 is a real reading; where it
+is 0, a 0 can mean either, and the meaning column says which. Keys: `slot_property` on
+`period_end_epoch`, `slot_site` on `(period_end_epoch, site_id)`, `sites` maps `site_id`
+to the Solcast `resource_id`, with `0 = '_total'`.
+
+| Column | Table | Scale | Missing | Meaning |
+|---|---|---|---|---|
+| `zenith` | property | ×100 | 0 | solar zenith at the slot midpoint (°) |
+| `azimuth` | property | ×100 | 0 | solar azimuth at the slot midpoint (°) |
+| `temp` | property | ×10 | 0 | air temperature (°C), OWM or Open-Meteo |
+| `clouds` | property | ×1 | 100 | cloud cover (%); 100 when no weather source answered |
+| `ghi` | property | ×10 | 0 | Open-Meteo global horizontal irradiance, half-hour mean (W/m²) |
+| `dni` | property | ×10 | 0 | Open-Meteo direct normal irradiance, half-hour mean (W/m²) |
+| `dhi` | property | ×10 | 0 | Open-Meteo diffuse horizontal irradiance, half-hour mean (W/m²) |
+| `pv_export` | property | ×1000 | 0 | export, half-hour mean (kW) |
+| `pv_export_max` | property | ×1000 | 0 | export, interval peak (kW); 0 = unknown |
+| `battery_charge` | property | ×1000 | 0 | battery charge, half-hour mean (kW); display only |
+| `grid_v_max` | property | ×10 | 0 | grid voltage, slot max (V); 0 = unknown |
+| `grid_v_med` | property | ×10 | 0 | grid voltage, slot median (V); 0 = unknown |
+| `inverter_temp_max` | property | ×10 | 0 | inverter temperature, slot max (°C); 0 = unknown |
+| `inverter_limited` | property | ×1000 | −1 (unknown) | share of the slot the "limited" input was on (0–1) |
+| `export_limit` | property | ×1000 | −1 (unknown) | export limit in force (kW) |
+| `sky_dip_s` | property | ×1 | −1 (unknown) | gate: seconds every array dipped at once |
+| `sky_dip_runs` | property | ×1 | −1 (unknown) | gate: separate sky-dip episodes |
+| `export_pinned_s` | property | ×1 | −1 (unknown) | gate: seconds export sat in the limit's clipping band |
+| `vexcess_s` | property | ×1 | −1 (unknown) | gate: steady seconds every tracker sat +5% above its learned Vmp |
+| `vratio_p50` | property | ×1000 | −1 (unknown) | gate: median V ÷ model, lowest tracker |
+| `vratio_p90` | property | ×1000 | −1 (unknown) | gate: p90 V ÷ model, lowest tracker |
+| `sample_gap_s` | property | ×100 | −1 (unknown) | gate: median sample interval of the inputs (s) |
+| `gate_flags` | property | ×1 | −1 (unknown) | gate: `GateFlag` bits (below) |
+| `pv_actual` | site | ×1000 | 0 | generation, half-hour mean (kW) |
+| `pv_estimate` | site | ×1000 | 0 | Solcast forecast as `detailedForecast` shows it, dampened (kW) |
+| `pv_estimate10` | site | ×1000 | 0 | Solcast p10 (kW) |
+| `pv_estimate90` | site | ×1000 | 0 | Solcast p90 (kW) |
+| `pv_estimate_undampened` | site | ×1000 | 0 | Solcast forecast before our pushed factors (kW); 0 = unavailable |
+| `dc_voltage1` | site | ×10 | 0 | MPPT 1 DC voltage, slot max (V) |
+| `dc_current1` | site | ×100 | 0 | MPPT 1 DC current, slot min (A) |
+| `dc_voltage2` | site | ×10 | 0 | MPPT 2 DC voltage, slot max (V) |
+| `dc_current2` | site | ×100 | 0 | MPPT 2 DC current, slot min (A) |
+| `dc_vmed1` | site | ×10 | 0 | MPPT 1 DC voltage, slot median (V) |
+| `dc_vmed2` | site | ×10 | 0 | MPPT 2 DC voltage, slot median (V) |
+| `dc_imed1` | site | ×100 | 0 | MPPT 1 DC current, slot median (A) |
+| `dc_imed2` | site | ×100 | 0 | MPPT 2 DC current, slot median (A) |
+| `dc_offmpp_min` | site | ×100 | −1 (unknown) | minutes every tracker on the inverter was off-MPP at once |
+| `shade_dip_s` | site | ×1 | −1 (unknown) | gate: seconds this array dipped while another did not |
+
+**The `slot_rows` view** joins `slot_site` to `slot_property` on the slot and to `sites`
+for the `resource_id`, and returns one row per slot per array (with `_total` as an array)
+under the legacy names: `period_end_epoch`, `site`, `period_end` (rebuilt as ISO-8601
+UTC from the epoch) and every column above divided back to its legacy unit. A `−1`
+default is passed through unscaled, so "unknown" reads as `−1.0` at every scale. Every
+`SqliteStore` query and every `tools/` reader goes through it (`_source`, `read_source`).
+
+**What changed from `solcast_data`.**
+- *Gone*: the `"index"` rowid, `period_start` and `description` (nothing read either),
+  and the `UNIQUE(period_end_epoch, site)` constraint, which the two primary keys replace.
+- *Stored once per slot*: every property-wide value. The legacy table copied it onto
+  every array's row, and the `_total` row's copy wins when they differed.
+- *Not written*: empty night slots (1.15.0b3.dev1). A slot is skipped only when the sun
+  is down (zenith ≥ 90°) and every measured and forecast value, property-wide and per
+  array, is zero (`coordinator.is_empty_night_slot`; the migration copy applies the same
+  rule).
+- *New, v2 only*: the gate columns. They have no legacy counterpart, so 1.15.0b2 never
+  sees them. `tools/downgrade_v2.py` rebuilds only the legacy table and leaves the v2
+  tables, gate values included, in place.
+- *Precision*: values round to the scale. A migrated row and a dual-written one hold
+  the same integer (see above).
+
+#### Slot gate (record-only)
+
+Each daylight slot also records what its recorder samples show, so a later estimator
+gate (step 3) can decide which slots measure shading. **Nothing reads these yet.**
+Computed in `slot_gate.py` and `vmodel.py`, pure Python, in the executor, from the same
+batched recorder query as the DC capture (about 25 ms a slot on an i5, an estimated
+0.1–0.2 s on a Raspberry Pi 4). A failure leaves the defaults and never costs the row.
+
+| Column | Table | Meaning |
+|---|---|---|
+| `sky_dip_s` | property | seconds every array's normalised power dipped at once (cloud) |
+| `sky_dip_runs` | property | separate sky-dip episodes of at least `GATE_RUN_MIN_S` |
+| `shade_dip_s` | site | seconds this array dipped while another did not (shade) |
+| `export_pinned_s` | property | seconds export was at or above the limit's clipping band |
+| `vexcess_s` | property | steady seconds every tracker sat `VMODEL_EXCESS` (+5%) above its learned MPP voltage |
+| `vratio_p50`, `vratio_p90` | property | median and p90 of V ÷ model (lowest tracker), the evidence behind `vexcess_s` |
+| `sample_gap_s` | property | median sample interval of the inputs |
+| `gate_flags` | property | `GateFlag` bits below |
+
+Everything is **time-weighted** on the merged event timeline (a state holds until the
+next one), so 10 Hz, 1 Hz and change-only sensors give the same seconds. Power is
+divided by each array's clear-sky plane-of-array shape, which removes the sunrise and
+sunset ramp, and a dip is judged against the array's own time-weighted p90 outside
+export-pinned time. Inputs per array, best first: DC trackers (V × I), DC power sensors
+(`dc_split`), its own generation sensor (`direct`, including microinverter groups), an
+energy counter differenced over at least 300 s. A counter's last reading is held to the
+slot end while the sensor still reports a number (1.15.0b3.dev3). The recorder logs a
+counter only when it changes, so export that never ticked because the house used every
+watt is a measured 0 kW rather than a missing series, and the minutes after the last tick
+count too. An unavailable counter is not held: it is unknown, not flat.
+
+`GateFlag` (`const.py`; a test pins this table to the enum, and bit positions are part
+of the stored format, so never renumber):
+
+| Bit | Name | Set when |
+|---|---|---|
+| 0 | `DC_TRACKERS` | per-tracker DC voltage and current were present |
+| 1 | `AC_ARRAYS` | per-array AC power was used instead (no DC) |
+| 2 | `CROSS_REF` | at least two independent arrays saw the same sky, so sky and shade are separable |
+| 3 | `COUNTER_SOURCE` | an array's series came from an energy counter (≥ 300 s windows) |
+| 4 | `COARSE` | the median sample interval was above `GATE_COARSE_GAP_S` (60 s) |
+| 5 | `PARTIAL` | an input was missing for more than `GATE_PARTIAL_FRACTION` (10%) of the slot |
+| 6 | `EXPORT_SERIES` | an export series and limit were available, so `export_pinned_s` is valid |
+| 7 | `LOW_SUN` | sun elevation below `GATE_LOW_SUN_ELEVATION` (15°): shadow edges look like cloud |
+| 8 | `POA_SHAPE` | dips were judged against the array's plane-of-array clear-sky shape |
+| 9 | `VMODEL_READY` | the voltage model was trained, so the `v*` columns are valid |
+| 10 | `EXPORT_COUNTER` | the export series came from an energy counter, so `export_pinned_s` resolves no finer than 300 s (1.15.0b3.dev5) |
+
+The flags say what was **measurable**, never whether to keep the slot. Thresholds are
+applied at read time, so they can be retuned against stored data after the recorder's
+roughly ten days of raw samples are gone.
+
+**The learned voltage model** replaces the fixed off-MPP rule, which read 0 through two
+fully limited hours on a Fronius GEN24 (limiting raised V 7–9% and cut I 23–27%, never
+reaching its I < 0.3× test). Per tracker, `V = a + b·T_amb + c·G + d·ln G`, fitted by
+least squares on running sums (no samples stored), decayed daily by `VMODEL_FORGET`
+(about a 14-day memory) and persisted in HA `Store`. String length, panel type and the
+temperature coefficient land in the fitted numbers. It trains only on steady, unshaded,
+non-scan samples with export clear of the limit (or, with no export series, within 3σ
+of the fit), and judges nothing below `VMODEL_MIN_G` (150 W/m²). Replayed online over
+22 Oct–1 Nov 2026 against export-pinned truth: **0 false slot flags**, 15 of 57 pinned
+slots caught; the misses are broken-cloud bursts and shallow trims, where little energy
+was lost. `dc_offmpp_min` keeps its old rule during the soak, for comparison.
+
 ### Total PV energy balance
 
 ```
@@ -846,7 +1074,7 @@ A separate enhancement (within this integration, no base change needed): the cle
 
 ## Change log
 
-The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.15.0b2**, a beta that adds record-only inverter-side curtailment capture (grid voltage, inverter temperature, an inverter-limited share, the export limit in force and same-sample off-MPP minutes; see *Inverter-side curtailment capture* under Storage, issue #109) and otherwise carries **v1.15.0b1**: a beta that tidies the Battery Storage step (one place for battery input, help text, filtered pickers, W→kW, a reverse-sign toggle, and the sign applied before the clamp; discussion #104) and adds internal typed data models (`models.py`). **v1.14.0** promotes `1.14.0b2` unchanged. **v1.14.0b2** is a beta that stops resetting the base's hourly `damp00…23` options (the hand-tuned values they may hold are never written outside the no-site fallback; see Resolution, schedule and diagnostics) and otherwise carries **v1.14.0b1** unchanged: a beta adding the opt-in sun-position dampening estimator (see Feature 3, *Opt-in sun-position estimator*) for arrays behind a hard horizon (issue #91); it is off by default and the standard estimator is unchanged. **v1.13.1** is a patch that tests the integration against Home Assistant 2026.10.0 with no design impact: 2026.10 types config-flow form schemas as `probatio.Schema`, so each `data_schema=` carries a type-checker annotation. **v1.13.0** promotes `1.13.0b1` to stable unchanged. The 1.13.0 line pushes all 48 half-hour dampening slots instead of 24 hourly means, and always addresses the push to a named Solcast site (single-site included), with the base's global hourly values kept only as a no-site fallback (see Resolution, schedule and diagnostics). **v1.12.0** raised the minimum Home Assistant to 2026.8.0 and brings the integration's HA API use current (`via_device_id` device links, no update listener alongside the flows' own reloads) with no design impact on tuning, dampening or storage. **v1.11.1**, a patch on the stable 1.11.0 line: site discovery now identifies the base's rooftop sensors by entity-registry platform rather than by entity-id substring, so installs whose base predates HA 2026.4 (unprefixed `sensor.<site>` ids) reach the sites step (discussion #65). **v1.11.0** promotes the seven-beta line to stable unchanged. The 1.11.0 line added the geometric shading advisory (Feature 8, b3), the `shared_no_dc` measurement topology for properties with one combined meter and no per-array telemetry (b4), committed the differential shading fit as `tools/differential_shading_fit.py` (b5), and moved both export-curtailment gates onto the stored interval **peak** export `pv_export_max` (issue #86, b7 — see Feature 2). Earlier, **v1.10.0b1** moved dampening's clear-sky quality weighting onto the measured Kt index. Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`). **v1.10.0** promotes that ten-beta line to stable unchanged; the design content above is current for it.
+The per-release history lives in [CHANGELOG.md](CHANGELOG.md). This document tracks the design and is aligned to **v1.15.0b3**, a beta that moves the store to the normalised schema v2 (about a quarter of the size, migrated automatically with a backup and a verified copy, both formats dual-written until the user runs `compact_database`; see *Schema v2 and the slot gate* under Storage), stops writing empty night slots, opens a database from a newer release read-only, and adds the record-only slot-gate measures and learned voltage model. It otherwise carries **v1.15.0b2**, a beta that adds record-only inverter-side curtailment capture (grid voltage, inverter temperature, an inverter-limited share, the export limit in force and same-sample off-MPP minutes; see *Inverter-side curtailment capture* under Storage, issue #109) and otherwise carries **v1.15.0b1**: a beta that tidies the Battery Storage step (one place for battery input, help text, filtered pickers, W→kW, a reverse-sign toggle, and the sign applied before the clamp; discussion #104) and adds internal typed data models (`models.py`). **v1.14.0** promotes `1.14.0b2` unchanged. **v1.14.0b2** is a beta that stops resetting the base's hourly `damp00…23` options (the hand-tuned values they may hold are never written outside the no-site fallback; see Resolution, schedule and diagnostics) and otherwise carries **v1.14.0b1** unchanged: a beta adding the opt-in sun-position dampening estimator (see Feature 3, *Opt-in sun-position estimator*) for arrays behind a hard horizon (issue #91); it is off by default and the standard estimator is unchanged. **v1.13.1** is a patch that tests the integration against Home Assistant 2026.10.0 with no design impact: 2026.10 types config-flow form schemas as `probatio.Schema`, so each `data_schema=` carries a type-checker annotation. **v1.13.0** promotes `1.13.0b1` to stable unchanged. The 1.13.0 line pushes all 48 half-hour dampening slots instead of 24 hourly means, and always addresses the push to a named Solcast site (single-site included), with the base's global hourly values kept only as a no-site fallback (see Resolution, schedule and diagnostics). **v1.12.0** raised the minimum Home Assistant to 2026.8.0 and brings the integration's HA API use current (`via_device_id` device links, no update listener alongside the flows' own reloads) with no design impact on tuning, dampening or storage. **v1.11.1**, a patch on the stable 1.11.0 line: site discovery now identifies the base's rooftop sensors by entity-registry platform rather than by entity-id substring, so installs whose base predates HA 2026.4 (unprefixed `sensor.<site>` ids) reach the sites step (discussion #65). **v1.11.0** promotes the seven-beta line to stable unchanged. The 1.11.0 line added the geometric shading advisory (Feature 8, b3), the `shared_no_dc` measurement topology for properties with one combined meter and no per-array telemetry (b4), committed the differential shading fit as `tools/differential_shading_fit.py` (b5), and moved both export-curtailment gates onto the stored interval **peak** export `pv_export_max` (issue #86, b7 — see Feature 2). Earlier, **v1.10.0b1** moved dampening's clear-sky quality weighting onto the measured Kt index. Earlier milestones: config-flow field placement by topology + the multi-site MPPT-diagnostic fix (v1.8.0), the move to stdlib `sqlite3` storage (v1.5.0), the scipy→numpy grid-search switch and convergence gate (v1.6.4), the azimuth-convention fix (v1.6.5), clear-sky SQL filtering and `[0,1]` dampening clamp (v1.6.6), the curtailment-aware rollout (Phase 1 dampening clip-forecast v1.6.7, Phase 2 DC capture v1.6.8), DC-telemetry capture + diagnostic sensor (v1.6.9), and Open-Meteo plane-of-array transposition tilt tuning + the clearness-index Kt clear-sky gate (v1.7.0). **v1.10.0b10** is housekeeping against the HA [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist) with no design impact on tuning/dampening/storage: actions register in `async_setup` (`action-setup`), the coordinator moved to `entry.runtime_data` (`runtime-data`), the config flow connection-tests an enabled OWM key (`test-before-configure`), and all 23 sensors name themselves via translation keys (`entity-translations`). **v1.10.0** promotes that ten-beta line to stable unchanged; the design content above is current for it.
 
 ---
 

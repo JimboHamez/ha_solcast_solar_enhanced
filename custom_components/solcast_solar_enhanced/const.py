@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import IntFlag
+
 DOMAIN = "solcast_solar_enhanced"
 BASE_DOMAIN = "solcast_solar"
 PLATFORMS = ["sensor"]
@@ -72,6 +74,73 @@ CONF_DB_ENABLED = "db_enabled"
 CONF_DB_RETENTION_DAYS = "db_retention_days"
 DEFAULT_DB_RETENTION_DAYS = 0
 DB_RETENTION_MIN_RECOMMENDED_DAYS = 400
+# A slot whose sun is at or below the horizon and that measured and forecast
+# nothing is not written: every estimator query requires pv_actual > 0, so such a
+# row is never read, and night slots are over half of all rows. A slot with any
+# output, export, battery charge or forecast is still written, so twilight and
+# overnight battery export are kept.
+NIGHT_ZENITH_DEG = 90.0
+
+
+class GateFlag(IntFlag):
+    """What a slot's gate measures could see (``gate_flags`` column, schema v2).
+
+    The flags record what was *measurable*, never whether to keep the slot: the
+    thresholds are applied at read time, so they can be retuned against stored data
+    after the recorder's raw samples are gone. DESIGN_DOCUMENT.md carries the same
+    table, and a test pins the two together. Bit positions are part of the stored
+    format: never renumber, only append.
+    """
+
+    DC_TRACKERS = 1 << 0  # Per-tracker DC voltage and current were present.
+    AC_ARRAYS = 1 << 1  # Per-array AC power was used instead (no DC).
+    CROSS_REF = 1 << 2  # At least two independent arrays saw the same sky.
+    COUNTER_SOURCE = 1 << 3  # An array's series came from an energy counter (>= 300 s windows).
+    COARSE = 1 << 4  # Median sample interval above GATE_COARSE_GAP_S.
+    PARTIAL = 1 << 5  # An input was missing for more than GATE_PARTIAL_FRACTION of the slot.
+    EXPORT_SERIES = 1 << 6  # An export series and limit were available (export_pinned_s is valid).
+    LOW_SUN = 1 << 7  # Sun elevation below GATE_LOW_SUN_ELEVATION (shadow-edge ambiguity).
+    POA_SHAPE = 1 << 8  # Dips were judged against the array's plane-of-array clear-sky shape.
+    VMODEL_READY = 1 << 9  # The voltage model was trained, so vexcess_s is valid.
+    EXPORT_COUNTER = 1 << 10  # The export series came from an energy counter, so export_pinned_s is >= 300 s coarse.
+
+
+# A normalised power below this share of the slot's own p90 counts as a dip.
+GATE_DIP_THRESHOLD = 0.8
+# A sky-dip episode shorter than this is not counted as a run (sensor jitter).
+GATE_RUN_MIN_S = 10.0
+GATE_COARSE_GAP_S = 60.0
+GATE_PARTIAL_FRACTION = 0.1
+GATE_LOW_SUN_ELEVATION = 15.0
+# An energy counter becomes a power series only over windows at least this long
+# (the same reasoning as EXPORT_PEAK_WINDOW_S: a counter is a staircase).
+GATE_COUNTER_WINDOW_S = 300.0
+
+# Learned per-tracker MPP-voltage model (vmodel.py), the replacement for the
+# fixed off-MPP rule. Constants from the 22 Oct - 1 Nov 2026 1 Hz validation:
+# +5% on steady samples gave 0 false slot flags against export-pinned truth.
+VMODEL_EXCESS = 0.05  # Voltage this far above the model, on every tracker, counts as limited.
+VMODEL_GRID_S = 5.0  # Evaluation grid; samples are step-held onto it.
+VMODEL_STEADY_WINDOW_S = 120.0  # Half-width of the steadiness window.
+VMODEL_STEADY_CV = 0.03  # Current coefficient of variation below which a sample is steady.
+VMODEL_SCAN_WINDOW_S = 30.0  # MPPT scan dips are judged against the max over this half-width.
+VMODEL_SCAN_RATIO = 0.95
+VMODEL_SHADE_SPREAD = 0.05  # Trackers further apart than this are bypass-shaded, not limited.
+VMODEL_MIN_CURRENT_A = 0.5
+VMODEL_MIN_SAMPLES = 2000.0  # Healthy samples per tracker before the model is used.
+VMODEL_FORGET = 0.93  # Daily decay of the running sums: about a 14-day memory.
+VMODEL_CLEAN_EXPORT_FRAC = 0.8  # Training needs export below this share of the limit...
+VMODEL_CLEAN_EXPORT_WINDOW_S = 300.0  # ...for this long either side.
+VMODEL_OUTLIER_SIGMA = 3.0  # Without an export series, reject training samples this far above the fit.
+# Below this plane-of-array irradiance the model extrapolates (31 Oct 19:00, 9 W/m², read +5%), and
+# an export limit cannot bind at that output anyway, so samples are neither judged nor trained on.
+VMODEL_MIN_G = 150.0
+# Persisting the model after every slot would write the store every half-hour for no
+# gain; a delayed save coalesces them and still lands before a normal shutdown.
+VMODEL_SAVE_DELAY_S = 600.0
+# Clear-sky diffuse share of GHI, for the plane-of-array shape the gate divides by.
+# Only the shape across a half-hour matters, so a fixed split is enough.
+CLEAR_DIFFUSE_SHARE = 0.15
 
 CONF_OWM_ENABLED = "owm_enabled"
 CONF_OWM_API_KEY = "owm_api_key"
@@ -294,6 +363,9 @@ ISSUE_DAMPENING_GATED_LEGACY = "dampening_gated"
 # value so the clipping filter still works, but the stored number stays wrong and
 # would take over if discovery ever lapsed.
 ISSUE_CAPACITY_LOOKS_DC = "capacity_looks_dc"
+# Raised when the database was written by a newer release than the one running (a
+# downgrade): the store is opened read-only and nothing is recorded or pushed.
+ISSUE_SCHEMA_TOO_NEW = "schema_too_new"
 # Real DC/AC ratios run 1.1-1.35; 1.05 catches them while tolerating rounding and
 # the odd genuinely oversized-inverter install.
 CAPACITY_DC_SUSPECT_RATIO = 1.05
@@ -351,3 +423,4 @@ SENSOR_SITE_SHADING_ADVISORY = "site_shading_advisory"
 SERVICE_RUN_PV_TUNING = "run_pv_tuning"
 SERVICE_RUN_DAMPENING_UPDATE = "run_dampening_update"
 SERVICE_FETCH_WEATHER = "fetch_weather"
+SERVICE_COMPACT_DATABASE = "compact_database"

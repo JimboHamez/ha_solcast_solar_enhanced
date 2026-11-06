@@ -84,7 +84,23 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.15.0b2
+## 🆕 What's new in v1.15.0b3
+
+**Beta: a history database about a quarter of the size, plus more record-only groundwork for telling inverter curtailment apart from shading.** Tuning and dampening read the same values as before, so **their results don't change**. Thanks to @BJReplay for testing the upgrade on a battery system before release.
+
+- **A much smaller database.** History moves to a new format that stores whole-property values once per half-hour and every value as a compact integer. Once compacted, the reference store went from 4.25 MB to 0.59 MB, about 1.6 MB a year. Empty night half-hours are no longer written at all.
+- **The upgrade is automatic and checked.** It backs up your database first (`solcast_solar_enhanced.db.pre-v2.bak`), copies everything in one transaction, checks the copy against the original, and rolls back on any mismatch. Until you compact, both formats are written, so 1.15.0b2 can be reinstalled with its full history.
+- **[`compact_database`](#services) reclaims the space** once you're happy, after the last seven days agree in both formats. It never runs by itself. See [going back to an older version](#going-back-to-an-older-version).
+- **Installing an older version over a newer database no longer touches it.** The database is opened read-only and a repair issue explains what happened.
+- **More record-only measures each half-hour:** how long all arrays dipped together (cloud) or one dipped alone (shade), how long export sat at the limit, and how far each MPPT tracker's voltage sat above what it learned is normal, the signature of an inverter holding back. Nothing reads them yet.
+- **Fixed:** clearing an optional sensor in the integration's options, or in Reconfigure, now sticks. It used to keep reading the sensor you'd removed.
+
+**Upgrading?** Drop-in on Home Assistant 2026.8.0 or later; no Solcast base update is needed. Your settings, history and entities carry over, and the migration runs once at the first start. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
+
+[CHANGELOG](CHANGELOG.md#1150b3---2026-11-06) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b3)
+
+<details>
+<summary><b>What landed in v1.15.0b2</b></summary>
 
 **Beta: groundwork for telling inverter curtailment apart from shading.** When your inverter holds its output down, whether from an export limit, a network command (DOE) or derating, the lost output can be booked as shading. This beta starts recording what each half-hour looked like at the inverter, so a later release can keep those slots out of dampening and tuning. It only records: **nothing here changes tuning or dampening yet.** Thanks to @guiguan for the 5-second trace of a real event in [issue #109](https://github.com/JimboHamez/ha_solcast_solar_enhanced/issues/109) that this is built and tested on.
 
@@ -95,6 +111,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later. Your settings, history and entities are unchanged, and no Solcast base update is needed. The new sensors are optional. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
 
 [CHANGELOG](CHANGELOG.md#1150b2---2026-10-30) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b2)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.15.0b1</b></summary>
@@ -786,8 +804,9 @@ Each array's display name comes from the **sites** config step (defaults to its 
 | `solcast_solar_enhanced.run_pv_tuning` | Force immediate PV tuning |
 | `solcast_solar_enhanced.run_dampening_update` | Force immediate dampening recalculation and push |
 | `solcast_solar_enhanced.fetch_weather` | Force an immediate refresh of every enabled weather/irradiance source (Open-Meteo, OWM) |
+| `solcast_solar_enhanced.compact_database` | Drop the old-format history table and reclaim its space, about three quarters of the file. Refuses until the last seven days agree in both formats |
 
-All three take no parameters and act on the configured entry. They stay registered even while the integration is unloaded, so automations that reference them keep validating; calling one in that state raises an error telling you the integration isn't loaded, rather than doing nothing.
+All four take no parameters and act on the configured entry. They stay registered even while the integration is unloaded, so automations that reference them keep validating; calling one in that state raises an error telling you the integration isn't loaded, rather than doing nothing.
 
 They also raise when the work itself fails, rather than logging quietly and reporting success — so an automation step built on one will stop instead of carrying on as though it had run. `fetch_weather` additionally refuses when no weather source is enabled at all, since there would be nothing to fetch.
 
@@ -938,9 +957,24 @@ python tools/standalone_tuning.py --sqlite config/solcast_solar_enhanced.db --al
 
 Requires `numpy`. Run `--help` for all options.
 
+### Going back to an older version
+
+Up to 1.15.0b2, the history lived in one table. From 1.15.0b3 it lives in a smaller format, and until you run `compact_database` the old table is written too. So:
+
+- **Before compacting**, reinstalling 1.15.0b2 just works, with all your history. Anything it records meanwhile is carried over when you upgrade again.
+- **After compacting**, rebuild the old table first, with the integration disabled, from a checkout of this repository:
+
+  ```bash
+  python tools/downgrade_v2.py --sqlite config/solcast_solar_enhanced.db
+  ```
+
+  Or restore `solcast_solar_enhanced.db.pre-v2.bak`, which is kept for 30 days after compaction (anything recorded since the upgrade is then lost).
+- **A new install** starts in the compact format, so the same applies: run `tools/downgrade_v2.py` first if you want 1.15.0b2 to see its history.
+- **Installing an older version over a database a newer one wrote** leaves the database untouched: it is opened read-only, nothing is recorded and no dampening is sent, and a repair issue says so. Reinstall the newer version to carry on.
+
 ### Backfill irradiance
 
-`tools/backfill_irradiance.py` fills the `ghi`/`dni`/`dhi` columns on existing rows from Open-Meteo's free historical archive, so transposition-based tilt tuning is useful immediately instead of waiting months for fresh data to accumulate. Stdlib-only; safe to re-run (fills only rows still missing irradiance).
+`tools/backfill_irradiance.py` fills the `ghi`/`dni`/`dhi` columns on existing rows from Open-Meteo's free historical archive, so transposition-based tilt tuning is useful immediately instead of waiting months for fresh data to accumulate. Safe to re-run (fills only rows still missing irradiance). Needs only plain Python 3, but run it from a checkout of this repository: it reads the store through the integration's own storage module.
 
 ```bash
 python tools/backfill_irradiance.py --sqlite config/solcast_solar_enhanced.db \

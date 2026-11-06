@@ -196,6 +196,15 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path("tests/fixtures"))
     args = ap.parse_args()
 
+    # The fixtures are legacy-layout files cut from a copy of the source, so the
+    # source needs the legacy table. A compacted (schema v3) store has none.
+    con = sqlite3.connect(args.db)
+    has_legacy = con.execute("SELECT 1 FROM sqlite_master WHERE name = 'solcast_data'").fetchone() is not None
+    con.close()
+    if not has_legacy:
+        print("source is compacted (schema v3, no legacy table): run tools/downgrade_v2.py on a COPY first")
+        return 1
+
     sites = site_ids(args.db)
     if len(sites) < 2:
         print(f"source has {len(sites)} per-array site(s); need 2 to derive the multi-array fixtures")

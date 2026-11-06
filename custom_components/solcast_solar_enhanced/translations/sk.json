@@ -346,6 +346,10 @@
     "capacity_looks_dc": {
       "title": "Výkon systému vyzerá ako hodnota DC (panely)",
       "description": "Výkon systému uložený v možnostiach tejto integrácie je {configured} kW, ale Solcast uvádza menovitý striedavý (AC) výkon meniča {discovered} kW. Tento rozdiel je typický pre hodnotu panelov (DC): pole bolo až do verzie 1.10.1 označené ako „kW DC“, hoci sa hodnota používa výhradne ako AC prah.\n\nJej jedinou úlohou je zisťovanie orezania meniča — merania na úrovni alebo nad výkon × prah orezania sa považujú za orezanie a vylučujú sa z ladenia a tienenia. Ak je príliš vysoká, filter sa nikdy nespustí a nasýtené poludňajšie merania rozriedia skutočne namerané tienenie.\n\nNamiesto toho sa používa hodnota AC zo Solcast, takže zisťovanie funguje. Aktualizujte **Výkon systému** v možnostiach na menovitý AC výkon vášho meniča; toto upozornenie zmizne pri ďalšom cykle."
+    },
+    "schema_too_new": {
+      "title": "Databáza zapísaná novšou verziou",
+      "description": "Tvoja databáza histórie má schému v{found} a zapísala ju novšia verzia tejto integrácie, než je tá aktuálne nainštalovaná, ktorá rozumie len po v{known}. Zvyčajne to znamená, že integrácia bola vrátená na staršiu verziu, napríklad výberom staršieho vydania v HACS.\n\nAby zostala história zachovaná, databáza bola otvorená len na čítanie: nič nové sa nezaznamenáva a do Solcast sa neposiela žiadne tlmenie, takže zostávajú platné faktory, ktoré naposledy poslala novšia verzia. Samotná história sa nemení.\n\nAk chceš pokračovať v zaznamenávaní, znova nainštaluj novšiu verziu (alebo ktorúkoľvek neskoršiu). Toto upozornenie zmizne po jej nainštalovaní."
     }
   },
   "exceptions": {
@@ -363,6 +367,12 @@
     },
     "no_weather_source": {
       "message": "Nie je zapnutý žiadny zdroj počasia, takže nie je čo načítať. Zapnite Open-Meteo (nevyžaduje API kľúč) alebo v možnostiach integrácie pridajte kľúč OpenWeatherMap."
+    },
+    "compact_refused": {
+      "message": "Databáza nebola zhutnená: {reason}"
+    },
+    "database_disabled": {
+      "message": "Databáza je v možnostiach integrácie vypnutá, takže nie je čo zhutniť."
     }
   }
 }

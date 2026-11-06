@@ -356,6 +356,20 @@ def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
     return vol.Schema(fields)
 
 
+def _apply_submission(target: dict[str, Any], user_input: dict[str, Any], schema: vol.Schema) -> None:
+    """Merge a submitted step into ``target``, recording each cleared entity field as ``None``.
+
+    An empty optional field is simply absent from ``user_input``, so ``update`` alone
+    would keep the previous value, and the coordinator, which reads
+    ``{**data, **options}``, would keep using a sensor the user just removed.
+    """
+    for marker, validator in schema.schema.items():
+        key = str(marker.schema if hasattr(marker, "schema") else marker)
+        if isinstance(validator, EntitySelector) and key not in user_input:
+            target[key] = None
+    target.update(user_input)
+
+
 # --- Multi-site mapping helpers -------------------------------------------------
 # The UI collects, per discovered site, a generation sensor, an optional DC/MPPT
 # sensor and an input mode. ``CONF_SITE_GROUPS`` is then *derived* by grouping
@@ -735,11 +749,11 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System."""
+        schema = _build_site_schema(self._data, single_site=self._is_single_site())
         if user_input is not None:
-            self._data.update(user_input)
+            _apply_submission(self._data, user_input, schema)
             return await self.async_step_database()
 
-        schema = _build_site_schema(self._data, single_site=self._is_single_site())
         return self.async_show_form(step_id="site", data_schema=schema, errors={})  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -770,7 +784,7 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (optional)."""
         if user_input is not None:
-            self._data.update(user_input)
+            _apply_submission(self._data, user_input, _build_battery_schema(self._data))
             return await self.async_step_tuning()
 
         return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(self._data))  # type: ignore[arg-type, unused-ignore]
@@ -862,12 +876,12 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_site(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1 — Site & System (options flow)."""
-        if user_input is not None:
-            self._opts.update(user_input)
-            return await self.async_step_database()
-
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = _build_site_schema(current, single_site=self._is_single_site())
+        if user_input is not None:
+            _apply_submission(self._opts, user_input, schema)
+            return await self.async_step_database()
+
         return self.async_show_form(step_id="site", data_schema=schema)  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -894,11 +908,11 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_battery(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 4 — Battery Storage (options flow)."""
+        current = {**self.config_entry.data, **self.config_entry.options}
         if user_input is not None:
-            self._opts.update(user_input)
+            _apply_submission(self._opts, user_input, _build_battery_schema(current))
             return await self.async_step_tuning()
 
-        current = {**self.config_entry.data, **self.config_entry.options}
         return self.async_show_form(step_id="battery", data_schema=_build_battery_schema(current))  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
