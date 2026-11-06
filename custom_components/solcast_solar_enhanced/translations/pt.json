@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Sensor de corrente CC do MPPT 2 (opcional)",
           "grid_voltage_sensor": "Sensor de tensão da rede (opcional, para detetar limitação)",
           "inverter_temp_sensor": "Sensor de temperatura do inversor (opcional)",
-          "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)"
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)",
+          "grid_power_sensor": "Sensor de potência da rede (opcional, para detetar a limitação de injeção)",
+          "generation_power_sensor": "Sensor de potência produzida (opcional, para detetar a limitação de injeção)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto. Total de todo o sistema — sistemas com vários conjuntos também mapeiam cada conjunto na página por local que se segue.",
@@ -30,7 +32,9 @@
           "capacity_kw": "A potência nominal CA do seu inversor, não o total dos painéis (CC). Leituras iguais ou superiores a este valor multiplicado pelo limiar de corte são tratadas como corte do inversor e excluídas do ajuste e do sombreamento. Lido automaticamente do Solcast quando os seus locais o reportam; este valor é a alternativa.",
           "grid_voltage_sensor": "A tensão CA que o inversor mede na ligação à rede. São registados o máximo e a mediana de cada meia hora, para que os períodos em que a tensão alta fez o inversor reduzir a produção possam depois ser distinguidos do sombreamento. Por agora apenas registado.",
           "inverter_temp_sensor": "Registado como máximo de cada meia hora, para que a redução térmica possa depois ser distinguida do sombreamento. Por agora apenas registado.",
-          "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado."
+          "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado.",
+          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, com qualquer sinal. Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "generation_power_sensor": "A potência de saída instantânea do inversor, em W ou kW, atualizada pelo menos uma vez por minuto. Deixe vazio para usar antes os sensores de tensão e corrente MPPT. Por agora apenas registado."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "O OpenWeatherMap rejeitou esta chave de API. Verifique se não tem erros de digitação — uma chave acabada de criar também pode demorar algumas horas a ser ativada.",
       "cannot_connect": "Não foi possível contactar o OpenWeatherMap. Verifique a sua ligação à internet e tente novamente.",
       "owm_key_missing": "O OpenWeatherMap está ativado mas não foi introduzida nenhuma chave de API. Introduza uma chave, ou desative o OpenWeatherMap e deixe o Open-Meteo fornecer a nebulosidade.",
-      "direct_ac_duplicate": "O mesmo sensor de geração está mapeado em mais do que um arranjo, o que contaria a produção de toda a instalação em cada um. Dê a cada arranjo o seu próprio sensor ou, se um só sensor medir todo o sistema, mude para «um único contador combinado, sem dados por arranjo»."
+      "direct_ac_duplicate": "O mesmo sensor de geração está mapeado em mais do que um arranjo, o que contaria a produção de toda a instalação em cada um. Dê a cada arranjo o seu próprio sensor ou, se um só sensor medir todo o sistema, mude para «um único contador combinado, sem dados por arranjo».",
+      "power_sensor_required": "É necessário um sensor de potência instantânea (W ou kW), não um contador de energia."
     },
     "abort": {
       "reconfigure_successful": "A reconfiguração foi bem-sucedida"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Sensor de corrente CC do MPPT 2 (opcional)",
           "grid_voltage_sensor": "Sensor de tensão da rede (opcional, para detetar limitação)",
           "inverter_temp_sensor": "Sensor de temperatura do inversor (opcional)",
-          "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)"
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)",
+          "grid_power_sensor": "Sensor de potência da rede (opcional, para detetar a limitação de injeção)",
+          "generation_power_sensor": "Sensor de potência produzida (opcional, para detetar a limitação de injeção)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: um contador de energia acumulada (Wh/kWh, total_increasing). Se você tiver apenas uma leitura de potência, use um auxiliar de estatísticas mean_linear móvel (kW), não um sensor instantâneo bruto.",
@@ -145,7 +152,9 @@
           "capacity_kw": "A potência nominal CA do seu inversor, não o total dos painéis (CC). Leituras iguais ou superiores a este valor multiplicado pelo limiar de corte são tratadas como corte do inversor e excluídas do ajuste e do sombreamento. Lido automaticamente do Solcast quando os seus locais o reportam; este valor é a alternativa.",
           "grid_voltage_sensor": "A tensão CA que o inversor mede na ligação à rede. São registados o máximo e a mediana de cada meia hora, para que os períodos em que a tensão alta fez o inversor reduzir a produção possam depois ser distinguidos do sombreamento. Por agora apenas registado.",
           "inverter_temp_sensor": "Registado como máximo de cada meia hora, para que a redução térmica possa depois ser distinguida do sombreamento. Por agora apenas registado.",
-          "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado."
+          "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado.",
+          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, com qualquer sinal. Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "generation_power_sensor": "A potência de saída instantânea do inversor, em W ou kW, atualizada pelo menos uma vez por minuto. Deixe vazio para usar antes os sensores de tensão e corrente MPPT. Por agora apenas registado."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "O OpenWeatherMap rejeitou esta chave de API. Verifique se não tem erros de digitação — uma chave acabada de criar também pode demorar algumas horas a ser ativada.",
       "cannot_connect": "Não foi possível contactar o OpenWeatherMap. Verifique a sua ligação à internet e tente novamente.",
       "owm_key_missing": "O OpenWeatherMap está ativado mas não foi introduzida nenhuma chave de API. Introduza uma chave, ou desative o OpenWeatherMap e deixe o Open-Meteo fornecer a nebulosidade.",
-      "direct_ac_duplicate": "O mesmo sensor de geração está mapeado em mais do que um arranjo, o que contaria a produção de toda a instalação em cada um. Dê a cada arranjo o seu próprio sensor ou, se um só sensor medir todo o sistema, mude para «um único contador combinado, sem dados por arranjo»."
+      "direct_ac_duplicate": "O mesmo sensor de geração está mapeado em mais do que um arranjo, o que contaria a produção de toda a instalação em cada um. Dê a cada arranjo o seu próprio sensor ou, se um só sensor medir todo o sistema, mude para «um único contador combinado, sem dados por arranjo».",
+      "power_sensor_required": "É necessário um sensor de potência instantânea (W ou kW), não um contador de energia."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Base de dados escrita por uma versão mais recente",
       "description": "A sua base de dados de histórico está no esquema v{found} e foi escrita por uma versão desta integração mais recente do que a instalada agora, que só entende até v{known}. Normalmente isto significa que a integração foi revertida para uma versão anterior, por exemplo ao escolher uma versão mais antiga no HACS.\n\nPara manter o histórico intacto, a base de dados foi aberta só de leitura: nada de novo é registado e nenhum amortecimento é enviado para a Solcast, por isso os fatores enviados por último pela versão mais recente mantêm-se. O histórico em si não é alterado.\n\nReinstale a versão mais recente (ou qualquer posterior) para continuar a registar. Este aviso desaparece quando estiver instalada."
+    },
+    "step_input_slow": {
+      "title": "{entity} atualiza com demasiada pouca frequência para detetar a limitação de injeção",
+      "description": "{entity} só tem sido atualizado aproximadamente a cada {interval} s. Para distinguir uma limitação de injeção de uma nuvem passageira é preciso pelo menos uma leitura por minuto.\n\nEscolha um sensor que atualize com mais frequência, encurte o seu intervalo de consulta ou limpe o campo nas opções da integração. Nada mais é afetado: por agora esta entrada é apenas registada."
     }
   },
   "exceptions": {

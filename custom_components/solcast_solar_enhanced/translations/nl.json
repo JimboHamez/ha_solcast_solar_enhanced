@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "MPPT 2 DC-stroomsensor (optioneel)",
           "grid_voltage_sensor": "Netspanningssensor (optioneel, voor detectie van begrenzing)",
           "inverter_temp_sensor": "Omvormertemperatuursensor (optioneel)",
-          "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)"
+          "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)",
+          "grid_power_sensor": "Netvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)",
+          "generation_power_sensor": "Opwekvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)"
         },
         "data_description": {
           "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor. Totaal van het hele systeem — systemen met meerdere velden wijzen elk veld ook toe op de volgende pagina per locatie.",
@@ -30,7 +32,9 @@
           "capacity_kw": "Het AC-nominale vermogen van je omvormer — niet het paneeltotaal (DC). Metingen op of boven deze waarde maal de begrenzingsdrempel gelden als omvormerbegrenzing en worden uitgesloten van afstemming en beschaduwing. Wordt automatisch uit Solcast gelezen als je locaties dit melden; deze waarde is de terugval.",
           "grid_voltage_sensor": "De AC-spanning die je omvormer op de netaansluiting meet. Het maximum en de mediaan van elk halfuur worden vastgelegd, zodat periodes waarin hoge spanning de omvormer liet terugregelen later van schaduw te onderscheiden zijn. Voorlopig alleen vastgelegd.",
           "inverter_temp_sensor": "Vastgelegd als maximum per halfuur, zodat thermische derating later van schaduw te onderscheiden is. Voorlopig alleen vastgelegd.",
-          "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd."
+          "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd.",
+          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, met willekeurig teken. Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "generation_power_sensor": "Het actuele uitgangsvermogen van je omvormer, in W of kW, minstens één keer per minuut bijgewerkt. Laat leeg om in plaats daarvan je MPPT-spannings- en stroomsensoren te gebruiken. Voorlopig alleen vastgelegd."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap heeft deze API-sleutel geweigerd. Controleer op typefouten — een nieuw aangemaakte sleutel kan ook een paar uur nodig hebben om actief te worden.",
       "cannot_connect": "Kan OpenWeatherMap niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
       "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren.",
-      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'."
+      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'.",
+      "power_sensor_required": "Hier is een actuele vermogenssensor (W of kW) nodig, geen energiemeter."
     },
     "abort": {
       "reconfigure_successful": "Herconfiguratie is geslaagd"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "MPPT 2 DC-stroomsensor (optioneel)",
           "grid_voltage_sensor": "Netspanningssensor (optioneel, voor detectie van begrenzing)",
           "inverter_temp_sensor": "Omvormertemperatuursensor (optioneel)",
-          "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)"
+          "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)",
+          "grid_power_sensor": "Netvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)",
+          "generation_power_sensor": "Opwekvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)"
         },
         "data_description": {
           "pv_actual_sensor": "Aanbevolen: een cumulatieve energiemeter (Wh/kWh, total_increasing). Heeft u alleen een vermogensmeting, gebruik dan een voortschrijdende mean_linear-statistiekhelper (kW), geen ruwe momentaansensor.",
@@ -145,7 +152,9 @@
           "capacity_kw": "Het AC-nominale vermogen van je omvormer — niet het paneeltotaal (DC). Metingen op of boven deze waarde maal de begrenzingsdrempel gelden als omvormerbegrenzing en worden uitgesloten van afstemming en beschaduwing. Wordt automatisch uit Solcast gelezen als je locaties dit melden; deze waarde is de terugval.",
           "grid_voltage_sensor": "De AC-spanning die je omvormer op de netaansluiting meet. Het maximum en de mediaan van elk halfuur worden vastgelegd, zodat periodes waarin hoge spanning de omvormer liet terugregelen later van schaduw te onderscheiden zijn. Voorlopig alleen vastgelegd.",
           "inverter_temp_sensor": "Vastgelegd als maximum per halfuur, zodat thermische derating later van schaduw te onderscheiden is. Voorlopig alleen vastgelegd.",
-          "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd."
+          "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd.",
+          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, met willekeurig teken. Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "generation_power_sensor": "Het actuele uitgangsvermogen van je omvormer, in W of kW, minstens één keer per minuut bijgewerkt. Laat leeg om in plaats daarvan je MPPT-spannings- en stroomsensoren te gebruiken. Voorlopig alleen vastgelegd."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap heeft deze API-sleutel geweigerd. Controleer op typefouten — een nieuw aangemaakte sleutel kan ook een paar uur nodig hebben om actief te worden.",
       "cannot_connect": "Kan OpenWeatherMap niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
       "owm_key_missing": "OpenWeatherMap is ingeschakeld maar er is geen API-sleutel ingevuld. Vul een sleutel in, of schakel OpenWeatherMap uit en laat Open-Meteo de bewolking leveren.",
-      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'."
+      "direct_ac_duplicate": "Dezelfde opwekkingssensor is aan meer dan één array toegewezen, waardoor de opbrengst van de hele installatie bij elke array zou worden geteld. Geef elke array een eigen sensor of schakel — als één sensor het hele systeem meet — over naar 'één gecombineerde meter, geen gegevens per array'.",
+      "power_sensor_required": "Hier is een actuele vermogenssensor (W of kW) nodig, geen energiemeter."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Database geschreven door een nieuwere versie",
       "description": "Je geschiedenisdatabase heeft schema v{found} en is geschreven door een nieuwere versie van deze integratie dan de nu geïnstalleerde, die alleen tot en met v{known} begrijpt. Meestal betekent dit dat de integratie is teruggezet naar een oudere versie, bijvoorbeeld door in HACS een oudere release te kiezen.\n\nOm de geschiedenis intact te houden, is de database alleen-lezen geopend: er wordt niets nieuws vastgelegd en er wordt geen demping naar Solcast gestuurd, zodat de factoren die de nieuwere versie het laatst stuurde blijven staan. De geschiedenis zelf blijft ongewijzigd.\n\nInstalleer de nieuwere versie (of een latere) opnieuw om verder te registreren. Deze melding verdwijnt zodra die is geïnstalleerd."
+    },
+    "step_input_slow": {
+      "title": "{entity} werkt te zelden bij om terugleverbegrenzing te detecteren",
+      "description": "{entity} werkte maar ongeveer elke {interval} s bij. Om een terugleverbegrenzing van een voorbijtrekkende wolk te onderscheiden is minstens één meting per minuut nodig.\n\nKies een sensor die vaker bijwerkt, verkort het pollinginterval of maak het veld leeg in de opties van de integratie. Verder heeft dit nergens invloed op: deze invoer wordt voorlopig alleen vastgelegd."
     }
   },
   "exceptions": {

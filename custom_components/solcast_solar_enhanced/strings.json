@@ -19,7 +19,9 @@
           "pv_export_input_mode": "PV Export sensor type",
           "grid_voltage_sensor": "Grid voltage sensor (optional, for curtailment detection)",
           "inverter_temp_sensor": "Inverter temperature sensor (optional)",
-          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)"
+          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)",
+          "grid_power_sensor": "Grid power sensor (optional, for export-limit detection)",
+          "generation_power_sensor": "Generation power sensor (optional, for export-limit detection)"
         },
         "data_description": {
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor. Whole-system total — multi-array systems also map each array on the per-site page that follows.",
@@ -30,7 +32,9 @@
           "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback.",
           "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
           "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
-          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now."
+          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now.",
+          "grid_power_sensor": "Live power at your grid connection, in W or kW, with either sign. It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "generation_power_sensor": "Your inverter's live output, in W or kW, updating at least once a minute. Leave empty to use your MPPT voltage and current sensors instead. Recorded only for now."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
       "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
       "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover.",
-      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'."
+      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'.",
+      "power_sensor_required": "This needs a live power sensor (W or kW), not an energy counter."
     },
     "abort": {
       "reconfigure_successful": "Reconfiguration was successful"
@@ -134,7 +139,9 @@
           "pv_export_input_mode": "PV Export sensor type",
           "grid_voltage_sensor": "Grid voltage sensor (optional, for curtailment detection)",
           "inverter_temp_sensor": "Inverter temperature sensor (optional)",
-          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)"
+          "inverter_limited_sensor": "Inverter limited status (optional binary sensor)",
+          "grid_power_sensor": "Grid power sensor (optional, for export-limit detection)",
+          "generation_power_sensor": "Generation power sensor (optional, for export-limit detection)"
         },
         "data_description": {
           "pv_actual_sensor": "Best practice: a cumulative energy counter (Wh/kWh, total_increasing). If you only have a power reading, use a rolling mean_linear statistics helper (kW) — not a raw instantaneous sensor.",
@@ -145,7 +152,9 @@
           "capacity_kw": "Your inverter's AC nameplate rating — not the panel (DC) total. Readings at or above this value times the clipping threshold are treated as inverter clipping and excluded from tuning and shading. Read automatically from Solcast when your sites report it; this value is the fallback.",
           "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
           "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
-          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now."
+          "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now.",
+          "grid_power_sensor": "Live power at your grid connection, in W or kW, with either sign. It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "generation_power_sensor": "Your inverter's live output, in W or kW, updating at least once a minute. Leave empty to use your MPPT voltage and current sensors instead. Recorded only for now."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap rejected this API key. Check it for typos — a newly created key can also take a couple of hours to activate.",
       "cannot_connect": "Could not reach OpenWeatherMap. Check your internet connection and try again.",
       "owm_key_missing": "OpenWeatherMap is enabled but no API key was entered. Enter a key, or turn OpenWeatherMap off and let Open-Meteo supply cloud cover.",
-      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'."
+      "direct_ac_duplicate": "The same generation sensor is mapped to more than one array, which would count the whole property's output on each. Give each array its own sensor, or — if one sensor reports the whole system — switch to 'one combined meter, no per-array data'.",
+      "power_sensor_required": "This needs a live power sensor (W or kW), not an energy counter."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Database written by a newer version",
       "description": "Your history database is schema v{found}, written by a newer version of this integration than the one now installed, which understands up to v{known}. This usually means the integration was downgraded, for example by picking an older release in HACS.\n\nTo keep the history intact, the database has been opened read-only: nothing new is recorded, and no dampening is sent to Solcast, so the factors the newer version last sent stay in place. The history itself is untouched.\n\nReinstall the newer version (or any later one) to carry on recording. This notice clears once it is installed."
+    },
+    "step_input_slow": {
+      "title": "{entity} updates too slowly to detect export limiting",
+      "description": "{entity} has been updating only about every {interval} s. Telling an export limit from a passing cloud needs a reading at least once a minute.\n\nPick a sensor that updates more often, shorten its polling interval, or clear the field in the integration's options. Nothing else is affected: this input is only recorded for now."
     }
   },
   "exceptions": {

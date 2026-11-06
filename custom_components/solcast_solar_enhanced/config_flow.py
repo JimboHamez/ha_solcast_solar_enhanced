@@ -49,6 +49,8 @@ from .const import (
     CONF_DB_ENABLED,
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
+    CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_SENSOR,
     CONF_GRID_VOLTAGE_SENSOR,
     CONF_INVERTER_LIMITED_SENSOR,
     CONF_INVERTER_TEMP_SENSOR,
@@ -350,11 +352,41 @@ def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
         vol.Optional(
             CONF_INVERTER_LIMITED_SENSOR, description={"suggested_value": d.get(CONF_INVERTER_LIMITED_SENSOR)}
         ): _entity_selector("binary_sensor"),
+        # Optional export-hold inputs: live power, recorded as step counts only. Not
+        # filtered by device class, since bridged sensors (Node-RED, MQTT) often lack one;
+        # an energy counter is refused on submit instead (_power_input_errors).
+        vol.Optional(
+            CONF_GRID_POWER_SENSOR, description={"suggested_value": d.get(CONF_GRID_POWER_SENSOR)}
+        ): _entity_selector(),
+        vol.Optional(
+            CONF_GENERATION_POWER_SENSOR, description={"suggested_value": d.get(CONF_GENERATION_POWER_SENSOR)}
+        ): _entity_selector(),
     }
     if single_site:
         for key in _FLAT_MPPT_KEYS:
             fields[vol.Optional(key, description={"suggested_value": d.get(key)})] = _entity_selector()
     return vol.Schema(fields)
+
+
+_POWER_INPUT_KEYS = (CONF_GRID_POWER_SENSOR, CONF_GENERATION_POWER_SENSOR)
+
+
+def _power_input_errors(hass: HomeAssistant, user_input: dict[str, Any]) -> dict[str, str]:
+    """Refuse an energy counter where a live power reading is needed.
+
+    A counter is differenced over at least 300 s, far coarser than the 30 s windows
+    a generation step is judged on, so it could never count one. Judged on the unit
+    only: an entity without one (or not yet reporting) is let through, and the
+    runtime "updates too slowly" check covers what the unit cannot show.
+    """
+    errors: dict[str, str] = {}
+    for key in _POWER_INPUT_KEYS:
+        entity_id = user_input.get(key)
+        state = hass.states.get(entity_id) if entity_id else None
+        unit = str(state.attributes.get("unit_of_measurement") or "").strip().lower() if state else ""
+        if unit.endswith("wh"):
+            errors[key] = "power_sensor_required"
+    return errors
 
 
 def _apply_submission(target: dict[str, Any], user_input: dict[str, Any], schema: vol.Schema) -> None:
@@ -764,9 +796,11 @@ class SolcastEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 1 — Site & System."""
         schema = _build_site_schema({**self._suggested, **self._data}, single_site=self._is_single_site())
         if user_input is not None:
+            if errors := _power_input_errors(self.hass, user_input):
+                shown = _build_site_schema({**self._data, **user_input}, single_site=self._is_single_site())
+                return self.async_show_form(step_id="site", data_schema=shown, errors=errors)  # type: ignore[arg-type, unused-ignore]
             _apply_submission(self._data, user_input, schema)
             return await self.async_step_database()
-
         return self.async_show_form(step_id="site", data_schema=schema, errors={})  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -892,9 +926,11 @@ class SolcastEnhancedOptionsFlow(config_entries.OptionsFlowWithReload):
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = _build_site_schema(current, single_site=self._is_single_site())
         if user_input is not None:
+            if errors := _power_input_errors(self.hass, user_input):
+                shown = _build_site_schema({**current, **user_input}, single_site=self._is_single_site())
+                return self.async_show_form(step_id="site", data_schema=shown, errors=errors)  # type: ignore[arg-type, unused-ignore]
             _apply_submission(self._opts, user_input, schema)
             return await self.async_step_database()
-
         return self.async_show_form(step_id="site", data_schema=schema)  # type: ignore[arg-type, unused-ignore]
 
     async def async_step_database(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:

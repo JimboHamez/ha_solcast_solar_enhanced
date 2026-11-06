@@ -5,18 +5,44 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.15.0b3.dev7] - 2026-11-06
+## [1.16.0b1.dev1] - 2026-11-09
 
-> Private test build, not published. A setup convenience only: storage, migration and every reading are
-> unchanged, so installing over dev2 to dev6 needs nothing else. It only does anything when the
-> integration is added for the first time.
+> Private test build, not published, built on 1.15.0. It ranks above 1.15.0 and any 1.15.x patch, and
+> below 1.16.0b1, so HACS and the Marketplace won't offer 1.15.0 over it. It adds four record-only
+> columns, which an existing store adds on start-up without a migration, so installing over 1.15.0 needs
+> nothing else. Going back to 1.15.0 leaves them in place, unread. The setup pre-fill only does anything
+> when the integration is added for the first time.
 
 ### Added
 
+- **Export-hold step counts, from two new optional inputs on Step 1: grid power and generation power.**
+  While an export limit holds (a fixed limit, zero export or a network operator's dynamic limit), the
+  inverter follows the house: a load step moves generation and leaves net power where it was. Free
+  running, a generation step is the sky changing and lands on the grid. Each half-hour now records
+  (`slot_property`, record-only):
+  - `gen_steps`: generation steps of at least 300 W between consecutive 30 s time-weighted means;
+  - `held_steps`: those net power absorbed (moved by at most a quarter of the step). This needs only the
+    two power readings, so it works on string inverters and microinverters alike, and never needs to
+    know the limit;
+  - `regulated_steps`: held steps where every DC tracker's voltage also moved at least 1% against power.
+    A battery or a solar-surplus EV charger can hold net power too, but it leaves the trackers on their
+    maximum power point;
+  - `cut_steps`: drops net power did *not* absorb, with every tracker's voltage up at least 5% from at
+    least 1 kW: a generation cap or trip rather than an export hold.
+
+  The last two need DC voltage and read `-1` without it. Generation comes from the new generation power
+  sensor when set, else from the MPPT trackers (V × I). The grid sensor's sign does not matter. New
+  `gate_flags` bits: 11 `NET_SERIES` (both power series were there) and 12 `GEN_SENSOR` (generation came
+  from the sensor). On the 6 Nov 2026 Fronius step test (0 kW, then 2 kW) the holds showed 47–60% of
+  steps held against 0% free running. A 30 s window is the shortest that works, because a regulator
+  needs a few seconds to settle after each step.
+- **Both inputs are pre-filled on first setup** from the Energy dashboard's grid and solar power sensors
+  (see below). An energy counter is refused on Step 1, since it can't resolve a 30 s step. A repair issue says
+  when either input updates more slowly than once a minute, judged over six daylight slots.
 - **A first-time setup pre-fills inputs Home Assistant already knows.** Two sources, in order of trust:
   - **The Energy dashboard.** Its solar production counter becomes the PV generation sensor and its grid
-    export counter the PV export sensor. Its grid and solar *power* sensors are also picked up, ready for
-    the planned export-hold measures (they have no field yet). Home Assistant has already turned the grid
+    export counter the PV export sensor. Its grid and solar *power* sensors fill the two new power inputs
+    above. Home Assistant has already turned the grid
     power sensor into "positive while importing", whatever the sensor's own sign.
   - **The Fronius integration's DC sensors**, matched by unique id: MPPT 1 is `voltage_dc`/`current_dc`
     and MPPT 2 the `_2` pair. On a multi-array system they are offered on the first array in the per-array

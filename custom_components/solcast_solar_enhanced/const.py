@@ -109,6 +109,8 @@ class GateFlag(IntFlag):
     POA_SHAPE = 1 << 8  # Dips were judged against the array's plane-of-array clear-sky shape.
     VMODEL_READY = 1 << 9  # The voltage model was trained, so vexcess_s is valid.
     EXPORT_COUNTER = 1 << 10  # The export series came from an energy counter, so export_pinned_s is >= 300 s coarse.
+    NET_SERIES = 1 << 11  # Grid power and generation power were both available, so gen_steps/held_steps are valid.
+    GEN_SENSOR = 1 << 12  # Generation for the step measures came from the generation-power sensor, not DC V x I.
 
 
 # A normalised power below this share of the slot's own p90 counts as a dip.
@@ -116,6 +118,29 @@ GATE_DIP_THRESHOLD = 0.8
 # A sky-dip episode shorter than this is not counted as a run (sensor jitter).
 GATE_RUN_MIN_S = 10.0
 GATE_COARSE_GAP_S = 60.0
+
+# Export-hold step measures (step_measures.py, record-only). Generation and grid
+# power are compared as time-weighted means over consecutive windows: a regulator
+# needs a few seconds to settle after a load step, so differencing raw samples
+# (or windows much shorter than this) books its correction as the step itself.
+# Validated on a Fronius GEN24: 30 s and 60 s windows, or Envoy-style 60 s polls,
+# separate a hold from free running; 5 s does not.
+STEP_WINDOW_S = 30.0
+# A change in generation between windows at least this large is a step (W).
+STEP_MIN_W = 300.0
+# A step is "held" when net power moved by no more than this share of it.
+STEP_HELD_FRACTION = 0.25
+# A held step is "regulated" when every tracker's voltage moved at least this share
+# against power: the inverter moving along its curve, not the sky changing.
+STEP_REGULATED_V = 0.01
+# An unheld drop is a "cut" when every tracker's voltage rose at least this share,
+# from at least STEP_CUT_MIN_W: output pulled away from the MPP, not a cloud.
+STEP_CUT_V = 0.05
+STEP_CUT_MIN_W = 1000.0
+# Grid and generation power inputs updating more slowly than this cannot resolve a
+# step; a repair issue says so once STEP_INPUT_CHECK_SLOTS daylight slots agree.
+STEP_INPUT_MAX_GAP_S = 60.0
+STEP_INPUT_CHECK_SLOTS = 6
 GATE_PARTIAL_FRACTION = 0.1
 GATE_LOW_SUN_ELEVATION = 15.0
 # An energy counter becomes a power series only over windows at least this long
@@ -372,6 +397,10 @@ ISSUE_CAPACITY_LOOKS_DC = "capacity_looks_dc"
 # Raised when the database was written by a newer release than the one running (a
 # downgrade): the store is opened read-only and nothing is recorded or pushed.
 ISSUE_SCHEMA_TOO_NEW = "schema_too_new"
+# Raised per input when the grid or generation power sensor updates more slowly than
+# STEP_INPUT_MAX_GAP_S over STEP_INPUT_CHECK_SLOTS daylight slots: the export-hold
+# step counts cannot resolve a step from it. Id is suffixed with the config key.
+ISSUE_STEP_INPUT_SLOW = "step_input_slow"
 # Real DC/AC ratios run 1.1-1.35; 1.05 catches them while tolerating rounding and
 # the odd genuinely oversized-inverter install.
 CAPACITY_DC_SUSPECT_RATIO = 1.05

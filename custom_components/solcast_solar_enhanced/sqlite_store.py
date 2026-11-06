@@ -269,6 +269,11 @@ V2_PROPERTY_COLUMNS: tuple[tuple[str, str, float, int], ...] = (
     ("vratio_p90", "REAL", UNKNOWN, 1000),
     ("sample_gap_s", "REAL", UNKNOWN, 100),
     ("gate_flags", "INTEGER", UNKNOWN, 1),
+    # Export-hold step counts (record-only). See step_measures.py and STEP_* in const.py.
+    ("gen_steps", "INTEGER", UNKNOWN, 1),
+    ("held_steps", "INTEGER", UNKNOWN, 1),
+    ("regulated_steps", "INTEGER", UNKNOWN, 1),
+    ("cut_steps", "INTEGER", UNKNOWN, 1),
 )
 # Everything that belongs to one array (site_id 0 is the property total).
 V2_SITE_COLUMNS: tuple[tuple[str, str, float, int], ...] = (

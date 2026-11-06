@@ -47,6 +47,8 @@ from .const import (
     CONF_DB_ENABLED,
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
+    CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_SENSOR,
     CONF_GRID_VOLTAGE_SENSOR,
     CONF_INVERTER_LIMITED_SENSOR,
     CONF_INVERTER_TEMP_SENSOR,
@@ -104,6 +106,7 @@ from .const import (
     ISSUE_ORIENTATION_DIVERGED,
     ISSUE_OWM_REQUIRED,
     ISSUE_SCHEMA_TOO_NEW,
+    ISSUE_STEP_INPUT_SLOW,
     KT_GHI_CS_FLOOR,
     KT_ZENITH_MAX,
     MAX_MPPT_TRACKERS,
@@ -114,6 +117,8 @@ from .const import (
     OFFMPP_VOLTAGE_RATIO,
     PUSH_FACTOR_COUNT,
     SHADING_INTERVAL_HOURS,
+    STEP_INPUT_CHECK_SLOTS,
+    STEP_INPUT_MAX_GAP_S,
     STORAGE_VERSION,
     TUNING_INTERVAL_HOURS,
     UPDATE_INTERVAL_MINUTES,
@@ -150,6 +155,7 @@ from .shading_geometry import analyse_shading
 from .slot_gate import Samples, SourceKind, counter_power, dc_power, measure_slot
 from .solcast_api import OpenMeteoClient, OWMClient
 from .sqlite_store import SCHEMA_KNOWN, SqliteStore
+from .step_measures import StepMeasures, measure_steps
 from .vmodel import SlotVoltage, VoltageModel, evaluate_slot
 
 if TYPE_CHECKING:
@@ -448,6 +454,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._vmodel = VoltageModel()
         self._vmodel_last_decay = 0
         self._gate_latest: dict[str, Any] = {}
+        # Median sample gap per step input over recent daylight slots, for the
+        # "updates too slowly" repair issue (``_check_step_inputs``).
+        self._step_input_gaps: dict[str, deque[float]] = {}
 
         # Unsubscribe handle for the half-hour wall-clock refresh listener.
         self._unsub_timer: CALLBACK_TYPE | None = None
@@ -2367,6 +2376,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     ids.add(dc)
         if pv := opts.get(CONF_PV_ACTUAL_SENSOR):
             ids.add(str(pv))
+        ids.update(str(e) for e in (opts.get(CONF_GRID_POWER_SENSOR), opts.get(CONF_GENERATION_POWER_SENSOR)) if e)
         return ids
 
     def _power_series(
@@ -2511,6 +2521,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 strict=False,
             )
         }
+        net_w, gen_w, gen_from_sensor = self._step_inputs(opts, samples)
+        tracker_volts = [pair[0] for pair in trackers.values()]
         temp = self._weather.get("temp")
         ghi = self._irradiance.get("ghi")
         cs_mid = clearsky_ghi(zenith)
@@ -2524,7 +2536,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             assert orientation is not None  # Only passed when every array has one.
             return self._clear_sky_poa(lat, lon, orientation, t)
 
-        def run() -> tuple[StoreRecord, dict[str, float]]:
+        def run() -> tuple[StoreRecord, dict[str, float], StepMeasures]:
             measures = measure_slot(
                 float(start_epoch),
                 float(end_epoch),
@@ -2549,7 +2561,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     export or None,
                     limit_kw,
                 )
+            steps = measure_steps(float(start_epoch), float(end_epoch), net_w, gen_w, tracker_volts)
             flags = measures["gate_flags"] | (int(GateFlag.VMODEL_READY) if voltage["ready"] else 0)
+            if steps["gen_steps"] >= 0:
+                flags |= int(GateFlag.NET_SERIES) | (int(GateFlag.GEN_SENSOR) if gen_from_sensor else 0)
             prop: StoreRecord = {
                 "sky_dip_s": measures["sky_dip_s"],
                 "sky_dip_runs": float(measures["sky_dip_runs"]),
@@ -2559,17 +2574,87 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 "vexcess_s": float(voltage["vexcess_s"]),
                 "vratio_p50": float(voltage["vratio_p50"]),
                 "vratio_p90": float(voltage["vratio_p90"]),
+                "gen_steps": float(steps["gen_steps"]),
+                "held_steps": float(steps["held_steps"]),
+                "regulated_steps": float(steps["regulated_steps"]),
+                "cut_steps": float(steps["cut_steps"]),
             }
-            return prop, dict(measures["shade_dip_s"])
+            return prop, dict(measures["shade_dip_s"]), steps
 
         try:
-            prop, shade = await self.hass.async_add_executor_job(run)
+            prop, shade, steps = await self.hass.async_add_executor_job(run)
         except Exception as exc:  # noqa: BLE001 — record-only: never cost the row
             _LOGGER.debug("Slot gate measures unavailable: %s", exc)
             return {}, {}
-        self._gate_latest = {"period_end_epoch": end_epoch, **prop, "shade_dip_s": shade}
+        self._check_step_inputs(opts, steps, gen_from_sensor)
+        self._gate_latest = {
+            "period_end_epoch": end_epoch,
+            **prop,
+            "shade_dip_s": shade,
+            "step_input_gap_s": {"grid": steps["net_gap_s"], "generation": steps["gen_gap_s"]},
+        }
         self._vmodel_store.async_delay_save(self._vmodel_data, VMODEL_SAVE_DELAY_S)
         return prop, shade
+
+    def _step_inputs(
+        self, opts: dict[str, Any], samples: dict[str, list[tuple[float, float]]]
+    ) -> tuple[list[tuple[float, float]] | None, list[tuple[float, float]] | None, bool]:
+        """Grid and generation power in W for the step counts, and whether generation came from the sensor.
+
+        Both must be power readings: an energy counter is differenced over at least
+        300 s, far coarser than a step, so it yields ``None``. Generation falls back to
+        the property's DC trackers (V x I) when no generation sensor is configured.
+        """
+
+        def power_w(entity_id: Any) -> list[tuple[float, float]] | None:
+            if not entity_id:
+                return None
+            series, kind = self._power_series(str(entity_id), DEFAULT_PV_INPUT_MODE, samples)
+            return [(t, kw * 1000.0) for t, kw in series] if series and kind == "ac" else None
+
+        net_w = power_w(opts.get(CONF_GRID_POWER_SENSOR))
+        if opts.get(CONF_GENERATION_POWER_SENSOR):
+            return net_w, power_w(opts.get(CONF_GENERATION_POWER_SENSOR)), True
+        pairs = self._tracker_pairs(self._property_mppt_list(opts), samples)
+        return net_w, (dc_power(pairs) or None) if pairs else None, False
+
+    def _check_step_inputs(self, opts: dict[str, Any], steps: StepMeasures, gen_from_sensor: bool) -> None:
+        """Raise, or clear, the "updates too slowly" issue for each configured step input.
+
+        Judged on the median of the last ``STEP_INPUT_CHECK_SLOTS`` slots in which the
+        input reported at least twice, so one quiet slot (a flat reading the recorder
+        did not log) neither raises nor clears it.
+        """
+        generation = opts.get(CONF_GENERATION_POWER_SENSOR) if gen_from_sensor else None
+        inputs = (
+            (CONF_GRID_POWER_SENSOR, opts.get(CONF_GRID_POWER_SENSOR), steps["net_gap_s"]),
+            (CONF_GENERATION_POWER_SENSOR, generation, steps["gen_gap_s"]),
+        )
+        for key, entity_id, gap in inputs:
+            issue_id = f"{ISSUE_STEP_INPUT_SLOW}_{key}"
+            if not entity_id:
+                self._step_input_gaps.pop(key, None)
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+            if gap is None:
+                continue
+            recent = self._step_input_gaps.setdefault(key, deque(maxlen=STEP_INPUT_CHECK_SLOTS))
+            recent.append(gap)
+            if len(recent) < STEP_INPUT_CHECK_SLOTS:
+                continue
+            typical = statistics.median(recent)
+            if typical > STEP_INPUT_MAX_GAP_S:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_STEP_INPUT_SLOW,
+                    translation_placeholders={"entity": str(entity_id), "interval": str(round(typical))},
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     def _existing_backup(self) -> str | None:
         """The pre-migration backup's path, when one is on disk."""

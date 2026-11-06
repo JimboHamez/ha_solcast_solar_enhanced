@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Capteur de courant CC du MPPT 2 (facultatif)",
           "grid_voltage_sensor": "Capteur de tension réseau (facultatif, pour détecter l'écrêtage)",
           "inverter_temp_sensor": "Capteur de température de l'onduleur (facultatif)",
-          "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)"
+          "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)",
+          "grid_power_sensor": "Capteur de puissance réseau (facultatif, pour détecter la limitation d'injection)",
+          "generation_power_sensor": "Capteur de puissance produite (facultatif, pour détecter la limitation d'injection)"
         },
         "data_description": {
           "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut. Total de tout le système — les systèmes à plusieurs champs affectent aussi chaque champ sur la page par site qui suit.",
@@ -30,7 +32,9 @@
           "capacity_kw": "La puissance nominale CA de votre onduleur — et non le total des panneaux (CC). Les relevés atteignant ou dépassant cette valeur multipliée par le seuil d'écrêtage sont considérés comme de l'écrêtage onduleur et exclus du calibrage et de l'ombrage. Lu automatiquement depuis Solcast lorsque vos sites le fournissent ; cette valeur sert de repli.",
           "grid_voltage_sensor": "La tension CA mesurée par votre onduleur au point de raccordement. Le maximum et la médiane de chaque demi-heure sont enregistrés, afin de distinguer plus tard de l'ombrage les créneaux où une tension élevée a fait réduire la production. Enregistrement seul pour l'instant.",
           "inverter_temp_sensor": "Enregistré comme maximum de chaque demi-heure, afin de distinguer plus tard le déclassement thermique de l'ombrage. Enregistrement seul pour l'instant.",
-          "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant."
+          "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant.",
+          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, quel que soit le signe. Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "generation_power_sensor": "La puissance de sortie instantanée de votre onduleur, en W ou kW, mise à jour au moins une fois par minute. Laissez vide pour utiliser plutôt vos capteurs de tension et de courant MPPT. Enregistré uniquement pour l'instant."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap a rejeté cette clé API. Vérifiez qu'elle ne comporte pas de faute de frappe — une clé nouvellement créée peut aussi mettre quelques heures à être activée.",
       "cannot_connect": "Impossible de joindre OpenWeatherMap. Vérifiez votre connexion internet et réessayez.",
       "owm_key_missing": "OpenWeatherMap est activé mais aucune clé API n'a été saisie. Saisissez une clé, ou désactivez OpenWeatherMap et laissez Open-Meteo fournir la nébulosité.",
-      "direct_ac_duplicate": "Le même capteur de production est affecté à plusieurs champs, ce qui compterait la production de toute l'installation sur chacun d'eux. Donnez à chaque champ son propre capteur ou, si un seul capteur mesure l'ensemble du système, passez à « un seul compteur combiné, aucune donnée par champ »."
+      "direct_ac_duplicate": "Le même capteur de production est affecté à plusieurs champs, ce qui compterait la production de toute l'installation sur chacun d'eux. Donnez à chaque champ son propre capteur ou, si un seul capteur mesure l'ensemble du système, passez à « un seul compteur combiné, aucune donnée par champ ».",
+      "power_sensor_required": "Il faut ici un capteur de puissance instantanée (W ou kW), pas un compteur d'énergie."
     },
     "abort": {
       "reconfigure_successful": "La reconfiguration a réussi"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Capteur de courant CC du MPPT 2 (facultatif)",
           "grid_voltage_sensor": "Capteur de tension réseau (facultatif, pour détecter l'écrêtage)",
           "inverter_temp_sensor": "Capteur de température de l'onduleur (facultatif)",
-          "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)"
+          "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)",
+          "grid_power_sensor": "Capteur de puissance réseau (facultatif, pour détecter la limitation d'injection)",
+          "generation_power_sensor": "Capteur de puissance produite (facultatif, pour détecter la limitation d'injection)"
         },
         "data_description": {
           "pv_actual_sensor": "Recommandé : un compteur d'énergie cumulée (Wh/kWh, total_increasing). Si vous ne disposez que d'une mesure de puissance, utilisez un assistant statistique mean_linear glissant (kW), pas un capteur instantané brut.",
@@ -145,7 +152,9 @@
           "capacity_kw": "La puissance nominale CA de votre onduleur — et non le total des panneaux (CC). Les relevés atteignant ou dépassant cette valeur multipliée par le seuil d'écrêtage sont considérés comme de l'écrêtage onduleur et exclus du calibrage et de l'ombrage. Lu automatiquement depuis Solcast lorsque vos sites le fournissent ; cette valeur sert de repli.",
           "grid_voltage_sensor": "La tension CA mesurée par votre onduleur au point de raccordement. Le maximum et la médiane de chaque demi-heure sont enregistrés, afin de distinguer plus tard de l'ombrage les créneaux où une tension élevée a fait réduire la production. Enregistrement seul pour l'instant.",
           "inverter_temp_sensor": "Enregistré comme maximum de chaque demi-heure, afin de distinguer plus tard le déclassement thermique de l'ombrage. Enregistrement seul pour l'instant.",
-          "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant."
+          "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant.",
+          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, quel que soit le signe. Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "generation_power_sensor": "La puissance de sortie instantanée de votre onduleur, en W ou kW, mise à jour au moins une fois par minute. Laissez vide pour utiliser plutôt vos capteurs de tension et de courant MPPT. Enregistré uniquement pour l'instant."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap a rejeté cette clé API. Vérifiez qu'elle ne comporte pas de faute de frappe — une clé nouvellement créée peut aussi mettre quelques heures à être activée.",
       "cannot_connect": "Impossible de joindre OpenWeatherMap. Vérifiez votre connexion internet et réessayez.",
       "owm_key_missing": "OpenWeatherMap est activé mais aucune clé API n'a été saisie. Saisissez une clé, ou désactivez OpenWeatherMap et laissez Open-Meteo fournir la nébulosité.",
-      "direct_ac_duplicate": "Le même capteur de production est affecté à plusieurs champs, ce qui compterait la production de toute l'installation sur chacun d'eux. Donnez à chaque champ son propre capteur ou, si un seul capteur mesure l'ensemble du système, passez à « un seul compteur combiné, aucune donnée par champ »."
+      "direct_ac_duplicate": "Le même capteur de production est affecté à plusieurs champs, ce qui compterait la production de toute l'installation sur chacun d'eux. Donnez à chaque champ son propre capteur ou, si un seul capteur mesure l'ensemble du système, passez à « un seul compteur combiné, aucune donnée par champ ».",
+      "power_sensor_required": "Il faut ici un capteur de puissance instantanée (W ou kW), pas un compteur d'énergie."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Base de données écrite par une version plus récente",
       "description": "Votre base de données d'historique est au schéma v{found}, écrite par une version de cette intégration plus récente que celle installée actuellement, qui ne comprend que jusqu'à v{known}. Cela signifie généralement que l'intégration a été rétrogradée, par exemple en choisissant une version antérieure dans HACS.\n\nPour préserver l'historique, la base de données a été ouverte en lecture seule : rien de nouveau n'est enregistré et aucun amortissement n'est envoyé à Solcast, de sorte que les facteurs envoyés en dernier par la version plus récente restent en place. L'historique lui-même n'est pas modifié.\n\nRéinstallez la version plus récente (ou une version ultérieure) pour reprendre l'enregistrement. Cet avis disparaît une fois celle-ci installée."
+    },
+    "step_input_slow": {
+      "title": "{entity} se met à jour trop rarement pour détecter une limitation d'injection",
+      "description": "{entity} ne s'est mis à jour qu'environ toutes les {interval} s. Distinguer une limitation d'injection d'un nuage passager demande au moins une mesure par minute.\n\nChoisissez un capteur qui se met à jour plus souvent, raccourcissez son intervalle d'interrogation ou videz le champ dans les options de l'intégration. Rien d'autre n'est affecté : cette entrée est seulement enregistrée pour l'instant."
     }
   },
   "exceptions": {

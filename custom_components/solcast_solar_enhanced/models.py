@@ -70,6 +70,11 @@ class StoreRecord(TypedDict, total=False):
     vratio_p90: float
     sample_gap_s: float
     gate_flags: int
+    # Schema v2 only (record-only export-hold steps; see step_measures.py). -1 = unknown.
+    gen_steps: float
+    held_steps: float
+    regulated_steps: float
+    cut_steps: float
     shade_dip_s: float
 
 

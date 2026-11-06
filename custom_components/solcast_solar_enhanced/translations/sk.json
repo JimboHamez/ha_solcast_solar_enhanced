@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)",
           "grid_voltage_sensor": "Senzor napätia siete (voliteľný, na zistenie obmedzenia)",
           "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
-          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)"
+          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)",
+          "grid_power_sensor": "Senzor výkonu siete (voliteľný, na zistenie obmedzenia dodávky)",
+          "generation_power_sensor": "Senzor vyrábaného výkonu (voliteľný, na zistenie obmedzenia dodávky)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor. Súčet celého systému — systémy s viacerými poľami priraďujú každé pole aj na nasledujúcej stránke pre jednotlivé lokality.",
@@ -30,7 +32,9 @@
           "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná.",
           "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
-          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva."
+          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva.",
+          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, s ľubovoľným znamienkom. Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "generation_power_sensor": "Aktuálny výstupný výkon meniča vo W alebo kW, aktualizovaný aspoň raz za minútu. Nechajte prázdne, ak chcete namiesto toho použiť senzory napätia a prúdu MPPT. Zatiaľ sa iba zaznamenáva."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
       "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
       "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo.",
-      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“."
+      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“.",
+      "power_sensor_required": "Tu je potrebný senzor aktuálneho výkonu (W alebo kW), nie počítadlo energie."
     },
     "abort": {
       "reconfigure_successful": "Rekonfigurácia bola úspešná"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Snímač jednosmerného prúdu MPPT 2 (voliteľné)",
           "grid_voltage_sensor": "Senzor napätia siete (voliteľný, na zistenie obmedzenia)",
           "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
-          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)"
+          "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)",
+          "grid_power_sensor": "Senzor výkonu siete (voliteľný, na zistenie obmedzenia dodávky)",
+          "generation_power_sensor": "Senzor vyrábaného výkonu (voliteľný, na zistenie obmedzenia dodávky)"
         },
         "data_description": {
           "pv_actual_sensor": "Odporúčané: kumulatívne počítadlo energie (Wh/kWh, total_increasing). Ak máte iba meranie výkonu, použite kĺzavého štatistického pomocníka mean_linear (kW) — nie surový okamžitý senzor.",
@@ -145,7 +152,9 @@
           "capacity_kw": "Menovitý striedavý (AC) výkon vášho meniča — nie celkový výkon panelov (DC). Merania na úrovni alebo nad touto hodnotou vynásobenou prahom orezania sa považujú za orezanie meniča a vylučujú sa z ladenia a tienenia. Načíta sa automaticky zo Solcast, ak to vaše lokality hlásia; táto hodnota je záložná.",
           "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
-          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva."
+          "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva.",
+          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, s ľubovoľným znamienkom. Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "generation_power_sensor": "Aktuálny výstupný výkon meniča vo W alebo kW, aktualizovaný aspoň raz za minútu. Nechajte prázdne, ak chcete namiesto toho použiť senzory napätia a prúdu MPPT. Zatiaľ sa iba zaznamenáva."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap odmietol tento API kľúč. Skontrolujte preklepy — novo vytvorený kľúč môže tiež potrebovať niekoľko hodín na aktiváciu.",
       "cannot_connect": "Nepodarilo sa spojiť s OpenWeatherMap. Skontrolujte pripojenie na internet a skúste to znova.",
       "owm_key_missing": "OpenWeatherMap je zapnutý, ale nebol zadaný žiadny API kľúč. Zadajte kľúč, alebo OpenWeatherMap vypnite a nechajte oblačnosť dodávať Open-Meteo.",
-      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“."
+      "direct_ac_duplicate": "Rovnaký snímač výroby je priradený k viac ako jednému poľu, čím by sa výroba celej inštalácie počítala pri každom z nich. Priradte každému poľu vlastný snímač alebo – ak jeden snímač meria celý systém – prepnite na „jeden kombinovaný merač, žiadne údaje pre jednotlivé polia“.",
+      "power_sensor_required": "Tu je potrebný senzor aktuálneho výkonu (W alebo kW), nie počítadlo energie."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Databáza zapísaná novšou verziou",
       "description": "Tvoja databáza histórie má schému v{found} a zapísala ju novšia verzia tejto integrácie, než je tá aktuálne nainštalovaná, ktorá rozumie len po v{known}. Zvyčajne to znamená, že integrácia bola vrátená na staršiu verziu, napríklad výberom staršieho vydania v HACS.\n\nAby zostala história zachovaná, databáza bola otvorená len na čítanie: nič nové sa nezaznamenáva a do Solcast sa neposiela žiadne tlmenie, takže zostávajú platné faktory, ktoré naposledy poslala novšia verzia. Samotná história sa nemení.\n\nAk chceš pokračovať v zaznamenávaní, znova nainštaluj novšiu verziu (alebo ktorúkoľvek neskoršiu). Toto upozornenie zmizne po jej nainštalovaní."
+    },
+    "step_input_slow": {
+      "title": "{entity} sa aktualizuje príliš zriedka na zistenie obmedzenia dodávky",
+      "description": "{entity} sa aktualizoval len približne každých {interval} s. Na rozlíšenie obmedzenia dodávky od prechádzajúceho mraku je potrebné aspoň jedno meranie za minútu.\n\nVyberte senzor, ktorý sa aktualizuje častejšie, skráťte jeho interval dotazovania alebo pole vymažte v možnostiach integrácie. Nič iné to neovplyvní: tento vstup sa zatiaľ iba zaznamenáva."
     }
   },
   "exceptions": {

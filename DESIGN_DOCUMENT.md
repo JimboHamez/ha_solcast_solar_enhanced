@@ -297,6 +297,10 @@ to the Solcast `resource_id`, with `0 = '_total'`.
 | `vratio_p90` | property | ×1000 | −1 (unknown) | gate: p90 V ÷ model, lowest tracker |
 | `sample_gap_s` | property | ×100 | −1 (unknown) | gate: median sample interval of the inputs (s) |
 | `gate_flags` | property | ×1 | −1 (unknown) | gate: `GateFlag` bits (below) |
+| `gen_steps` | property | ×1 | −1 (unknown) | steps: generation steps of at least 300 W between 30 s windows |
+| `held_steps` | property | ×1 | −1 (unknown) | steps: those net power absorbed (an export hold) |
+| `regulated_steps` | property | ×1 | −1 (unknown) | steps: held steps with every tracker's voltage moving against power |
+| `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% |
 | `pv_actual` | site | ×1000 | 0 | generation, half-hour mean (kW) |
 | `pv_estimate` | site | ×1000 | 0 | Solcast forecast as `detailedForecast` shows it, dampened (kW) |
 | `pv_estimate10` | site | ×1000 | 0 | Solcast p10 (kW) |
@@ -353,6 +357,8 @@ batched recorder query as the DC capture (about 25 ms a slot on an i5, an estima
 | `vratio_p50`, `vratio_p90` | property | median and p90 of V ÷ model (lowest tracker), the evidence behind `vexcess_s` |
 | `sample_gap_s` | property | median sample interval of the inputs |
 | `gate_flags` | property | `GateFlag` bits below |
+| `gen_steps`, `held_steps` | property | generation steps between 30 s windows, and how many net power absorbed (1.16.0b1.dev1) |
+| `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% |
 
 Everything is **time-weighted** on the merged event timeline (a state holds until the
 next one), so 10 Hz, 1 Hz and change-only sensors give the same seconds. Power is
@@ -365,6 +371,23 @@ slot end while the sensor still reports a number (1.15.0b3.dev3). The recorder l
 counter only when it changes, so export that never ticked because the house used every
 watt is a measured 0 kW rather than a missing series, and the minutes after the last tick
 count too. An unavailable counter is not held: it is unknown, not flat.
+
+**Export-hold steps** (`step_measures.py`, 1.16.0b1.dev1, record-only). While an export
+limit holds (fixed, zero export or a network operator's dynamic limit), the inverter follows
+the house: a load step moves generation and leaves net power where it was. Free running, a
+generation step is the sky and lands on the grid. So each slot counts generation steps of at
+least `STEP_MIN_W` (300 W) between consecutive `STEP_WINDOW_S` (30 s) time-weighted means, and
+how many of them net power absorbed (moved by at most `STEP_HELD_FRACTION`, 25%). That needs
+only grid power and generation power, so it works on string inverters and microinverters
+alike and never needs the limit. With DC voltage, `regulated_steps` keeps the held steps where
+every tracker's voltage also moved at least 1% against power: a battery or a solar-surplus EV
+charger can hold net power too, but leaves the trackers on their MPP. `cut_steps` counts drops
+net power did *not* absorb with every tracker's voltage up at least 5% from at least 1 kW, the
+signature of a generation cap or trip. The window matters: a regulator settles a few seconds
+after each step, and on the 6 Nov 2026 Fronius step test (0 kW then 2 kW) 30 s and 60 s windows
+gave 47–60% held in the holds against 0% free running, while 5 s windows could not separate
+them. Generation comes from the generation-power sensor when configured, else from the
+property's DC trackers. The grid sensor's sign does not matter.
 
 `GateFlag` (`const.py`; a test pins this table to the enum, and bit positions are part
 of the stored format, so never renumber):
@@ -382,6 +405,8 @@ of the stored format, so never renumber):
 | 8 | `POA_SHAPE` | dips were judged against the array's plane-of-array clear-sky shape |
 | 9 | `VMODEL_READY` | the voltage model was trained, so the `v*` columns are valid |
 | 10 | `EXPORT_COUNTER` | the export series came from an energy counter, so `export_pinned_s` resolves no finer than 300 s (1.15.0b3.dev5) |
+| 11 | `NET_SERIES` | grid power and generation power were both available, so `gen_steps`/`held_steps` are valid (1.16.0b1.dev1) |
+| 12 | `GEN_SENSOR` | generation for the step counts came from the generation-power sensor rather than DC V × I (1.16.0b1.dev1) |
 
 The flags say what was **measurable**, never whether to keep the slot. Thresholds are
 applied at read time, so they can be retuned against stored data after the recorder's

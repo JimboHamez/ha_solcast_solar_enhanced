@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Czujnik prądu DC MPPT 2 (opcjonalnie)",
           "grid_voltage_sensor": "Czujnik napięcia sieci (opcjonalny, do wykrywania ograniczeń)",
           "inverter_temp_sensor": "Czujnik temperatury falownika (opcjonalny)",
-          "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)"
+          "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)",
+          "grid_power_sensor": "Czujnik mocy sieci (opcjonalny, do wykrywania ograniczenia oddawania)",
+          "generation_power_sensor": "Czujnik mocy wytwarzanej (opcjonalny, do wykrywania ograniczenia oddawania)"
         },
         "data_description": {
           "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego. Suma całego systemu — systemy z wieloma łańcuchami przypisują też każdy łańcuch na następnej stronie dla poszczególnych lokalizacji.",
@@ -30,7 +32,9 @@
           "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową.",
           "grid_voltage_sensor": "Napięcie AC mierzone przez falownik w punkcie przyłączenia. Zapisywane są maksimum i mediana z każdego półgodzinnego okresu, aby okresy, w których wysokie napięcie obniżyło moc falownika, dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_temp_sensor": "Zapisywane jako maksimum z każdego półgodzinnego okresu, aby ograniczenie termiczne dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
-          "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane."
+          "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane.",
+          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, z dowolnym znakiem. Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "generation_power_sensor": "Bieżąca moc wyjściowa falownika, w W lub kW, aktualizowana co najmniej raz na minutę. Pozostaw puste, aby zamiast tego użyć czujników napięcia i prądu MPPT. Na razie tylko zapisywane."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
       "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
       "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo.",
-      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”."
+      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”.",
+      "power_sensor_required": "Potrzebny jest czujnik bieżącej mocy (W lub kW), a nie licznik energii."
     },
     "abort": {
       "reconfigure_successful": "Ponowna konfiguracja zakończona powodzeniem"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Czujnik prądu DC MPPT 2 (opcjonalnie)",
           "grid_voltage_sensor": "Czujnik napięcia sieci (opcjonalny, do wykrywania ograniczeń)",
           "inverter_temp_sensor": "Czujnik temperatury falownika (opcjonalny)",
-          "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)"
+          "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)",
+          "grid_power_sensor": "Czujnik mocy sieci (opcjonalny, do wykrywania ograniczenia oddawania)",
+          "generation_power_sensor": "Czujnik mocy wytwarzanej (opcjonalny, do wykrywania ograniczenia oddawania)"
         },
         "data_description": {
           "pv_actual_sensor": "Zalecane: skumulowany licznik energii (Wh/kWh, total_increasing). Jeśli masz tylko odczyt mocy, użyj kroczącego pomocnika statystyk mean_linear (kW) — a nie surowego czujnika chwilowego.",
@@ -145,7 +152,9 @@
           "capacity_kw": "Moc znamionowa AC falownika — a nie łączna moc paneli (DC). Odczyty równe lub wyższe od tej wartości pomnożonej przez próg ograniczenia są traktowane jako ograniczenie falownika i wykluczane ze strojenia oraz zacienienia. Odczytywane automatycznie z Solcast, gdy Twoje lokalizacje je podają; ta wartość jest wartością zapasową.",
           "grid_voltage_sensor": "Napięcie AC mierzone przez falownik w punkcie przyłączenia. Zapisywane są maksimum i mediana z każdego półgodzinnego okresu, aby okresy, w których wysokie napięcie obniżyło moc falownika, dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_temp_sensor": "Zapisywane jako maksimum z każdego półgodzinnego okresu, aby ograniczenie termiczne dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
-          "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane."
+          "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane.",
+          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, z dowolnym znakiem. Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "generation_power_sensor": "Bieżąca moc wyjściowa falownika, w W lub kW, aktualizowana co najmniej raz na minutę. Pozostaw puste, aby zamiast tego użyć czujników napięcia i prądu MPPT. Na razie tylko zapisywane."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap odrzucił ten klucz API. Sprawdź, czy nie ma w nim literówek — nowo utworzony klucz może też potrzebować kilku godzin na aktywację.",
       "cannot_connect": "Nie można połączyć się z OpenWeatherMap. Sprawdź połączenie internetowe i spróbuj ponownie.",
       "owm_key_missing": "OpenWeatherMap jest włączony, ale nie podano klucza API. Podaj klucz albo wyłącz OpenWeatherMap i pozwól, by zachmurzenie dostarczał Open-Meteo.",
-      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”."
+      "direct_ac_duplicate": "Ten sam czujnik produkcji jest przypisany do więcej niż jednego łańcucha, co liczyłoby produkcję całej instalacji przy każdym z nich. Przypisz każdemu łańcuchowi własny czujnik lub — jeśli jeden czujnik mierzy cały system — przełącz na „jeden wspólny licznik, brak danych dla poszczególnych łańcuchów”.",
+      "power_sensor_required": "Potrzebny jest czujnik bieżącej mocy (W lub kW), a nie licznik energii."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Baza danych zapisana przez nowszą wersję",
       "description": "Twoja baza danych historii ma schemat v{found} i została zapisana przez nowszą wersję tej integracji niż obecnie zainstalowana, która obsługuje tylko do v{known}. Zwykle oznacza to, że integracja została cofnięta do starszej wersji, na przykład przez wybranie starszego wydania w HACS.\n\nAby zachować historię, baza danych została otwarta tylko do odczytu: nic nowego nie jest zapisywane i żadne tłumienie nie jest wysyłane do Solcast, więc współczynniki wysłane ostatnio przez nowszą wersję pozostają bez zmian. Sama historia nie jest modyfikowana.\n\nZainstaluj ponownie nowszą wersję (lub dowolną późniejszą), aby wznowić zapisywanie. To powiadomienie zniknie po jej zainstalowaniu."
+    },
+    "step_input_slow": {
+      "title": "{entity} aktualizuje się zbyt rzadko, by wykryć ograniczenie oddawania",
+      "description": "{entity} aktualizował się tylko mniej więcej co {interval} s. Aby odróżnić ograniczenie oddawania od przelotnej chmury, potrzebny jest co najmniej jeden odczyt na minutę.\n\nWybierz czujnik, który aktualizuje się częściej, skróć jego interwał odpytywania albo wyczyść pole w opcjach integracji. Nic innego nie jest dotknięte: to wejście jest na razie tylko zapisywane."
     }
   },
   "exceptions": {

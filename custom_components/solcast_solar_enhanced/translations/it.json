@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Sensore di corrente CC del MPPT 2 (facoltativo)",
           "grid_voltage_sensor": "Sensore di tensione di rete (opzionale, per rilevare la limitazione)",
           "inverter_temp_sensor": "Sensore di temperatura dell'inverter (opzionale)",
-          "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)"
+          "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)",
+          "grid_power_sensor": "Sensore di potenza di rete (opzionale, per rilevare la limitazione dell'immissione)",
+          "generation_power_sensor": "Sensore di potenza prodotta (opzionale, per rilevare la limitazione dell'immissione)"
         },
         "data_description": {
           "pv_actual_sensor": "Consigliato: un contatore di energia cumulativa (Wh/kWh, total_increasing). Se si dispone solo di una lettura di potenza, usare un helper statistico mean_linear mobile (kW), non un sensore istantaneo grezzo. Totale dell'intero sistema — i sistemi con più stringhe mappano anche ogni stringa nella pagina per sito che segue.",
@@ -30,7 +32,9 @@
           "capacity_kw": "La potenza nominale CA del tuo inverter — non il totale dei moduli (CC). Le letture pari o superiori a questo valore moltiplicato per la soglia di limitazione sono considerate limitazione dell'inverter ed escluse da calibrazione e ombreggiamento. Letto automaticamente da Solcast quando i tuoi siti lo riportano; questo valore è il ripiego.",
           "grid_voltage_sensor": "La tensione CA che l'inverter misura al punto di connessione. Vengono registrati massimo e mediana di ogni mezz'ora, così le fasce in cui la tensione alta ha fatto ridurre la produzione potranno poi essere distinte dall'ombreggiamento. Per ora solo registrato.",
           "inverter_temp_sensor": "Registrato come massimo di ogni mezz'ora, così il declassamento termico potrà poi essere distinto dall'ombreggiamento. Per ora solo registrato.",
-          "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato."
+          "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato.",
+          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, con qualsiasi segno. Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "generation_power_sensor": "La potenza in uscita istantanea dell'inverter, in W o kW, aggiornata almeno una volta al minuto. Lascia vuoto per usare invece i sensori di tensione e corrente MPPT. Per ora solo registrato."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap ha rifiutato questa chiave API. Controlla che non contenga errori di battitura: una chiave appena creata può inoltre richiedere un paio d'ore per attivarsi.",
       "cannot_connect": "Impossibile raggiungere OpenWeatherMap. Controlla la connessione a internet e riprova.",
       "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità.",
-      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa»."
+      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa».",
+      "power_sensor_required": "Serve un sensore di potenza istantanea (W o kW), non un contatore di energia."
     },
     "abort": {
       "reconfigure_successful": "Riconfigurazione completata correttamente"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Sensore di corrente CC del MPPT 2 (facoltativo)",
           "grid_voltage_sensor": "Sensore di tensione di rete (opzionale, per rilevare la limitazione)",
           "inverter_temp_sensor": "Sensore di temperatura dell'inverter (opzionale)",
-          "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)"
+          "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)",
+          "grid_power_sensor": "Sensore di potenza di rete (opzionale, per rilevare la limitazione dell'immissione)",
+          "generation_power_sensor": "Sensore di potenza prodotta (opzionale, per rilevare la limitazione dell'immissione)"
         },
         "data_description": {
           "pv_actual_sensor": "Consigliato: un contatore di energia cumulativa (Wh/kWh, total_increasing). Se si dispone solo di una lettura di potenza, usare un helper statistico mean_linear mobile (kW), non un sensore istantaneo grezzo.",
@@ -145,7 +152,9 @@
           "capacity_kw": "La potenza nominale CA del tuo inverter — non il totale dei moduli (CC). Le letture pari o superiori a questo valore moltiplicato per la soglia di limitazione sono considerate limitazione dell'inverter ed escluse da calibrazione e ombreggiamento. Letto automaticamente da Solcast quando i tuoi siti lo riportano; questo valore è il ripiego.",
           "grid_voltage_sensor": "La tensione CA che l'inverter misura al punto di connessione. Vengono registrati massimo e mediana di ogni mezz'ora, così le fasce in cui la tensione alta ha fatto ridurre la produzione potranno poi essere distinte dall'ombreggiamento. Per ora solo registrato.",
           "inverter_temp_sensor": "Registrato come massimo di ogni mezz'ora, così il declassamento termico potrà poi essere distinto dall'ombreggiamento. Per ora solo registrato.",
-          "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato."
+          "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato.",
+          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, con qualsiasi segno. Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "generation_power_sensor": "La potenza in uscita istantanea dell'inverter, in W o kW, aggiornata almeno una volta al minuto. Lascia vuoto per usare invece i sensori di tensione e corrente MPPT. Per ora solo registrato."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap ha rifiutato questa chiave API. Controlla che non contenga errori di battitura: una chiave appena creata può inoltre richiedere un paio d'ore per attivarsi.",
       "cannot_connect": "Impossibile raggiungere OpenWeatherMap. Controlla la connessione a internet e riprova.",
       "owm_key_missing": "OpenWeatherMap è abilitato ma non è stata inserita alcuna chiave API. Inserisci una chiave, oppure disabilita OpenWeatherMap e lascia che sia Open-Meteo a fornire la nuvolosità.",
-      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa»."
+      "direct_ac_duplicate": "Lo stesso sensore di generazione è mappato su più stringhe, il che conterebbe la produzione dell'intero impianto su ciascuna. Assegna a ogni stringa il proprio sensore oppure, se un solo sensore misura l'intero sistema, passa a «un unico contatore combinato, nessun dato per stringa».",
+      "power_sensor_required": "Serve un sensore di potenza istantanea (W o kW), non un contatore di energia."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Database scritto da una versione più recente",
       "description": "Il database della cronologia ha lo schema v{found} ed è stato scritto da una versione di questa integrazione più recente di quella installata ora, che comprende solo fino a v{known}. Di solito significa che l'integrazione è stata riportata a una versione precedente, ad esempio scegliendo una release più vecchia in HACS.\n\nPer preservare la cronologia, il database è stato aperto in sola lettura: non viene registrato nulla di nuovo e nessuno smorzamento viene inviato a Solcast, quindi restano in vigore i fattori inviati per ultimi dalla versione più recente. La cronologia non viene modificata.\n\nReinstalla la versione più recente (o una successiva) per riprendere la registrazione. Questo avviso scompare una volta installata."
+    },
+    "step_input_slow": {
+      "title": "{entity} si aggiorna troppo di rado per rilevare la limitazione dell'immissione",
+      "description": "{entity} si è aggiornato solo circa ogni {interval} s. Per distinguere una limitazione dell'immissione da una nuvola di passaggio serve almeno una lettura al minuto.\n\nScegli un sensore che si aggiorni più spesso, riduci il suo intervallo di polling oppure svuota il campo nelle opzioni dell'integrazione. Nient'altro è interessato: per ora questo ingresso viene solo registrato."
     }
   },
   "exceptions": {

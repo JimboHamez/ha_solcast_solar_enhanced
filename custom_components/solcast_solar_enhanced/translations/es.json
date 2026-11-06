@@ -19,7 +19,9 @@
           "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)",
           "grid_voltage_sensor": "Sensor de tensión de red (opcional, para detectar recortes)",
           "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
-          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)"
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)",
+          "grid_power_sensor": "Sensor de potencia de red (opcional, para detectar la limitación de vertido)",
+          "generation_power_sensor": "Sensor de potencia generada (opcional, para detectar la limitación de vertido)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: un contador de energía acumulada (Wh/kWh, total_increasing). Si solo dispone de una lectura de potencia, use un ayudante de estadísticas mean_linear móvil (kW), no un sensor instantáneo en bruto. Total de todo el sistema — los sistemas con varios conjuntos también asignan cada conjunto en la página por sitio que sigue.",
@@ -30,7 +32,9 @@
           "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo.",
           "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
           "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
-          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra."
+          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra.",
+          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, con cualquier signo. Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "generation_power_sensor": "La potencia de salida instantánea de su inversor, en W o kW, actualizada al menos una vez por minuto. Déjelo vacío para usar en su lugar sus sensores de tensión y corriente MPPT. Por ahora solo se registra."
         }
       },
       "database": {
@@ -108,7 +112,8 @@
       "invalid_auth": "OpenWeatherMap ha rechazado esta clave de API. Comprueba que no tenga erratas: una clave recién creada también puede tardar un par de horas en activarse.",
       "cannot_connect": "No se ha podido conectar con OpenWeatherMap. Comprueba tu conexión a internet e inténtalo de nuevo.",
       "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad.",
-      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo»."
+      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo».",
+      "power_sensor_required": "Aquí se necesita un sensor de potencia instantánea (W o kW), no un contador de energía."
     },
     "abort": {
       "reconfigure_successful": "La reconfiguración se ha realizado correctamente"
@@ -134,7 +139,9 @@
           "mppt2_current_sensor": "Sensor de corriente CC del MPPT 2 (opcional)",
           "grid_voltage_sensor": "Sensor de tensión de red (opcional, para detectar recortes)",
           "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
-          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)"
+          "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)",
+          "grid_power_sensor": "Sensor de potencia de red (opcional, para detectar la limitación de vertido)",
+          "generation_power_sensor": "Sensor de potencia generada (opcional, para detectar la limitación de vertido)"
         },
         "data_description": {
           "pv_actual_sensor": "Recomendado: un contador de energía acumulada (Wh/kWh, total_increasing). Si solo dispone de una lectura de potencia, use un ayudante de estadísticas mean_linear móvil (kW), no un sensor instantáneo en bruto.",
@@ -145,7 +152,9 @@
           "capacity_kw": "La potencia nominal CA de su inversor, no el total de los paneles (CC). Las lecturas iguales o superiores a este valor multiplicado por el umbral de recorte se consideran recorte del inversor y se excluyen del ajuste y del sombreado. Se lee automáticamente desde Solcast cuando sus sitios lo informan; este valor es el respaldo.",
           "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
           "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
-          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra."
+          "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra.",
+          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, con cualquier signo. Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "generation_power_sensor": "La potencia de salida instantánea de su inversor, en W o kW, actualizada al menos una vez por minuto. Déjelo vacío para usar en su lugar sus sensores de tensión y corriente MPPT. Por ahora solo se registra."
         }
       },
       "database": {
@@ -223,7 +232,8 @@
       "invalid_auth": "OpenWeatherMap ha rechazado esta clave de API. Comprueba que no tenga erratas: una clave recién creada también puede tardar un par de horas en activarse.",
       "cannot_connect": "No se ha podido conectar con OpenWeatherMap. Comprueba tu conexión a internet e inténtalo de nuevo.",
       "owm_key_missing": "OpenWeatherMap está activado pero no se ha introducido ninguna clave de API. Introduce una clave o desactiva OpenWeatherMap y deja que Open-Meteo aporte la nubosidad.",
-      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo»."
+      "direct_ac_duplicate": "El mismo sensor de generación está asignado a más de un campo, lo que contaría la producción de toda la instalación en cada uno. Asigne a cada campo su propio sensor o, si un solo sensor informa de todo el sistema, cambie a «un único contador combinado, sin datos por campo».",
+      "power_sensor_required": "Aquí se necesita un sensor de potencia instantánea (W o kW), no un contador de energía."
     }
   },
   "entity": {
@@ -350,6 +360,10 @@
     "schema_too_new": {
       "title": "Base de datos escrita por una versión más reciente",
       "description": "Tu base de datos de historial tiene el esquema v{found} y la escribió una versión de esta integración más reciente que la instalada ahora, que solo entiende hasta v{known}. Normalmente significa que la integración se ha bajado de versión, por ejemplo al elegir una versión anterior en HACS.\n\nPara conservar el historial, la base de datos se ha abierto en modo de solo lectura: no se registra nada nuevo y no se envía amortiguación a Solcast, así que se mantienen los factores que envió por última vez la versión más reciente. El historial no se modifica.\n\nVuelve a instalar la versión más reciente (o cualquier posterior) para seguir registrando. Este aviso desaparece cuando esté instalada."
+    },
+    "step_input_slow": {
+      "title": "{entity} se actualiza con demasiada poca frecuencia para detectar la limitación de vertido",
+      "description": "{entity} solo se ha actualizado aproximadamente cada {interval} s. Para distinguir una limitación de vertido de una nube pasajera se necesita al menos una lectura por minuto.\n\nElija un sensor que se actualice con más frecuencia, acorte su intervalo de sondeo o vacíe el campo en las opciones de la integración. Nada más se ve afectado: por ahora esta entrada solo se registra."
     }
   },
   "exceptions": {
