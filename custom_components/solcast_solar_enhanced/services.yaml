@@ -26,5 +26,5 @@ compact_database:
     Drop the old-format history table once the new schema has proved itself, and
     reclaim its space (about three quarters of the file). Refuses unless the last
     seven days agree in both formats. After this, going back to 1.15.0b2 means
-    restoring the pre-migration backup or running tools/downgrade_v2.py. Private
-    test build only.
+    restoring the pre-migration backup or running tools/downgrade_v2.py; the
+    backup is deleted 30 days after compaction.

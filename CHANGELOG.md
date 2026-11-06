@@ -5,7 +5,54 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.15.0b3] - 2026-11-06
+
+**Beta: a history database about a quarter of the size, and more record-only groundwork for telling
+inverter curtailment apart from shading.** Tuning and dampening read the same values as before, through a
+view, so their results are unchanged to within the stored precision. Thanks to @BJReplay for testing the
+upgrade on a battery system before release.
+
+### Changed
+
+- **New storage format, about a quarter of the size.** The history moves into normalised tables. Values that
+  are the same for the whole property (sun position, weather, irradiance, export, curtailment inputs) are
+  stored once per half-hour instead of on every array's row, and every value is stored as a scaled integer.
+  On the reference store: 4.25 MB before, **0.59 MB** once compacted, about 1.6 MB a year.
+- **The upgrade migrates your history automatically, and checks it.** It first takes a backup
+  (`solcast_solar_enhanced.db.pre-v2.bak`, next to the database), then copies inside one transaction,
+  verifies each array's row count and output total against the old table, and rolls back on any mismatch.
+  It skips itself, and carries on in the old format, if the database fails an integrity check or there is
+  less than twice its size in free disk. It migrated real databases from four installs cleanly, the largest
+  in under half a second.
+- **Both formats are written until you compact,** so reinstalling 1.15.0b2 keeps working with its full
+  history, and anything it records meanwhile is carried over when you come back.
+- **Empty night slots are no longer written.** A half-hour is skipped when the sun is down and nothing was
+  measured or forecast, on the system or on any array. No calculation reads these rows, and they were over
+  half of the file. Twilight output and overnight battery export still keep a slot. The **Database
+  Records** sensor now grows about half as fast.
+- **A new install starts in the compact format** straight away, since there is no history to protect.
+
+### Added
+
+- **`compact_database` action.** Drops the old-format table once the last seven days agree in both formats,
+  and reclaims the space. Your call, never automatic. Afterwards, `tools/downgrade_v2.py` rebuilds the old
+  table if you need 1.15.0b2 again, and the backup is deleted 30 days after compaction.
+- **A database written by a newer version is opened read-only.** HACS and the Marketplace let you install
+  an older release over a newer one. If the database is newer than the installed version understands,
+  nothing is changed or recorded, a repair issue says which version wrote it, and no dampening is sent to
+  Solcast. Reinstalling the newer version clears it. Translated into all 11 languages.
+- **Slot gate measures (record-only).** Each daylight half-hour records how long every array dipped at once
+  (cloud), how long each array dipped while another did not (shade), how long export sat at the limit, the
+  sample interval, and a `gate_flags` record of what could be measured. They are time-weighted, so any
+  sensor sample rate gives the same answer, and a counter that did not tick in a slot reads 0 kW rather than
+  "unmeasured". Nothing reads them yet.
+- **A learned voltage model for inverter-side limiting (record-only).** It learns each MPPT tracker's normal
+  voltage from temperature and irradiance and records how far above it each half-hour sat, the signature of
+  an inverter holding back. The fixed off-MPP rule from 1.15.0b2 keeps running alongside for comparison.
+- **Diagnostics** show the schema version, whether the old format is still written, the backup, the latest
+  gate measures and the voltage model's training state.
+- **`tools/downgrade_v2.py`**, and the history import and irradiance backfill work on a compacted store.
+  All the `tools/` scripts run on plain Python again, from a checkout of this repository.
 
 ### Fixed
 
@@ -13,143 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing from what the form submits, so the old value stayed in the entry and the integration kept
   reading a sensor the user had just removed (for example a grid voltage or battery sensor). Every
   cleared entity field on the Site & System and Battery steps is now stored as empty.
-
-## [1.15.0b3.dev6] - 2026-11-05
-
-> Private test build, not published. Changes what a brand-new database looks like, and fixes three
-> `tools/` scripts. An existing store, on any earlier build, is opened exactly as before, so installing
-> over dev2 to dev5 needs nothing else.
-
-### Fixed
-
-- **`tools/backfill_irradiance.py`, `tools/import_history.py` and `tools/downgrade_v2.py` run on plain
-  Python again.** Since dev2 they read the store through the integration's storage module, and importing it
-  ran the integration's package setup, which needs Home Assistant. So a copied database on a laptop gave
-  `No module named 'homeassistant'`. The tools now load the storage module on its own, which needs nothing
-  outside the standard library. They still have to run from a checkout of this repository. A test runs
-  all three with Home Assistant blocked from importing.
-
-### Changed
-
-- **A new install starts compacted.** A brand-new database file now gets only the v2 tables and goes
-  straight to schema v3, the layout `compact_database` leaves. There's no history to protect and no earlier
-  release to go back to, so dual-writing the legacy table would only have doubled the file until someone
-  ran the action. The tables and the version are written in one transaction, so a failure part-way leaves
-  an empty file, and the next start creates it again. A file whose legacy table already exists, even empty,
-  still starts on v2 and dual-writes, since an earlier release created it and may be reinstalled.
-- **Going back to 1.15.0b2 from a new install** still works. 1.15.0b2 creates its own empty legacy table,
-  and on the next start this version copies what 1.15.0b2 recorded into the v2 tables. To give 1.15.0b2
-  the history as well, run `tools/downgrade_v2.py` first, as after compaction.
-- **`tools/import_history.py` and `tools/backfill_irradiance.py` work on a compacted store.** Both used
-  to stop and ask for `tools/downgrade_v2.py` first. An import now goes through a temporary legacy table and
-  the integration's own copy into the v2 tables, so values are scaled exactly as the live write scales
-  them, empty night slots are dropped, and no legacy table reappears (`--replace` clears the v2 tables
-  instead). A backfill writes the irradiance once per slot, at 0.1 W/m². `tools/build_test_fixtures.py`
-  refuses a compacted source with a pointer to `tools/downgrade_v2.py`, since its fixtures are cut in the
-  legacy layout.
-
-## [1.15.0b3.dev5] - 2026-11-03
-
-> Private test build, not published. One new record-only flag; storage and migration are unchanged, so
-> installing over dev2, dev3 or dev4 needs nothing else (dev5 includes dev4's downgrade guard).
-
-### Added
-
-- **`gate_flags` bit 10, `EXPORT_COUNTER`: the export series came from an energy counter.** A counter is
-  differenced over windows of at least 300 s, so `export_pinned_s` can't resolve a pinned stretch finer
-  than that, and whatever reads it later needs to know. `COUNTER_SOURCE` (bit 3) never covered this: it is
-  set only when an *array's* series came from a counter, so a counter export beside DC arrays left both bits
-  clear (seen on the 3 Nov upload). Bit 3's description now says "an array's series" to match what it has
-  always done. Rows written before this build have bit 10 clear whatever the export source, so read its
-  absence on older rows as unknown.
-
-## [1.15.0b3.dev4] - 2026-11-02
-
-> Private test build, not published. A downgrade guard; storage and migration are otherwise unchanged, so
-> installing over dev2 or dev3 needs nothing else.
-
-### Added
-
-- **A database written by a newer version is opened read-only.** HACS lets anyone pick any of the last
-  five releases, downgrades included, and has no way to force an upgrade path. So from this build on, a
-  database whose schema is newer than the running version understands is left exactly as it is: nothing is
-  created, altered, migrated or recorded. A repair issue says which version wrote it, and dampening is not
-  sent to Solcast, because factors built from history this version can't read would be a neutral curve that
-  undoes what the newer version sent. Reinstalling the newer version clears it. Translated into all 11
-  languages (machine-written outside English; native review welcome).
-
-## [1.15.0b3.dev3] - 2026-11-02
-
-> Private test build, not published. A fix to the dev2 slot gate; storage and migration are unchanged, so
-> installing over dev2 needs nothing else.
-
-### Fixed
-
-- **A quiet energy counter now reads 0 kW instead of "unmeasured".** The recorder logs a counter only when
-  it changes, so while the house used every watt of solar the export counter never ticked, the gate saw a
-  single reading, and the slot recorded no export series (`export_pinned_s` −1, `EXPORT_SERIES` unset; seen
-  at 06:30 and 07:00 on 2 Nov). The last reading is now held to the end of the slot, which is what a
-  recorded state means. The same applies to generation counters used as gate inputs, and the minutes after
-  a counter's last tick now count. A counter whose sensor is unavailable is not held, so an outage still
-  reads as unknown.
-
-## [1.15.0b3.dev2] - 2026-11-01
-
-> Private test build, not published. Step 2 of the database-size and slot-gate work. Record-only: tuning
-> and dampening read the same rows as before (through a view) and their results are unchanged to within
-> the stored precision. Going back to 1.15.0b2 stays a plain reinstall until you compact.
-
-### Changed
-
-- **New storage format, about a quarter of the size.** The history moves into normalised tables, with
-  property-wide values stored once per half-hour instead of on every array's row, and every value stored
-  as a scaled integer (W, 0.1 V, 0.01 A, 0.01°, 0.1 W/m², 0.1 °C). On the reference store: 4.25 MB today,
-  4.84 MB during the soak (both formats), **0.59 MB** after compaction, about 1.6 MB a year.
-- **Migration is automatic and checked.** It takes a backup first (`solcast_solar_enhanced.db.pre-v2.bak`),
-  copies inside one transaction, verifies each array's row count and output total against the old table,
-  and rolls back on any mismatch. It skips itself, and keeps running on the old format, if the database fails
-  an integrity check or there is less than twice its size in free disk.
-- **Both formats are written during the soak,** so 1.15.0b2 can be reinstalled at any time with its full
-  history. Coming forward again, anything 1.15.0b2 (or `tools/import_history.py`) wrote is carried over.
-
-### Added
-
-- **`compact_database` action.** Drops the old-format table once the last seven days agree in both formats,
-  and reclaims the space. Your call, never automatic. Afterwards, `tools/downgrade_v2.py` rebuilds the old
-  table if you need 1.15.0b2 again; the backup is deleted 30 days after compaction.
-- **Slot gate measures (record-only).** Each daylight half-hour records sky-dip seconds (every array dipping
-  at once), per-array shade-dip seconds, export-pinned seconds, the sample interval and a `gate_flags` bit
-  vector of what could be measured. Time-weighted, so any sensor sample rate gives the same answer. Nothing
-  reads them yet; step 3 will.
-- **Learned voltage model** for inverter-side limiting, replacing the fixed off-MPP rule that missed GEN24
-  export limiting entirely. It learns each tracker's normal voltage from temperature and irradiance and
-  records how far above it each slot sat. On 22 Oct–1 Nov it raised no false flags against export-pinned
-  truth. The old `dc_offmpp_min` keeps running alongside for comparison.
-- Diagnostics show the schema version, whether the old format is still written, the backup, the latest gate
-  measures and the voltage model's training state.
-- `tools/downgrade_v2.py`. The read-only tools and the slot-validity audit read the new format; the
-  irradiance backfill and the history import write both.
-
-## [1.15.0b3.dev1] - 2026-11-01
-
-> Private test build, not published. First step of the database-size work: the store stops writing
-> night rows that no calculation reads. Reversible by design: nothing is deleted and the schema is
-> unchanged, so reinstalling 1.15.0b2 simply resumes writing them.
-
-### Changed
-
-- **Empty night slots are no longer written.** A half-hour is skipped when the sun is at or below the
-  horizon and the slot measured and forecast nothing: no generation, export, battery charge or forecast,
-  on the system or on any array. Every tuning, dampening and shading query already ignores rows without
-  generation, so nothing changes in what they compute. Night slots were over half of all rows. Any
-  non-zero value keeps the slot, so twilight output and overnight battery export are still recorded.
-  The decision covers the whole slot, so the property-wide row and the per-array rows are always
-  written together or not at all.
-- The **Database Records** sensor now grows about half as fast, and the diagnostics' newest-row time
-  stays on the last real row overnight.
-- Skipped slots also skip the base integration's undampened-forecast lookup, saving one service call
-  per array per night half-hour. Sensors, energy-counter baselines and the confidence advisory still
-  update every cycle.
 
 ## [1.15.0b2] - 2026-10-30
 
