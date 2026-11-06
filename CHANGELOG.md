@@ -5,6 +5,15 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Clearing an optional sensor in the options flow, or in Reconfigure, now sticks.** An empty field is
+  missing from what the form submits, so the old value stayed in the entry and the integration kept
+  reading a sensor the user had just removed (for example a grid voltage or battery sensor). Every
+  cleared entity field on the Site & System and Battery steps is now stored as empty.
+
 ## [1.15.0b3.dev6] - 2026-11-05
 
 > Private test build, not published. Changes what a brand-new database looks like, and fixes three
