@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Capteur de température de l'onduleur (facultatif)",
           "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)",
           "grid_power_sensor": "Capteur de puissance réseau (facultatif, pour détecter la limitation d'injection)",
+          "grid_power_export_positive": "Le capteur de puissance réseau indique l'injection en positif",
           "generation_power_sensor": "Capteur de puissance produite (facultatif, pour détecter la limitation d'injection)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "La tension CA mesurée par votre onduleur au point de raccordement. Le maximum et la médiane de chaque demi-heure sont enregistrés, afin de distinguer plus tard de l'ombrage les créneaux où une tension élevée a fait réduire la production. Enregistrement seul pour l'instant.",
           "inverter_temp_sensor": "Enregistré comme maximum de chaque demi-heure, afin de distinguer plus tard le déclassement thermique de l'ombrage. Enregistrement seul pour l'instant.",
           "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant.",
-          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, quel que soit le signe. Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, positive à l'import (la convention de Home Assistant). Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "grid_power_export_positive": "Activez si le capteur de puissance réseau est positif pendant l'injection. La convention de Home Assistant, et du tableau de bord Énergie, est positive à l'import. Ne sert qu'à distinguer un plafonnement de production ou un déclenchement d'une limitation d'injection qui prend le relais quand une grosse charge s'arrête.",
           "generation_power_sensor": "La puissance de sortie instantanée de votre onduleur, en W ou kW, mise à jour au moins une fois par minute. Laissez vide pour utiliser plutôt vos capteurs de tension et de courant MPPT. Enregistré uniquement pour l'instant."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Capteur de température de l'onduleur (facultatif)",
           "inverter_limited_sensor": "État « onduleur limité » (capteur binaire facultatif)",
           "grid_power_sensor": "Capteur de puissance réseau (facultatif, pour détecter la limitation d'injection)",
+          "grid_power_export_positive": "Le capteur de puissance réseau indique l'injection en positif",
           "generation_power_sensor": "Capteur de puissance produite (facultatif, pour détecter la limitation d'injection)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "La tension CA mesurée par votre onduleur au point de raccordement. Le maximum et la médiane de chaque demi-heure sont enregistrés, afin de distinguer plus tard de l'ombrage les créneaux où une tension élevée a fait réduire la production. Enregistrement seul pour l'instant.",
           "inverter_temp_sensor": "Enregistré comme maximum de chaque demi-heure, afin de distinguer plus tard le déclassement thermique de l'ombrage. Enregistrement seul pour l'instant.",
           "inverter_limited_sensor": "Un capteur binaire actif tant que l'onduleur limite sa production pour une raison quelconque : limite d'injection, commande du réseau ou déclassement. Associez-y l'état de votre onduleur avec un modèle (template). La part de chaque demi-heure où il était actif est enregistrée. Enregistrement seul pour l'instant.",
-          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, quel que soit le signe. Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "grid_power_sensor": "La puissance instantanée à votre point de raccordement, en W ou kW, positive à l'import (la convention de Home Assistant). Elle doit se mettre à jour au moins une fois par minute. Chaque demi-heure enregistre combien de fois elle est restée stable alors que la production variait, ce qui trahit une limitation d'injection. Enregistré uniquement pour l'instant.",
+          "grid_power_export_positive": "Activez si le capteur de puissance réseau est positif pendant l'injection. La convention de Home Assistant, et du tableau de bord Énergie, est positive à l'import. Ne sert qu'à distinguer un plafonnement de production ou un déclenchement d'une limitation d'injection qui prend le relais quand une grosse charge s'arrête.",
           "generation_power_sensor": "La puissance de sortie instantanée de votre onduleur, en W ou kW, mise à jour au moins une fois par minute. Laissez vide pour utiliser plutôt vos capteurs de tension et de courant MPPT. Enregistré uniquement pour l'instant."
         }
       },

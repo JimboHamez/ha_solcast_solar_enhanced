@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
           "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)",
           "grid_power_sensor": "Senzor výkonu siete (voliteľný, na zistenie obmedzenia dodávky)",
+          "grid_power_export_positive": "Senzor výkonu siete udáva dodávku ako kladnú",
           "generation_power_sensor": "Senzor vyrábaného výkonu (voliteľný, na zistenie obmedzenia dodávky)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva.",
-          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, s ľubovoľným znamienkom. Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, kladný pri odbere (konvencia Home Assistant). Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "grid_power_export_positive": "Zapnite, ak je senzor výkonu siete pri dodávke kladný. Konvencia Home Assistant aj panela Energia je kladná pri odbere. Potrebné len na odlíšenie obmedzenia výroby alebo vypnutia od obmedzenia dodávky, ktoré nastúpi, keď sa vypne veľký spotrebič.",
           "generation_power_sensor": "Aktuálny výstupný výkon meniča vo W alebo kW, aktualizovaný aspoň raz za minútu. Nechajte prázdne, ak chcete namiesto toho použiť senzory napätia a prúdu MPPT. Zatiaľ sa iba zaznamenáva."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Senzor teploty meniča (voliteľný)",
           "inverter_limited_sensor": "Stav obmedzenia meniča (voliteľný binárny senzor)",
           "grid_power_sensor": "Senzor výkonu siete (voliteľný, na zistenie obmedzenia dodávky)",
+          "grid_power_export_positive": "Senzor výkonu siete udáva dodávku ako kladnú",
           "generation_power_sensor": "Senzor vyrábaného výkonu (voliteľný, na zistenie obmedzenia dodávky)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "Striedavé napätie, ktoré menič meria v mieste pripojenia. Ukladá sa maximum a medián každej polhodiny, aby sa obdobia, keď vysoké napätie znížilo výkon meniča, dali neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_temp_sensor": "Ukladá sa ako maximum každej polhodiny, aby sa tepelné obmedzenie dalo neskôr odlíšiť od tienenia. Zatiaľ sa len zaznamenáva.",
           "inverter_limited_sensor": "Binárny senzor, ktorý je zapnutý, kým menič z akéhokoľvek dôvodu obmedzuje výkon: limit pretokov, príkaz prevádzkovateľa siete alebo derating. Priraďte k nemu stav meniča pomocou šablóny. Ukladá sa podiel každej polhodiny, keď bol zapnutý. Zatiaľ sa len zaznamenáva.",
-          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, s ľubovoľným znamienkom. Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "grid_power_sensor": "Aktuálny výkon v mieste pripojenia k sieti vo W alebo kW, kladný pri odbere (konvencia Home Assistant). Musí sa aktualizovať aspoň raz za minútu. Za každú polhodinu sa zaznamená, koľkokrát zostal stály, kým sa výroba menila – tak sa prejavuje obmedzenie dodávky. Zatiaľ sa iba zaznamenáva.",
+          "grid_power_export_positive": "Zapnite, ak je senzor výkonu siete pri dodávke kladný. Konvencia Home Assistant aj panela Energia je kladná pri odbere. Potrebné len na odlíšenie obmedzenia výroby alebo vypnutia od obmedzenia dodávky, ktoré nastúpi, keď sa vypne veľký spotrebič.",
           "generation_power_sensor": "Aktuálny výstupný výkon meniča vo W alebo kW, aktualizovaný aspoň raz za minútu. Nechajte prázdne, ak chcete namiesto toho použiť senzory napätia a prúdu MPPT. Zatiaľ sa iba zaznamenáva."
         }
       },

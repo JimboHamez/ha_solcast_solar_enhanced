@@ -48,6 +48,9 @@ CONF_INVERTER_LIMITED_SENSOR = "inverter_limited_sensor"
 # pre-filled.
 CONF_GRID_POWER_SENSOR = "grid_power_sensor"
 CONF_GENERATION_POWER_SENSOR = "generation_power_sensor"
+# The grid sensor reads positive while exporting (Home Assistant's convention, the default, is positive
+# while importing). Only the cut-step direction test needs the sign.
+CONF_GRID_POWER_EXPORT_POSITIVE = "grid_power_export_positive"
 # Stored when a curtailment input is not configured or could not be read. The
 # limited fraction and the export limit both have a meaningful 0, so 0 cannot
 # stand for "unknown" the way it does for voltage and temperature.

@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Wechselrichter-Temperatursensor (optional)",
           "inverter_limited_sensor": "Status „Wechselrichter begrenzt“ (optionaler Binärsensor)",
           "grid_power_sensor": "Netzleistungssensor (optional, zur Erkennung von Einspeisebegrenzung)",
+          "grid_power_export_positive": "Netzleistungssensor zeigt Einspeisung positiv an",
           "generation_power_sensor": "Erzeugungsleistungssensor (optional, zur Erkennung von Einspeisebegrenzung)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "Die AC-Spannung, die Ihr Wechselrichter am Netzanschluss misst. Maximum und Median jeder halben Stunde werden gespeichert, damit Zeiträume, in denen hohe Spannung die Leistung gedrosselt hat, später von Verschattung unterschieden werden können. Vorerst nur aufgezeichnet.",
           "inverter_temp_sensor": "Wird als Maximum jeder halben Stunde gespeichert, damit thermisches Derating später von Verschattung unterschieden werden kann. Vorerst nur aufgezeichnet.",
           "inverter_limited_sensor": "Ein Binärsensor, der eingeschaltet ist, solange der Wechselrichter seine Leistung aus irgendeinem Grund begrenzt: Einspeiselimit, Netzbetreiber-Befehl oder Derating. Bilden Sie den Status Ihres Wechselrichters per Template darauf ab. Gespeichert wird der Anteil jeder halben Stunde, in dem er eingeschaltet war. Vorerst nur aufgezeichnet.",
-          "grid_power_sensor": "Die aktuelle Leistung an Ihrem Netzanschluss in W oder kW, mit beliebigem Vorzeichen. Sie muss mindestens einmal pro Minute aktualisiert werden. Für jede halbe Stunde wird erfasst, wie oft sie stabil blieb, während sich die Erzeugung änderte – so zeigt sich eine Einspeisebegrenzung. Vorerst nur aufgezeichnet.",
+          "grid_power_sensor": "Die aktuelle Leistung an Ihrem Netzanschluss in W oder kW, positiv bei Netzbezug (Konvention von Home Assistant). Sie muss mindestens einmal pro Minute aktualisiert werden. Für jede halbe Stunde wird erfasst, wie oft sie stabil blieb, während sich die Erzeugung änderte – so zeigt sich eine Einspeisebegrenzung. Vorerst nur aufgezeichnet.",
+          "grid_power_export_positive": "Einschalten, wenn der Netzleistungssensor bei Einspeisung positiv ist. Home Assistant und das Energie-Dashboard verwenden die Konvention „positiv bei Netzbezug“. Wird nur benötigt, um eine Erzeugungsbegrenzung oder Abschaltung von einer Einspeisebegrenzung zu unterscheiden, die greift, wenn ein großer Verbraucher abschaltet.",
           "generation_power_sensor": "Die aktuelle Ausgangsleistung Ihres Wechselrichters in W oder kW, mindestens einmal pro Minute aktualisiert. Leer lassen, um stattdessen Ihre MPPT-Spannungs- und Stromsensoren zu verwenden. Vorerst nur aufgezeichnet."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Wechselrichter-Temperatursensor (optional)",
           "inverter_limited_sensor": "Status „Wechselrichter begrenzt“ (optionaler Binärsensor)",
           "grid_power_sensor": "Netzleistungssensor (optional, zur Erkennung von Einspeisebegrenzung)",
+          "grid_power_export_positive": "Netzleistungssensor zeigt Einspeisung positiv an",
           "generation_power_sensor": "Erzeugungsleistungssensor (optional, zur Erkennung von Einspeisebegrenzung)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "Die AC-Spannung, die Ihr Wechselrichter am Netzanschluss misst. Maximum und Median jeder halben Stunde werden gespeichert, damit Zeiträume, in denen hohe Spannung die Leistung gedrosselt hat, später von Verschattung unterschieden werden können. Vorerst nur aufgezeichnet.",
           "inverter_temp_sensor": "Wird als Maximum jeder halben Stunde gespeichert, damit thermisches Derating später von Verschattung unterschieden werden kann. Vorerst nur aufgezeichnet.",
           "inverter_limited_sensor": "Ein Binärsensor, der eingeschaltet ist, solange der Wechselrichter seine Leistung aus irgendeinem Grund begrenzt: Einspeiselimit, Netzbetreiber-Befehl oder Derating. Bilden Sie den Status Ihres Wechselrichters per Template darauf ab. Gespeichert wird der Anteil jeder halben Stunde, in dem er eingeschaltet war. Vorerst nur aufgezeichnet.",
-          "grid_power_sensor": "Die aktuelle Leistung an Ihrem Netzanschluss in W oder kW, mit beliebigem Vorzeichen. Sie muss mindestens einmal pro Minute aktualisiert werden. Für jede halbe Stunde wird erfasst, wie oft sie stabil blieb, während sich die Erzeugung änderte – so zeigt sich eine Einspeisebegrenzung. Vorerst nur aufgezeichnet.",
+          "grid_power_sensor": "Die aktuelle Leistung an Ihrem Netzanschluss in W oder kW, positiv bei Netzbezug (Konvention von Home Assistant). Sie muss mindestens einmal pro Minute aktualisiert werden. Für jede halbe Stunde wird erfasst, wie oft sie stabil blieb, während sich die Erzeugung änderte – so zeigt sich eine Einspeisebegrenzung. Vorerst nur aufgezeichnet.",
+          "grid_power_export_positive": "Einschalten, wenn der Netzleistungssensor bei Einspeisung positiv ist. Home Assistant und das Energie-Dashboard verwenden die Konvention „positiv bei Netzbezug“. Wird nur benötigt, um eine Erzeugungsbegrenzung oder Abschaltung von einer Einspeisebegrenzung zu unterscheiden, die greift, wenn ein großer Verbraucher abschaltet.",
           "generation_power_sensor": "Die aktuelle Ausgangsleistung Ihres Wechselrichters in W oder kW, mindestens einmal pro Minute aktualisiert. Leer lassen, um stattdessen Ihre MPPT-Spannungs- und Stromsensoren zu verwenden. Vorerst nur aufgezeichnet."
         }
       },

@@ -16,12 +16,16 @@ and lands on the grid instead. So each slot counts:
   power. A battery or a solar-surplus EV charger can hold net power too, but behind it
   the trackers stay on their MPP; only a limiter walks them along the curve.
 * ``cut_steps`` — drops net power did *not* absorb, with every tracker's voltage up
-  by ``STEP_CUT_V``: output pulled away from the MPP whatever the house drew, the
-  signature of a generation cap or a protection trip rather than an export hold.
+  by ``STEP_CUT_V`` and import rising (export falling) as it would under cloud:
+  output pulled away from the MPP whatever the house drew, the signature of a
+  generation cap or a protection trip rather than an export hold. The direction
+  matters: when a large load switches off while export sits at a limit, the limiter
+  also cuts generation and walks the trackers up, but export *rises* to the limit.
 
 The last two need DC voltage and are ``-1`` without it; the first two are ``-1``
 without both power series. Series are compared as time-weighted window means, on
-which see ``STEP_WINDOW_S``; the sign of the grid sensor does not matter.
+which see ``STEP_WINDOW_S``. Net power is import-positive (Home Assistant's grid
+convention); only the cut test reads its sign, the held test uses its size.
 """
 
 from __future__ import annotations
@@ -96,7 +100,7 @@ def measure_steps(
     Args:
         start: Slot start, epoch seconds.
         end: Slot end, epoch seconds.
-        net_w: Grid power in W, either sign convention; ``None`` if not configured.
+        net_w: Grid power in W, positive while importing; ``None`` if not configured.
         gen_w: Generation power in W (AC output or DC V × I); ``None`` if unavailable.
         tracker_volts: Each DC tracker's voltage samples; empty without DC telemetry.
 
@@ -135,7 +139,7 @@ def measure_steps(
             continue
         if is_held and against >= STEP_REGULATED_V:
             regulated += 1
-        elif not is_held and dp < 0 and against >= STEP_CUT_V and g0 >= STEP_CUT_MIN_W:
+        elif not is_held and dp < 0 and n1 > n0 and against >= STEP_CUT_V and g0 >= STEP_CUT_MIN_W:
             cut += 1
     out["gen_steps"], out["held_steps"] = steps, held
     if has_dc:

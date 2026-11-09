@@ -16,6 +16,7 @@ from custom_components.solcast_solar_enhanced.const import (
     BASE_DOMAIN,
     CONF_BATTERY_STAT_SENSOR,
     CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_EXPORT_POSITIVE,
     CONF_GRID_POWER_SENSOR,
     CONF_GRID_VOLTAGE_SENSOR,
     DOMAIN,
@@ -82,6 +83,21 @@ async def test_the_options_flow_refuses_a_counter_too(hass) -> None:
     assert result["errors"] == {CONF_GENERATION_POWER_SENSOR: "power_sensor_required"}
 
 
+async def test_the_grid_sign_toggle_defaults_off_and_is_stored(hass) -> None:
+    """Home Assistant's grid convention (positive while importing) is the default; the options flow stores a change."""
+    with patch(SUGGEST, return_value={}):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    marker = next(m for m in result["data_schema"].schema if str(m) == CONF_GRID_POWER_EXPORT_POSITIVE)
+    assert marker.default() is False
+    entry = MockConfigEntry(domain=DOMAIN, data={**SITE, "db_enabled": False}, options={})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    for step in ({**SITE, CONF_GRID_POWER_EXPORT_POSITIVE: True}, *LATER, BATTERY, TUNING):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], step)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_GRID_POWER_EXPORT_POSITIVE] is True
+
+
 # --- clearing an optional sensor (pre-dev8 the old value silently stayed) ---------------
 
 
@@ -142,6 +158,6 @@ def test_the_new_fields_and_error_are_translated() -> None:
         d = json.loads(path.read_text(encoding="utf-8"))
         for section in ("config", "options"):
             site = d[section]["step"]["site"]
-            for key in (CONF_GRID_POWER_SENSOR, CONF_GENERATION_POWER_SENSOR):
+            for key in (CONF_GRID_POWER_SENSOR, CONF_GRID_POWER_EXPORT_POSITIVE, CONF_GENERATION_POWER_SENSOR):
                 assert site["data"][key] and site["data_description"][key], (path.name, section, key)
             assert d[section]["error"]["power_sensor_required"], (path.name, section)

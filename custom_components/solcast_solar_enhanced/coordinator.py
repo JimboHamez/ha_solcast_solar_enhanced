@@ -48,6 +48,7 @@ from .const import (
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
     CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_EXPORT_POSITIVE,
     CONF_GRID_POWER_SENSOR,
     CONF_GRID_VOLTAGE_SENSOR,
     CONF_INVERTER_LIMITED_SENSOR,
@@ -2602,8 +2603,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         """Grid and generation power in W for the step counts, and whether generation came from the sensor.
 
         Both must be power readings: an energy counter is differenced over at least
-        300 s, far coarser than a step, so it yields ``None``. Generation falls back to
-        the property's DC trackers (V x I) when no generation sensor is configured.
+        300 s, far coarser than a step, so it yields ``None``. Grid power is returned
+        import-positive, flipped when the sensor is set as reporting export positive.
+        Generation falls back to the property's DC trackers (V x I) when no generation
+        sensor is configured.
         """
 
         def power_w(entity_id: Any) -> list[tuple[float, float]] | None:
@@ -2613,6 +2616,8 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return [(t, kw * 1000.0) for t, kw in series] if series and kind == "ac" else None
 
         net_w = power_w(opts.get(CONF_GRID_POWER_SENSOR))
+        if net_w and opts.get(CONF_GRID_POWER_EXPORT_POSITIVE):
+            net_w = [(t, -w) for t, w in net_w]
         if opts.get(CONF_GENERATION_POWER_SENSOR):
             return net_w, power_w(opts.get(CONF_GENERATION_POWER_SENSOR)), True
         pairs = self._tracker_pairs(self._property_mppt_list(opts), samples)

@@ -9,6 +9,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from custom_components.solcast_solar_enhanced.const import (
     CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_EXPORT_POSITIVE,
     CONF_GRID_POWER_SENSOR,
     DEFAULT_SITE_ID,
     DOMAIN,
@@ -44,6 +45,44 @@ def _held_slot(start: float, end: float, *, gen_sensor_kw: bool = False) -> dict
     if gen_sensor_kw:
         out[GEN] = ser(1.7, 3.2)
     return out
+
+
+def _capped_slot(export_positive: bool):
+    """A generation cap at +600 s: both trackers pulled 10% up, 7 kW of DC down to 1.8 kW, export 5 kW to 0.3 kW import."""
+    sign = -1.0 if export_positive else 1.0
+
+    def build(start: float, end: float) -> dict[str, list[tuple[float, float]]]:
+        def ser(before: float, after: float) -> list[tuple[float, float]]:
+            return [(float(t), before if t - start < 600 else after) for t in range(int(start), int(end))]
+
+        return {
+            "sensor.v1": ser(400.0, 440.0),
+            "sensor.i1": ser(8.75, 2.0),
+            "sensor.v2": ser(400.0, 440.0),
+            "sensor.i2": ser(8.75, 2.0),
+            "sensor.export_power": [(float(start), 0.0)],
+            GRID: ser(sign * -5000.0, sign * 300.0),
+        }
+
+    return build
+
+
+@pytest.mark.parametrize("export_positive", [False, True])
+async def test_a_cap_is_a_cut_with_the_sign_set_right(hass, base_with_forecast, export_positive: bool) -> None:
+    hass.states.async_set(GRID, "0", {"unit_of_measurement": "W"})
+    opts = {CONF_GRID_POWER_SENSOR: GRID, CONF_GRID_POWER_EXPORT_POSITIVE: export_positive}
+    coord = _coordinator(hass, _dc_groups(), **opts)
+    await _update(coord, _capped_slot(export_positive))
+    assert _total(coord)["cut_steps"] == 1
+
+
+async def test_an_export_positive_sensor_left_unflagged_reads_as_the_limiter(hass, base_with_forecast) -> None:
+    """Without the toggle an export-positive sensor's cap looks like export rising, so it is not a cut."""
+    hass.states.async_set(GRID, "0", {"unit_of_measurement": "W"})
+    coord = _coordinator(hass, _dc_groups(), **{CONF_GRID_POWER_SENSOR: GRID})
+    await _update(coord, _capped_slot(export_positive=True))
+    total = _total(coord)
+    assert (total["gen_steps"], total["cut_steps"]) == (1, 0)
 
 
 def _total(coord) -> dict[str, Any]:

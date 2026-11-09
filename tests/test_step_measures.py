@@ -2,8 +2,8 @@
 
 The synthetic cases pin each rule against the wrong implementations it is easiest to
 write: raw-sample differencing (books a regulator's few-second correction as the
-step), a sign-dependent net test, voltage judged on one tracker only, and a cut test
-without its voltage or power floor.
+step), a sign-dependent held test, voltage judged on one tracker only, and a cut test
+without its voltage or power floor, or without its direction (export must fall).
 """
 
 from __future__ import annotations
@@ -108,6 +108,20 @@ def test_a_cut_needs_the_voltage_rise_and_the_power_floor() -> None:
     low = _series([(0, 900.0), (300, 100.0)])
     low_net = _series([(0, -400.0), (300, 400.0)])
     assert measure_steps(START, END, low_net, low, [up, up])["cut_steps"] == 0
+
+
+def test_a_limiter_taking_over_after_a_load_drop_is_not_a_cut() -> None:
+    """A big load switches off while export is near the limit: generation is cut, the trackers walk up, but export *rises*.
+
+    Seen ten times on the owner's 8-9 Nov 2026 history (5 kW limit, EV and oven loads), and booked as
+    cuts before 1.16.0b1.dev2. A cap or trip lowers export instead, which the first case keeps.
+    """
+    gen = _series([(0, 7100.0), (300, 5900.0)])
+    up = _series([(0, 380.0), (300, 413.0)])  # +8.7%, as at 9 Nov 14:03:30.
+    export_rises = _series([(0, -400.0), (300, -5060.0)])  # Import-positive: export 0.4 -> 5.06 kW.
+    assert measure_steps(START, END, export_rises, gen, [up, up])["cut_steps"] == 0
+    export_falls = _series([(0, -4600.0), (300, 60.0)])  # The same drop landing on the grid.
+    assert measure_steps(START, END, export_falls, gen, [up, up])["cut_steps"] == 1
 
 
 def test_a_rise_is_never_a_cut() -> None:

@@ -50,6 +50,7 @@ from .const import (
     CONF_DB_RETENTION_DAYS,
     CONF_EXPORT_LIMIT_KW,
     CONF_GENERATION_POWER_SENSOR,
+    CONF_GRID_POWER_EXPORT_POSITIVE,
     CONF_GRID_POWER_SENSOR,
     CONF_GRID_VOLTAGE_SENSOR,
     CONF_INVERTER_LIMITED_SENSOR,
@@ -358,6 +359,9 @@ def _build_site_schema(d: dict[str, Any], *, single_site: bool) -> vol.Schema:
         vol.Optional(
             CONF_GRID_POWER_SENSOR, description={"suggested_value": d.get(CONF_GRID_POWER_SENSOR)}
         ): _entity_selector(),
+        vol.Required(
+            CONF_GRID_POWER_EXPORT_POSITIVE, default=bool(d.get(CONF_GRID_POWER_EXPORT_POSITIVE, False))
+        ): BooleanSelector(),
         vol.Optional(
             CONF_GENERATION_POWER_SENSOR, description={"suggested_value": d.get(CONF_GENERATION_POWER_SENSOR)}
         ): _entity_selector(),

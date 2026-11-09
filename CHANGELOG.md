@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0b1.dev2] - 2026-11-09
+
+> Private test build, not published. Changes only how `cut_steps` is counted, and adds one Step 1 toggle,
+> so installing over 1.16.0b1.dev1 needs nothing else. Rows dev1 recorded keep their old `cut_steps`.
+
+### Fixed
+
+- **A limiter taking over is no longer counted as a cut.** When a large load switches off while export is
+  near the limit, the limiter cuts generation and walks the trackers' voltage up, just as a generation cap
+  does, but export *rises* to the limit. On the owner's 8–9 Nov 2026 history (5 kW limit, EV and oven),
+  all ten cut steps were this. A cut now also needs import to rise (export to fall), which removes all ten
+  and keeps a real cap or trip, such as the 0 kW switch in the 6 Nov step test. Held and regulated counts
+  are unchanged: 54% of steps held in the slots pinned at 5 kW, against 5.8% free running.
+
+### Added
+
+- **Grid power sensor reports export as positive** (Step 1, off by default). Grid power is now taken as
+  positive while importing, Home Assistant's and the Energy dashboard's convention. Turn this on for a
+  sensor that reads the other way. Only the cut count uses the sign. Translated into all 11 languages.
+
 ## [1.16.0b1.dev1] - 2026-11-09
 
 > Private test build, not published, built on 1.15.0. It ranks above 1.15.0 and any 1.15.x patch, and
@@ -31,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     least 1 kW: a generation cap or trip rather than an export hold.
 
   The last two need DC voltage and read `-1` without it. Generation comes from the new generation power
-  sensor when set, else from the MPPT trackers (V × I). The grid sensor's sign does not matter. New
+  sensor when set, else from the MPPT trackers (V × I). The grid sensor's sign did not matter here (dev2 changed that). New
   `gate_flags` bits: 11 `NET_SERIES` (both power series were there) and 12 `GEN_SENSOR` (generation came
   from the sensor). On the 6 Nov 2026 Fronius step test (0 kW, then 2 kW) the holds showed 47–60% of
   steps held against 0% free running. A 30 s window is the shortest that works, because a regulator

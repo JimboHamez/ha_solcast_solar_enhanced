@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Inverter temperature sensor (optional)",
           "inverter_limited_sensor": "Inverter limited status (optional binary sensor)",
           "grid_power_sensor": "Grid power sensor (optional, for export-limit detection)",
+          "grid_power_export_positive": "Grid power sensor reports export as positive",
           "generation_power_sensor": "Generation power sensor (optional, for export-limit detection)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
           "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
           "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now.",
-          "grid_power_sensor": "Live power at your grid connection, in W or kW, with either sign. It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "grid_power_sensor": "Live power at your grid connection, in W or kW, positive while importing (Home Assistant's convention). It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "grid_power_export_positive": "Turn on if the grid power sensor reads positive while exporting. Home Assistant's convention, and the Energy dashboard's, is positive while importing. Only needed to tell a generation cap or trip apart from an export limit taking over when a large load switches off.",
           "generation_power_sensor": "Your inverter's live output, in W or kW, updating at least once a minute. Leave empty to use your MPPT voltage and current sensors instead. Recorded only for now."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Inverter temperature sensor (optional)",
           "inverter_limited_sensor": "Inverter limited status (optional binary sensor)",
           "grid_power_sensor": "Grid power sensor (optional, for export-limit detection)",
+          "grid_power_export_positive": "Grid power sensor reports export as positive",
           "generation_power_sensor": "Generation power sensor (optional, for export-limit detection)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "The AC voltage your inverter measures at the grid connection. Its half-hour maximum and median are recorded, so slots where high voltage made the inverter cut its output can later be told apart from shading. Recorded only for now.",
           "inverter_temp_sensor": "Recorded as the half-hour maximum, so thermal derating can later be told apart from shading. Recorded only for now.",
           "inverter_limited_sensor": "A binary sensor that is on while the inverter holds its output down for any reason: an export limit, a network command or derating. Map your inverter's status onto it with a template. The share of each half-hour it was on is recorded. Recorded only for now.",
-          "grid_power_sensor": "Live power at your grid connection, in W or kW, with either sign. It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "grid_power_sensor": "Live power at your grid connection, in W or kW, positive while importing (Home Assistant's convention). It needs to update at least once a minute. Each half-hour records how often it held steady while generation changed, which is how an export limit shows itself. Recorded only for now.",
+          "grid_power_export_positive": "Turn on if the grid power sensor reads positive while exporting. Home Assistant's convention, and the Energy dashboard's, is positive while importing. Only needed to tell a generation cap or trip apart from an export limit taking over when a large load switches off.",
           "generation_power_sensor": "Your inverter's live output, in W or kW, updating at least once a minute. Leave empty to use your MPPT voltage and current sensors instead. Recorded only for now."
         }
       },

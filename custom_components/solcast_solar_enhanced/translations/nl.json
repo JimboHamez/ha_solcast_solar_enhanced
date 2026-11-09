@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Omvormertemperatuursensor (optioneel)",
           "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)",
           "grid_power_sensor": "Netvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)",
+          "grid_power_export_positive": "Netvermogenssensor geeft teruglevering positief weer",
           "generation_power_sensor": "Opwekvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "De AC-spanning die je omvormer op de netaansluiting meet. Het maximum en de mediaan van elk halfuur worden vastgelegd, zodat periodes waarin hoge spanning de omvormer liet terugregelen later van schaduw te onderscheiden zijn. Voorlopig alleen vastgelegd.",
           "inverter_temp_sensor": "Vastgelegd als maximum per halfuur, zodat thermische derating later van schaduw te onderscheiden is. Voorlopig alleen vastgelegd.",
           "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd.",
-          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, met willekeurig teken. Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, positief bij afname (de conventie van Home Assistant). Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "grid_power_export_positive": "Zet aan als de netvermogenssensor positief is bij teruglevering. De conventie van Home Assistant, en van het Energie-dashboard, is positief bij afname. Alleen nodig om een opwekbegrenzing of uitschakeling te onderscheiden van een terugleverbegrenzing die ingrijpt wanneer een grote verbruiker uitschakelt.",
           "generation_power_sensor": "Het actuele uitgangsvermogen van je omvormer, in W of kW, minstens één keer per minuut bijgewerkt. Laat leeg om in plaats daarvan je MPPT-spannings- en stroomsensoren te gebruiken. Voorlopig alleen vastgelegd."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Omvormertemperatuursensor (optioneel)",
           "inverter_limited_sensor": "Status omvormer begrensd (optionele binaire sensor)",
           "grid_power_sensor": "Netvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)",
+          "grid_power_export_positive": "Netvermogenssensor geeft teruglevering positief weer",
           "generation_power_sensor": "Opwekvermogenssensor (optioneel, voor detectie van terugleverbegrenzing)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "De AC-spanning die je omvormer op de netaansluiting meet. Het maximum en de mediaan van elk halfuur worden vastgelegd, zodat periodes waarin hoge spanning de omvormer liet terugregelen later van schaduw te onderscheiden zijn. Voorlopig alleen vastgelegd.",
           "inverter_temp_sensor": "Vastgelegd als maximum per halfuur, zodat thermische derating later van schaduw te onderscheiden is. Voorlopig alleen vastgelegd.",
           "inverter_limited_sensor": "Een binaire sensor die aan staat zolang de omvormer zijn vermogen om welke reden dan ook beperkt: een exportlimiet, een opdracht van de netbeheerder of derating. Koppel de status van je omvormer eraan met een template. Het deel van elk halfuur dat hij aan stond wordt vastgelegd. Voorlopig alleen vastgelegd.",
-          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, met willekeurig teken. Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "grid_power_sensor": "Het actuele vermogen op je netaansluiting, in W of kW, positief bij afname (de conventie van Home Assistant). Het moet minstens één keer per minuut bijwerken. Per half uur wordt vastgelegd hoe vaak het stabiel bleef terwijl de opwek veranderde; zo verraadt een terugleverbegrenzing zich. Voorlopig alleen vastgelegd.",
+          "grid_power_export_positive": "Zet aan als de netvermogenssensor positief is bij teruglevering. De conventie van Home Assistant, en van het Energie-dashboard, is positief bij afname. Alleen nodig om een opwekbegrenzing of uitschakeling te onderscheiden van een terugleverbegrenzing die ingrijpt wanneer een grote verbruiker uitschakelt.",
           "generation_power_sensor": "Het actuele uitgangsvermogen van je omvormer, in W of kW, minstens één keer per minuut bijgewerkt. Laat leeg om in plaats daarvan je MPPT-spannings- en stroomsensoren te gebruiken. Voorlopig alleen vastgelegd."
         }
       },

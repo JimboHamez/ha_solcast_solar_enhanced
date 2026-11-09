@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Sensore di temperatura dell'inverter (opzionale)",
           "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)",
           "grid_power_sensor": "Sensore di potenza di rete (opzionale, per rilevare la limitazione dell'immissione)",
+          "grid_power_export_positive": "Il sensore di potenza di rete indica l'immissione come positiva",
           "generation_power_sensor": "Sensore di potenza prodotta (opzionale, per rilevare la limitazione dell'immissione)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "La tensione CA che l'inverter misura al punto di connessione. Vengono registrati massimo e mediana di ogni mezz'ora, così le fasce in cui la tensione alta ha fatto ridurre la produzione potranno poi essere distinte dall'ombreggiamento. Per ora solo registrato.",
           "inverter_temp_sensor": "Registrato come massimo di ogni mezz'ora, così il declassamento termico potrà poi essere distinto dall'ombreggiamento. Per ora solo registrato.",
           "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato.",
-          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, con qualsiasi segno. Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, positiva in prelievo (la convenzione di Home Assistant). Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "grid_power_export_positive": "Attivalo se il sensore di potenza di rete è positivo durante l'immissione. La convenzione di Home Assistant, e del pannello Energia, è positiva in prelievo. Serve solo a distinguere un limite di produzione o uno scatto da una limitazione dell'immissione che interviene quando si spegne un carico grande.",
           "generation_power_sensor": "La potenza in uscita istantanea dell'inverter, in W o kW, aggiornata almeno una volta al minuto. Lascia vuoto per usare invece i sensori di tensione e corrente MPPT. Per ora solo registrato."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Sensore di temperatura dell'inverter (opzionale)",
           "inverter_limited_sensor": "Stato inverter limitato (sensore binario opzionale)",
           "grid_power_sensor": "Sensore di potenza di rete (opzionale, per rilevare la limitazione dell'immissione)",
+          "grid_power_export_positive": "Il sensore di potenza di rete indica l'immissione come positiva",
           "generation_power_sensor": "Sensore di potenza prodotta (opzionale, per rilevare la limitazione dell'immissione)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "La tensione CA che l'inverter misura al punto di connessione. Vengono registrati massimo e mediana di ogni mezz'ora, così le fasce in cui la tensione alta ha fatto ridurre la produzione potranno poi essere distinte dall'ombreggiamento. Per ora solo registrato.",
           "inverter_temp_sensor": "Registrato come massimo di ogni mezz'ora, così il declassamento termico potrà poi essere distinto dall'ombreggiamento. Per ora solo registrato.",
           "inverter_limited_sensor": "Un sensore binario attivo mentre l'inverter limita la produzione per qualsiasi motivo: limite di immissione, comando della rete o declassamento. Mappa lo stato del tuo inverter con un template. Viene registrata la quota di ogni mezz'ora in cui era attivo. Per ora solo registrato.",
-          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, con qualsiasi segno. Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "grid_power_sensor": "La potenza istantanea al punto di connessione alla rete, in W o kW, positiva in prelievo (la convenzione di Home Assistant). Deve aggiornarsi almeno una volta al minuto. Ogni mezz'ora registra quante volte è rimasta stabile mentre la produzione cambiava, che è il segno di una limitazione dell'immissione. Per ora solo registrato.",
+          "grid_power_export_positive": "Attivalo se il sensore di potenza di rete è positivo durante l'immissione. La convenzione di Home Assistant, e del pannello Energia, è positiva in prelievo. Serve solo a distinguere un limite di produzione o uno scatto da una limitazione dell'immissione che interviene quando si spegne un carico grande.",
           "generation_power_sensor": "La potenza in uscita istantanea dell'inverter, in W o kW, aggiornata almeno una volta al minuto. Lascia vuoto per usare invece i sensori di tensione e corrente MPPT. Per ora solo registrato."
         }
       },

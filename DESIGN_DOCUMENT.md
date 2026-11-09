@@ -300,7 +300,7 @@ to the Solcast `resource_id`, with `0 = '_total'`.
 | `gen_steps` | property | ×1 | −1 (unknown) | steps: generation steps of at least 300 W between 30 s windows |
 | `held_steps` | property | ×1 | −1 (unknown) | steps: those net power absorbed (an export hold) |
 | `regulated_steps` | property | ×1 | −1 (unknown) | steps: held steps with every tracker's voltage moving against power |
-| `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% |
+| `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% and export falling |
 | `pv_actual` | site | ×1000 | 0 | generation, half-hour mean (kW) |
 | `pv_estimate` | site | ×1000 | 0 | Solcast forecast as `detailedForecast` shows it, dampened (kW) |
 | `pv_estimate10` | site | ×1000 | 0 | Solcast p10 (kW) |
@@ -358,7 +358,7 @@ batched recorder query as the DC capture (about 25 ms a slot on an i5, an estima
 | `sample_gap_s` | property | median sample interval of the inputs |
 | `gate_flags` | property | `GateFlag` bits below |
 | `gen_steps`, `held_steps` | property | generation steps between 30 s windows, and how many net power absorbed (1.16.0b1.dev1) |
-| `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% |
+| `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% and export falling |
 
 Everything is **time-weighted** on the merged event timeline (a state holds until the
 next one), so 10 Hz, 1 Hz and change-only sensors give the same seconds. Power is
@@ -382,12 +382,17 @@ only grid power and generation power, so it works on string inverters and microi
 alike and never needs the limit. With DC voltage, `regulated_steps` keeps the held steps where
 every tracker's voltage also moved at least 1% against power: a battery or a solar-surplus EV
 charger can hold net power too, but leaves the trackers on their MPP. `cut_steps` counts drops
-net power did *not* absorb with every tracker's voltage up at least 5% from at least 1 kW, the
-signature of a generation cap or trip. The window matters: a regulator settles a few seconds
+net power did *not* absorb with every tracker's voltage up at least 5% from at least 1 kW, and
+with import rising (export falling) as it would under cloud: the signature of a generation cap or
+trip. The direction test arrived in 1.16.0b1.dev2. Without it, all ten "cuts" on the owner's 8–9 Nov
+2026 history were the 5 kW limiter taking over when a large load (EV, oven) switched off. That
+also cuts generation and walks the trackers up 5–9%, but export *rises* to the limit. The window matters: a regulator settles a few seconds
 after each step, and on the 6 Nov 2026 Fronius step test (0 kW then 2 kW) 30 s and 60 s windows
 gave 47–60% held in the holds against 0% free running, while 5 s windows could not separate
 them. Generation comes from the generation-power sensor when configured, else from the
-property's DC trackers. The grid sensor's sign does not matter.
+property's DC trackers. Grid power is taken as import-positive, Home Assistant's and the Energy
+dashboard's convention; `CONF_GRID_POWER_EXPORT_POSITIVE` flips a sensor that reads the other
+way. Only the cut test reads the sign: the held test uses the size of the change.
 
 `GateFlag` (`const.py`; a test pins this table to the enum, and bit positions are part
 of the stored format, so never renumber):

@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
           "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)",
           "grid_power_sensor": "Sensor de potencia de red (opcional, para detectar la limitación de vertido)",
+          "grid_power_export_positive": "El sensor de potencia de red indica el vertido como positivo",
           "generation_power_sensor": "Sensor de potencia generada (opcional, para detectar la limitación de vertido)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
           "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
           "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra.",
-          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, con cualquier signo. Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, positiva al importar (la convención de Home Assistant). Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "grid_power_export_positive": "Actívelo si el sensor de potencia de red es positivo al verter. La convención de Home Assistant y del panel de Energía es positiva al importar. Solo hace falta para distinguir un límite de generación o un disparo de una limitación de vertido que entra en acción cuando se apaga una carga grande.",
           "generation_power_sensor": "La potencia de salida instantánea de su inversor, en W o kW, actualizada al menos una vez por minuto. Déjelo vacío para usar en su lugar sus sensores de tensión y corriente MPPT. Por ahora solo se registra."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Sensor de temperatura del inversor (opcional)",
           "inverter_limited_sensor": "Estado de inversor limitado (sensor binario opcional)",
           "grid_power_sensor": "Sensor de potencia de red (opcional, para detectar la limitación de vertido)",
+          "grid_power_export_positive": "El sensor de potencia de red indica el vertido como positivo",
           "generation_power_sensor": "Sensor de potencia generada (opcional, para detectar la limitación de vertido)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "La tensión de CA que mide su inversor en la conexión a la red. Se registran el máximo y la mediana de cada media hora, para poder distinguir después de la sombra los periodos en que la tensión alta hizo que el inversor redujera su salida. Por ahora solo se registra.",
           "inverter_temp_sensor": "Se registra el máximo de cada media hora, para poder distinguir después la reducción térmica de la sombra. Por ahora solo se registra.",
           "inverter_limited_sensor": "Un sensor binario que está activado mientras el inversor limita su salida por cualquier motivo: un límite de exportación, una orden de la red o una reducción por derating. Asigne el estado de su inversor mediante una plantilla. Se registra la parte de cada media hora en que estuvo activado. Por ahora solo se registra.",
-          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, con cualquier signo. Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "grid_power_sensor": "La potencia instantánea en su conexión a la red, en W o kW, positiva al importar (la convención de Home Assistant). Debe actualizarse al menos una vez por minuto. Cada media hora se registra cuántas veces se mantuvo estable mientras cambiaba la generación, que es como se manifiesta una limitación de vertido. Por ahora solo se registra.",
+          "grid_power_export_positive": "Actívelo si el sensor de potencia de red es positivo al verter. La convención de Home Assistant y del panel de Energía es positiva al importar. Solo hace falta para distinguir un límite de generación o un disparo de una limitación de vertido que entra en acción cuando se apaga una carga grande.",
           "generation_power_sensor": "La potencia de salida instantánea de su inversor, en W o kW, actualizada al menos una vez por minuto. Déjelo vacío para usar en su lugar sus sensores de tensión y corriente MPPT. Por ahora solo se registra."
         }
       },

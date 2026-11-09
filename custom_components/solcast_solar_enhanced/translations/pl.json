@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Czujnik temperatury falownika (opcjonalny)",
           "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)",
           "grid_power_sensor": "Czujnik mocy sieci (opcjonalny, do wykrywania ograniczenia oddawania)",
+          "grid_power_export_positive": "Czujnik mocy sieci pokazuje oddawanie jako dodatnie",
           "generation_power_sensor": "Czujnik mocy wytwarzanej (opcjonalny, do wykrywania ograniczenia oddawania)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "Napięcie AC mierzone przez falownik w punkcie przyłączenia. Zapisywane są maksimum i mediana z każdego półgodzinnego okresu, aby okresy, w których wysokie napięcie obniżyło moc falownika, dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_temp_sensor": "Zapisywane jako maksimum z każdego półgodzinnego okresu, aby ograniczenie termiczne dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane.",
-          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, z dowolnym znakiem. Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, dodatnia przy poborze (konwencja Home Assistant). Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "grid_power_export_positive": "Włącz, jeśli czujnik mocy sieci jest dodatni podczas oddawania. Konwencja Home Assistant i panelu Energia to wartość dodatnia przy poborze. Potrzebne tylko do odróżnienia ograniczenia wytwarzania lub wyłączenia od ograniczenia oddawania, które zaczyna działać, gdy wyłącza się duży odbiornik.",
           "generation_power_sensor": "Bieżąca moc wyjściowa falownika, w W lub kW, aktualizowana co najmniej raz na minutę. Pozostaw puste, aby zamiast tego użyć czujników napięcia i prądu MPPT. Na razie tylko zapisywane."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Czujnik temperatury falownika (opcjonalny)",
           "inverter_limited_sensor": "Stan ograniczenia falownika (opcjonalny czujnik binarny)",
           "grid_power_sensor": "Czujnik mocy sieci (opcjonalny, do wykrywania ograniczenia oddawania)",
+          "grid_power_export_positive": "Czujnik mocy sieci pokazuje oddawanie jako dodatnie",
           "generation_power_sensor": "Czujnik mocy wytwarzanej (opcjonalny, do wykrywania ograniczenia oddawania)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "Napięcie AC mierzone przez falownik w punkcie przyłączenia. Zapisywane są maksimum i mediana z każdego półgodzinnego okresu, aby okresy, w których wysokie napięcie obniżyło moc falownika, dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_temp_sensor": "Zapisywane jako maksimum z każdego półgodzinnego okresu, aby ograniczenie termiczne dało się później odróżnić od zacienienia. Na razie tylko zapisywane.",
           "inverter_limited_sensor": "Czujnik binarny włączony, gdy falownik z dowolnego powodu ogranicza moc: limit eksportu, polecenie operatora sieci lub derating. Przypisz do niego stan falownika za pomocą szablonu. Zapisywany jest udział każdego półgodzinnego okresu, w którym był włączony. Na razie tylko zapisywane.",
-          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, z dowolnym znakiem. Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "grid_power_sensor": "Bieżąca moc w punkcie przyłączenia do sieci, w W lub kW, dodatnia przy poborze (konwencja Home Assistant). Musi aktualizować się co najmniej raz na minutę. Dla każdego półgodzinnego okresu zapisywane jest, ile razy pozostawała stała, gdy zmieniało się wytwarzanie — tak objawia się ograniczenie oddawania. Na razie tylko zapisywane.",
+          "grid_power_export_positive": "Włącz, jeśli czujnik mocy sieci jest dodatni podczas oddawania. Konwencja Home Assistant i panelu Energia to wartość dodatnia przy poborze. Potrzebne tylko do odróżnienia ograniczenia wytwarzania lub wyłączenia od ograniczenia oddawania, które zaczyna działać, gdy wyłącza się duży odbiornik.",
           "generation_power_sensor": "Bieżąca moc wyjściowa falownika, w W lub kW, aktualizowana co najmniej raz na minutę. Pozostaw puste, aby zamiast tego użyć czujników napięcia i prądu MPPT. Na razie tylko zapisywane."
         }
       },

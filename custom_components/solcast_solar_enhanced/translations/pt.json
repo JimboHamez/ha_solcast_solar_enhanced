@@ -21,6 +21,7 @@
           "inverter_temp_sensor": "Sensor de temperatura do inversor (opcional)",
           "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)",
           "grid_power_sensor": "Sensor de potência da rede (opcional, para detetar a limitação de injeção)",
+          "grid_power_export_positive": "O sensor de potência da rede indica a injeção como positiva",
           "generation_power_sensor": "Sensor de potência produzida (opcional, para detetar a limitação de injeção)"
         },
         "data_description": {
@@ -33,7 +34,8 @@
           "grid_voltage_sensor": "A tensão CA que o inversor mede na ligação à rede. São registados o máximo e a mediana de cada meia hora, para que os períodos em que a tensão alta fez o inversor reduzir a produção possam depois ser distinguidos do sombreamento. Por agora apenas registado.",
           "inverter_temp_sensor": "Registado como máximo de cada meia hora, para que a redução térmica possa depois ser distinguida do sombreamento. Por agora apenas registado.",
           "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado.",
-          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, com qualquer sinal. Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, positiva ao importar (a convenção do Home Assistant). Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "grid_power_export_positive": "Ative se o sensor de potência da rede for positivo ao injetar. A convenção do Home Assistant, e do painel de Energia, é positiva ao importar. Só é necessário para distinguir um limite de produção ou um disparo de uma limitação de injeção que entra em ação quando uma carga grande se desliga.",
           "generation_power_sensor": "A potência de saída instantânea do inversor, em W ou kW, atualizada pelo menos uma vez por minuto. Deixe vazio para usar antes os sensores de tensão e corrente MPPT. Por agora apenas registado."
         }
       },
@@ -141,6 +143,7 @@
           "inverter_temp_sensor": "Sensor de temperatura do inversor (opcional)",
           "inverter_limited_sensor": "Estado de inversor limitado (sensor binário opcional)",
           "grid_power_sensor": "Sensor de potência da rede (opcional, para detetar a limitação de injeção)",
+          "grid_power_export_positive": "O sensor de potência da rede indica a injeção como positiva",
           "generation_power_sensor": "Sensor de potência produzida (opcional, para detetar a limitação de injeção)"
         },
         "data_description": {
@@ -153,7 +156,8 @@
           "grid_voltage_sensor": "A tensão CA que o inversor mede na ligação à rede. São registados o máximo e a mediana de cada meia hora, para que os períodos em que a tensão alta fez o inversor reduzir a produção possam depois ser distinguidos do sombreamento. Por agora apenas registado.",
           "inverter_temp_sensor": "Registado como máximo de cada meia hora, para que a redução térmica possa depois ser distinguida do sombreamento. Por agora apenas registado.",
           "inverter_limited_sensor": "Um sensor binário ligado enquanto o inversor limita a produção por qualquer motivo: limite de injeção, comando da rede ou redução por derating. Associe-lhe o estado do inversor com um modelo (template). É registada a fração de cada meia hora em que esteve ligado. Por agora apenas registado.",
-          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, com qualquer sinal. Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "grid_power_sensor": "A potência instantânea na ligação à rede, em W ou kW, positiva ao importar (a convenção do Home Assistant). Tem de ser atualizada pelo menos uma vez por minuto. Cada meia hora regista quantas vezes se manteve estável enquanto a produção mudava, que é como se revela uma limitação de injeção. Por agora apenas registado.",
+          "grid_power_export_positive": "Ative se o sensor de potência da rede for positivo ao injetar. A convenção do Home Assistant, e do painel de Energia, é positiva ao importar. Só é necessário para distinguir um limite de produção ou um disparo de uma limitação de injeção que entra em ação quando uma carga grande se desliga.",
           "generation_power_sensor": "A potência de saída instantânea do inversor, em W ou kW, atualizada pelo menos uma vez por minuto. Deixe vazio para usar antes os sensores de tensão e corrente MPPT. Por agora apenas registado."
         }
       },
