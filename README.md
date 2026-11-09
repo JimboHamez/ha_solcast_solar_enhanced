@@ -84,7 +84,23 @@ This integration brings that back, on your own hardware. It records your actual-
 
 <a id="whats-new"></a>
 
-## 🆕 What's new in v1.15.0b3
+## 🆕 What's new in v1.15.0
+
+**Stable: a history database about a quarter of the size, a tidier Battery Storage step that reads your sensor correctly, and record-only groundwork for telling inverter curtailment apart from shading.** Tuning and dampening read the same values as before, so **their results don't change**. The code is `v1.15.0b3` plus one fix; if you have been running the beta, that fix is all that's new. Thanks to @BJReplay and @guiguan for testing and traces.
+
+- **A much smaller database.** Whole-property values are stored once per half-hour, every value as a compact integer, and empty night half-hours aren't written. Once compacted, the reference store went from 4.25 MB to 0.59 MB, about 1.6 MB a year.
+- **The upgrade is automatic and checked.** It backs your database up first (`solcast_solar_enhanced.db.pre-v2.bak`), copies everything in one transaction, checks the copy and rolls back on any mismatch. Until you run [`compact_database`](#services), both formats are written, so 1.14.0 can be reinstalled with its full history. See [going back to an older version](#going-back-to-an-older-version).
+- **Battery Storage step:** all battery input in one place with help text, W sensors converted to kW (they were stored 1000 times too large), discharge never recorded as charge, a toggle for batteries that report charging as negative, and charge energy counters accepted.
+- **Record-only curtailment groundwork:** optional grid voltage, inverter temperature and "inverter limited" sensors on [Step 1](#step-1--site--system), plus per-half-hour measures (off-MPP minutes, the export limit in force, time at the limit, cloud vs shade dips, and a learned tracker-voltage model). Nothing reads them yet.
+- **Installing an older version over a newer database no longer touches it.** It is opened read-only, and a repair issue explains what happened.
+- **Fixed:** clearing an optional sensor in the options or Reconfigure now sticks; and going back to 1.14.0 from a compact database, then upgrading again, no longer stops recording.
+
+**Upgrading from 1.14.0?** Drop-in on Home Assistant 2026.8.0 or later; no Solcast base update is needed. Your settings, history and entities carry over, and the migration runs once at the first start (under half a second on the largest database tested).
+
+[CHANGELOG](CHANGELOG.md#1150---2026-11-09) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0)
+
+<details>
+<summary><b>What landed in v1.15.0b3</b></summary>
 
 **Beta: a history database about a quarter of the size, plus more record-only groundwork for telling inverter curtailment apart from shading.** Tuning and dampening read the same values as before, so **their results don't change**. Thanks to @BJReplay for testing the upgrade on a battery system before release.
 
@@ -98,6 +114,8 @@ This integration brings that back, on your own hardware. It records your actual-
 **Upgrading?** Drop-in on Home Assistant 2026.8.0 or later; no Solcast base update is needed. Your settings, history and entities carry over, and the migration runs once at the first start. This is a pre-release, so HACS or the Marketplace only offers it once you turn on the integration's **Pre-release** switch.
 
 [CHANGELOG](CHANGELOG.md#1150b3---2026-11-06) · [release notes](https://github.com/JimboHamez/ha_solcast_solar_enhanced/releases/tag/v1.15.0b3)
+
+</details>
 
 <details>
 <summary><b>What landed in v1.15.0b2</b></summary>
@@ -959,9 +977,9 @@ Requires `numpy`. Run `--help` for all options.
 
 ### Going back to an older version
 
-Up to 1.15.0b2, the history lived in one table. From 1.15.0b3 it lives in a smaller format, and until you run `compact_database` the old table is written too. So:
+Up to 1.14.0 (and the 1.15.0b1 and b2 betas), the history lived in one table. From 1.15.0 it lives in a smaller format, and until you run `compact_database` the old table is written too. So:
 
-- **Before compacting**, reinstalling 1.15.0b2 just works, with all your history. Anything it records meanwhile is carried over when you upgrade again.
+- **Before compacting**, reinstalling 1.14.0 or 1.15.0b2 just works, with all your history. Anything it records meanwhile is carried over when you upgrade again.
 - **After compacting**, rebuild the old table first, with the integration disabled, from a checkout of this repository:
 
   ```bash
@@ -969,7 +987,7 @@ Up to 1.15.0b2, the history lived in one table. From 1.15.0b3 it lives in a smal
   ```
 
   Or restore `solcast_solar_enhanced.db.pre-v2.bak`, which is kept for 30 days after compaction (anything recorded since the upgrade is then lost).
-- **A new install** starts in the compact format, so the same applies: run `tools/downgrade_v2.py` first if you want 1.15.0b2 to see its history.
+- **A new install** starts in the compact format, so the same applies: run `tools/downgrade_v2.py` first if you want 1.14.0 or 1.15.0b2 to see its history.
 - **Installing an older version over a database a newer one wrote** leaves the database untouched: it is opened read-only, nothing is recorded and no dampening is sent, and a repair issue says so. Reinstall the newer version to carry on.
 
 ### Backfill irradiance

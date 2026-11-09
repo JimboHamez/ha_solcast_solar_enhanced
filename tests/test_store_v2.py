@@ -1,8 +1,8 @@
 """Schema v2: migration, dual-write, revert to 1.15.0b2, resync and compaction.
 
-The revert tests run the *released* 1.15.0b2 store module (a frozen copy in
-``tests/fixtures``) against files this version has migrated, so "you can always
-reinstall 1.15.0b2" is checked against the real thing, not a re-implementation.
+The revert tests run the *released* store modules of 1.15.0b2 and 1.14.0 (frozen
+copies in ``tests/fixtures``) against files this version has migrated, so "you can
+always reinstall them" is checked against the real thing, not a re-implementation.
 """
 
 from __future__ import annotations
@@ -38,10 +38,18 @@ REFERENCE_DB = FIXTURES / "reference_ha.db"
 T0 = int(datetime(2026, 10, 20, 2, 0, tzinfo=UTC).timestamp())  # 13:00 AEDT, daylight
 
 
-def _b2_store_class():
-    """The SqliteStore class exactly as released in 1.15.0b2."""
+RELEASED_STORES = {
+    "1.15.0b2": "sqlite_store_v1_15_0b2.py",
+    "1.14.0": "sqlite_store_v1_14_0.py",  # The last stable release before schema v2.
+}
+released_versions = pytest.mark.parametrize("released", list(RELEASED_STORES))
+
+
+def _released_store_class(version: str):
+    """The SqliteStore class exactly as released in ``version``."""
+    module_name = "_sqlite_store_" + version.replace(".", "_")
     spec = importlib.util.spec_from_file_location(
-        "custom_components.solcast_solar_enhanced._sqlite_store_b2", FIXTURES / "sqlite_store_v1_15_0b2.py"
+        f"custom_components.solcast_solar_enhanced.{module_name}", FIXTURES / RELEASED_STORES[version]
     )
     module = importlib.util.module_from_spec(spec)
     module.__package__ = "custom_components.solcast_solar_enhanced"
@@ -331,13 +339,14 @@ async def test_migration_runs_once(hass, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_released_b2_store_works_on_a_migrated_file(hass, tmp_path):
+@released_versions
+async def test_released_b2_store_works_on_a_migrated_file(hass, tmp_path, released):
     path = _legacy_file(tmp_path / "legacy.db", _history())
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0 + 7200))
     await s.async_close()
 
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True
     assert await b2.async_get_record_count() == 10  # 9 migrated-from + 1 dual-written.
     assert await b2.async_insert_record(_record(T0 + 9000)) is True
@@ -348,12 +357,13 @@ async def test_released_b2_store_works_on_a_migrated_file(hass, tmp_path):
     await b2.async_close()
 
 
-async def test_coming_back_from_b2_carries_its_rows_over(hass, tmp_path):
+@released_versions
+async def test_coming_back_from_b2_carries_its_rows_over(hass, tmp_path, released):
     path = _legacy_file(tmp_path / "legacy.db", _history())
     s = await _open(hass, path)
     await s.async_close()
 
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True
     await b2.async_insert_record(_record(T0 + 7200))
     await b2.async_insert_record(_record(T0 + 7200, "site-a", pv_actual=2.2))
@@ -415,17 +425,49 @@ async def test_compact_twice_is_refused(hass, tmp_path):
     await s.async_close()
 
 
-async def test_released_b2_still_starts_on_a_compacted_file(hass, tmp_path):
+@released_versions
+async def test_released_b2_still_starts_on_a_compacted_file(hass, tmp_path, released):
     """After compaction b2 loses the history (that is what the backup and tools/downgrade_v2.py are for), but it starts."""
     path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0))
     await s.async_compact(now_epoch=T0)
     await s.async_close()
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True
     assert await b2.async_insert_record(_record(T0 + 1800)) is True
     await b2.async_close()
+
+
+@released_versions
+async def test_coming_back_from_an_older_release_on_a_compacted_store_keeps_recording(hass, tmp_path, released):
+    """An older release recreates the legacy table on a compacted store; coming back must still record.
+
+    1.14.0 creates that table without the columns added since, so the resumed
+    dual-write failed every insert, and its rollback took the v2 row with it.
+    """
+    path = _upgraded_file(tmp_path / "c.db")
+    s = await _open(hass, path)
+    await s.async_insert_record(_record(T0))
+    assert (await s.async_compact(now_epoch=T0))["compacted"] is True
+    await s.async_close()
+
+    old = _released_store_class(released)(hass, path)
+    assert await old.async_connect() is True
+    assert await old.async_insert_record(_record(T0 + 1800, pv_actual=2.8)) is True
+    await old.async_close()
+
+    s = await _open(hass, path)
+    assert await s.async_insert_record(_record(T0 + 3600, pv_actual=3.1)) is True
+    assert await s.async_insert_record(_record(T0 + 3600, "site-a", pv_actual=1.2)) is True
+    rows = s._query("SELECT period_end_epoch, site, pv_actual FROM slot_rows ORDER BY 1, 2", ())
+    await s.async_close()
+    assert [(r["period_end_epoch"], r["site"], r["pv_actual"]) for r in rows] == [
+        (T0, "_total", 3.5),
+        (T0 + 1800, "_total", 2.8),
+        (T0 + 3600, "_total", 3.1),
+        (T0 + 3600, "site-a", 1.2),
+    ]
 
 
 @pytest.mark.parametrize(("age_days", "kept"), [(10, True), (40, False)])
@@ -631,7 +673,8 @@ def _downgrade_module():
     return module
 
 
-async def test_downgrade_gives_b2_its_history_back(hass, tmp_path):
+@released_versions
+async def test_downgrade_gives_b2_its_history_back(hass, tmp_path, released):
     path = _upgraded_file(tmp_path / "c.db")
     s = await _open(hass, path)
     for i in range(5):
@@ -642,7 +685,7 @@ async def test_downgrade_gives_b2_its_history_back(hass, tmp_path):
 
     assert _downgrade_module().downgrade(path) == 10
 
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True
     assert await b2.async_get_record_count() == 10
     rows = await b2.async_get_records_for_tuning(limit=100, site="_total")
@@ -667,14 +710,15 @@ async def test_downgrade_refuses_a_store_that_does_not_need_it(hass, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_b2_on_a_fresh_store_and_back_again(hass, tmp_path):
+@released_versions
+async def test_b2_on_a_fresh_store_and_back_again(hass, tmp_path, released):
     """A new install that goes back to b2 and returns keeps what b2 recorded, and stays one copy."""
     path = str(tmp_path / "fresh.db")
     s = await _open(hass, path)
     await s.async_insert_record(_record(T0))
     await s.async_close()
 
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True  # It creates its own, empty, legacy table.
     assert await b2.async_insert_record(_record(T0 + 1800, pv_actual=2.8)) is True
     assert await b2.async_insert_record(_record(T0 + 1800, "site-a", pv_actual=1.4)) is True
@@ -692,7 +736,8 @@ async def test_b2_on_a_fresh_store_and_back_again(hass, tmp_path):
     assert _count(path, "slot_property") == 3
 
 
-async def test_downgrade_of_a_fresh_store_gives_b2_its_history(hass, tmp_path):
+@released_versions
+async def test_downgrade_of_a_fresh_store_gives_b2_its_history(hass, tmp_path, released):
     path = str(tmp_path / "fresh.db")
     s = await _open(hass, path)
     for i in range(3):
@@ -701,7 +746,7 @@ async def test_downgrade_of_a_fresh_store_gives_b2_its_history(hass, tmp_path):
 
     assert _downgrade_module().downgrade(path) == 3
 
-    b2 = _b2_store_class()(hass, path)
+    b2 = _released_store_class(released)(hass, path)
     assert await b2.async_connect() is True
     rows = await b2.async_get_records_for_tuning(limit=100, site="_total")
     await b2.async_close()

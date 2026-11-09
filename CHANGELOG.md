@@ -5,6 +5,46 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-11-09
+
+> Stable. Promotes `1.15.0b3` with one fix, for a rare way back to 1.14.0 (below). The history database
+> moves to a format about a quarter of the size, migrated automatically with a backup; the Battery Storage
+> step is tidied and reads W sensors and sign correctly; and new record-only measures start building the
+> history a later release needs to tell inverter curtailment apart from shading. **Tuning and dampening
+> results are unchanged.**
+
+Everything below shipped in `1.15.0b1` to `1.15.0b3`; those entries are kept intact underneath and have the
+full detail. This entry is the summary for anyone upgrading from **1.14.0**.
+
+- **A much smaller history database** (b3). Values that are the same for the whole property are stored
+  once per half-hour, every value as a scaled integer, and empty night half-hours are not written. On the
+  reference store: 4.25 MB before, 0.59 MB once compacted, about 1.6 MB a year.
+- **The upgrade migrates your history automatically, and checks it** (b3). It backs the database up first
+  (`solcast_solar_enhanced.db.pre-v2.bak`), copies in one transaction, verifies the copy and rolls back on
+  any mismatch. Both formats are written until you run the new **`compact_database`** action, so 1.14.0
+  can be reinstalled with its full history until then. A new install starts compact.
+- **A database written by a newer version is opened read-only** (b3), with a repair issue, instead of
+  being changed by the older code.
+- **Battery Storage step** (b1, discussion #104). Battery input is set up in one place, with help text.
+  W sensors are converted to kW (they were stored 1000 times too large), discharge is never recorded as
+  charge, a toggle handles batteries that report charging as negative, and a charge energy counter is
+  accepted. Battery charge is display-only, so this does not change tuning or dampening.
+- **Record-only groundwork for inverter curtailment** (b2, b3, issue #109). Optional grid voltage,
+  inverter temperature and "inverter limited" sensors on Step 1; off-MPP minutes from the MPPT sensors;
+  the export limit in force; how long all arrays dipped together or one alone; how long export sat at the
+  limit; and a learned per-tracker voltage model. Nothing reads these yet.
+- **Clearing an optional sensor** in the options flow or Reconfigure now sticks (b3).
+- **`tools/downgrade_v2.py`** rebuilds the old table after compaction, and the history import and
+  irradiance backfill tools work on a compact database (b3).
+
+### Fixed
+
+- **Going back to 1.14.0 from a compact database, then upgrading again, no longer stops recording.** On a
+  new install, or after `compact_database`, 1.14.0 creates the old-format table without the columns added
+  in 1.15.0b2. On the return, every half-hour then failed to save ("table solcast_data has no column named
+  grid_v_max"), in both formats. The missing columns are now added at start-up. Going back to 1.15.0b2 was
+  never affected, and the revert tests now run against the released 1.14.0 store as well as 1.15.0b2's.
+
 ## [1.15.0b3] - 2026-11-06
 
 **Beta: a history database about a quarter of the size, and more record-only groundwork for telling
