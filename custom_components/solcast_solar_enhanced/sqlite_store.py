@@ -534,6 +534,11 @@ class SqliteStore:
                     conn.executescript(CREATE_TABLE_SQL)
                     conn.commit()
                     self._ensure_columns(conn)
+                # An older release put a legacy table back on a compacted store, so the
+                # dual-write resumes. 1.14.0 and earlier create it without the columns
+                # added since, and every insert (v2 half included) would roll back.
+                elif "solcast_data" in self._objects(conn):
+                    self._ensure_columns(conn)
                 self._init_v2(conn)
             self._conn = conn
             self._detect_schema()
