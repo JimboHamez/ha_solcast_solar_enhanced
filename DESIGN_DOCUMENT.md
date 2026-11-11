@@ -300,7 +300,7 @@ to the Solcast `resource_id`, with `0 = '_total'`.
 | `gen_steps` | property | ×1 | −1 (unknown) | steps: generation steps of at least 300 W between 30 s windows |
 | `held_steps` | property | ×1 | −1 (unknown) | steps: those net power absorbed (an export hold) |
 | `regulated_steps` | property | ×1 | −1 (unknown) | steps: held steps with every tracker's voltage moving against power |
-| `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% and export falling |
+| `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% that the grid still carries a window later, judged against a window before any limiter overshoot |
 | `pv_actual` | site | ×1000 | 0 | generation, half-hour mean (kW) |
 | `pv_estimate` | site | ×1000 | 0 | Solcast forecast as `detailedForecast` shows it, dampened (kW) |
 | `pv_estimate10` | site | ×1000 | 0 | Solcast p10 (kW) |
@@ -358,7 +358,7 @@ batched recorder query as the DC capture (about 25 ms a slot on an i5, an estima
 | `sample_gap_s` | property | median sample interval of the inputs |
 | `gate_flags` | property | `GateFlag` bits below |
 | `gen_steps`, `held_steps` | property | generation steps between 30 s windows, and how many net power absorbed (1.16.0b1.dev1) |
-| `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% and export falling |
+| `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% that the grid still carries, judged by look-back |
 
 Everything is **time-weighted** on the merged event timeline (a state holds until the
 next one), so 10 Hz, 1 Hz and change-only sensors give the same seconds. Power is
@@ -382,12 +382,22 @@ only grid power and generation power, so it works on string inverters and microi
 alike and never needs the limit. With DC voltage, `regulated_steps` keeps the held steps where
 every tracker's voltage also moved at least 1% against power: a battery or a solar-surplus EV
 charger can hold net power too, but leaves the trackers on their MPP. `cut_steps` counts drops
-net power did *not* absorb with every tracker's voltage up at least 5% from at least 1 kW, and
-with import rising (export falling) as it would under cloud: the signature of a generation cap or
-trip. The direction test arrived in 1.16.0b1.dev2. Without it, all ten "cuts" on the owner's 8–9 Nov
-2026 history were the 5 kW limiter taking over when a large load (EV, oven) switched off. That
-also cuts generation and walks the trackers up 5–9%, but export *rises* to the limit. The window matters: a regulator settles a few seconds
-after each step, and on the 6 Nov 2026 Fronius step test (0 kW then 2 kW) 30 s and 60 s windows
+net power did *not* absorb with every tracker's voltage up at least 5% from at least 1 kW: the
+signature of a generation cap or trip. A limiter does the same when a large load (EV, oven) switches
+off while export sits at the limit: it cuts generation and walks the trackers up 5–9%. What tells them
+apart is the grid. A cap leaves import up by the generation lost, for as long as the cap holds; after a
+load drop, export first overshoots the limit, then settles back *to* it, so the grid ends where it
+started. Comparing only the windows either side of the step cannot see that: in 1.16.0b1.dev1 all ten
+"cuts" on the owner's 8–9 Nov 2026 history were the limiter, and dev2's test that import rose across
+the step still booked one (11 Nov, 11:35:30, export settling from 5.23 to 4.76 kW). Since 1.16.0b1.dev3
+a cut is judged by look-back: from a reference window ending `STEP_LIMITER_RESPONSE_S` (30 s) before
+the window ahead of the step, to the window after it, generation must fall at least 300 W and import
+rise by at least `STEP_CUT_ABSORBED` (75%) of that. Codes allow a limiter up to 15 s (AS/NZS 4777.2
+soft limit), 5 s (ENA G100) or 30 s (a US power control system); the owner's GEN24 measured 570
+overshoots over 8–11 Nov, median 2.9 s, longest 11 s. So even the slowest has not started by the
+reference, and one still winding back at the settled window holds export *above* the limit, which only
+lowers import. A step in a slot's first three windows or its last goes unjudged.
+The window matters: a regulator settles a few seconds after each step, and on the 6 Nov 2026 Fronius step test (0 kW then 2 kW) 30 s and 60 s windows
 gave 47–60% held in the holds against 0% free running, while 5 s windows could not separate
 them. Generation comes from the generation-power sensor when configured, else from the
 property's DC trackers. Grid power is taken as import-positive, Home Assistant's and the Energy

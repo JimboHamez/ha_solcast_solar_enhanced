@@ -16,11 +16,16 @@ and lands on the grid instead. So each slot counts:
   power. A battery or a solar-surplus EV charger can hold net power too, but behind it
   the trackers stay on their MPP; only a limiter walks them along the curve.
 * ``cut_steps`` — drops net power did *not* absorb, with every tracker's voltage up
-  by ``STEP_CUT_V`` and import rising (export falling) as it would under cloud:
-  output pulled away from the MPP whatever the house drew, the signature of a
-  generation cap or a protection trip rather than an export hold. The direction
-  matters: when a large load switches off while export sits at a limit, the limiter
-  also cuts generation and walks the trackers up, but export *rises* to the limit.
+  by ``STEP_CUT_V``, that the grid still carries one window later: against the window
+  before the episode, generation is down and import up by at least
+  ``STEP_CUT_ABSORBED`` of it. That is output pulled away from the MPP whatever the
+  house drew, the signature of a generation cap or a protection trip rather than an
+  export hold. A limiter after a load drop also cuts generation and walks the trackers
+  up, but export first overshoots the limit, then settles back *to* it, so against
+  the window before the overshoot import has not risen at all. The reference sits
+  ``STEP_LIMITER_RESPONSE_S`` before the window ahead of the step, so even a limiter
+  that takes the longest any code allows cannot have started by then; a step within
+  that reach of the slot's start, or in its last window, cannot be judged a cut.
 
 The last two need DC voltage and are ``-1`` without it; the first two are ``-1``
 without both power series. Series are compared as time-weighted window means, on
@@ -31,12 +36,22 @@ convention); only the cut test reads its sign, the held test uses its size.
 from __future__ import annotations
 
 import bisect
+import math
 import statistics
 from collections.abc import Sequence
 from itertools import pairwise
 from typing import TypedDict
 
-from .const import STEP_CUT_MIN_W, STEP_CUT_V, STEP_HELD_FRACTION, STEP_MIN_W, STEP_REGULATED_V, STEP_WINDOW_S
+from .const import (
+    STEP_CUT_ABSORBED,
+    STEP_CUT_MIN_W,
+    STEP_CUT_V,
+    STEP_HELD_FRACTION,
+    STEP_LIMITER_RESPONSE_S,
+    STEP_MIN_W,
+    STEP_REGULATED_V,
+    STEP_WINDOW_S,
+)
 
 Samples = Sequence[tuple[float, float]]
 UNKNOWN = -1
@@ -139,12 +154,36 @@ def measure_steps(
             continue
         if is_held and against >= STEP_REGULATED_V:
             regulated += 1
-        elif not is_held and dp < 0 and n1 > n0 and against >= STEP_CUT_V and g0 >= STEP_CUT_MIN_W:
+        elif (
+            not is_held
+            and dp < 0
+            and against >= STEP_CUT_V
+            and g0 >= STEP_CUT_MIN_W
+            and _grid_carries_the_drop(gen, net, k)
+        ):
             cut += 1
     out["gen_steps"], out["held_steps"] = steps, held
     if has_dc:
         out["regulated_steps"], out["cut_steps"] = regulated, cut
     return out
+
+
+def _grid_carries_the_drop(gen: Sequence[float | None], net: Sequence[float | None], k: int) -> bool:
+    """Whether the drop at window ``k`` still lands on the grid, judged from before the episode.
+
+    The reference window ends ``STEP_LIMITER_RESPONSE_S`` before window ``k - 1`` starts,
+    so a limiter's overshoot after a load drop cannot reach it; the settled window is
+    ``k + 1``. A limiter still winding back there holds export above the limit, which
+    only lowers import, so it cannot pass for a cut either.
+    """
+    ref, settled = k - 2 - math.ceil(STEP_LIMITER_RESPONSE_S / STEP_WINDOW_S), k + 1
+    if ref < 0 or settled >= len(gen):
+        return False
+    g0, g1, n0, n1 = gen[ref], gen[settled], net[ref], net[settled]
+    if g0 is None or g1 is None or n0 is None or n1 is None:
+        return False
+    lost = g0 - g1
+    return lost >= STEP_MIN_W and n1 - n0 >= STEP_CUT_ABSORBED * lost
 
 
 def _against(volts: Sequence[Sequence[float | None]], k: int, dp: float) -> float | None:

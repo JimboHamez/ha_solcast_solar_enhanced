@@ -5,6 +5,32 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0b1.dev3] - 2026-11-11
+
+> Private test build, not published. Changes only how `cut_steps` is counted, so installing over
+> 1.16.0b1.dev2 needs nothing else. Rows dev2 recorded keep their old `cut_steps`.
+
+### Fixed
+
+- **A limiter settling back to the limit is no longer counted as a cut.** When a load drops while export
+  sits at the limit, export overshoots it until the inverter winds generation back, and the trackers
+  walk up as it does. dev2 compared only the windows either side of the step, so the overshoot
+  settling read as a cut: generation down, import up. On the owner's 11 Nov 2026 history (5 kW limit)
+  that booked one at 11:35:30. A cut is now judged by look-back: against a reference window ending 30 s
+  before the window ahead of the step, the window after it must still show generation down at least
+  300 W and import up by at least 75% of that. A generation cap or trip does that for as long as it
+  holds. After a load drop the grid ends where it started, at the limit.
+
+  30 s is the slowest response any code we found allows: 15 s under AS/NZS 4777.2 (soft limit), 5 s
+  under ENA G100, and up to 30 s for a US power control system. The owner's Fronius GEN24 overshot
+  the limit 570 times over 8–11 Nov, half of them over within 3 s and none longer than 11 s.
+
+  Replayed on all three 1 Hz histories (6 Nov step test, 8–9 Nov, 10–11 Nov), the 11 Nov false cut is
+  the only change: the 0 kW switch in the step test is still a cut, and held and regulated counts are
+  unchanged. Cost: a step in a slot's first 90 seconds or its last 30 seconds can't be judged a cut.
+  The dev2 rule that import must rise across the step is gone; the look-back does that job, and also
+  rejects all ten limiter takeovers from 8–9 Nov that dev2 was written for.
+
 ## [1.16.0b1.dev2] - 2026-11-09
 
 > Private test build, not published. Changes only how `cut_steps` is counted, and adds one Step 1 toggle,

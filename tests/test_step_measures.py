@@ -3,7 +3,8 @@
 The synthetic cases pin each rule against the wrong implementations it is easiest to
 write: raw-sample differencing (books a regulator's few-second correction as the
 step), a sign-dependent held test, voltage judged on one tracker only, and a cut test
-without its voltage or power floor, or without its direction (export must fall).
+without its voltage or power floor, or without its look-back (judged against the window
+just before the step, a limiter winding back after a load drop reads as a cut).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.solcast_solar_enhanced.const import STEP_MIN_W, STEP_WINDOW_S
+from custom_components.solcast_solar_enhanced.const import STEP_LIMITER_RESPONSE_S, STEP_MIN_W, STEP_WINDOW_S
 from custom_components.solcast_solar_enhanced.step_measures import median_gap, measure_steps, window_means
 
 START, END = 0.0, 1800.0
@@ -122,6 +123,60 @@ def test_a_limiter_taking_over_after_a_load_drop_is_not_a_cut() -> None:
     assert measure_steps(START, END, export_rises, gen, [up, up])["cut_steps"] == 0
     export_falls = _series([(0, -4600.0), (300, 60.0)])  # The same drop landing on the grid.
     assert measure_steps(START, END, export_falls, gen, [up, up])["cut_steps"] == 1
+
+
+def _limiter_after_load_drop(drop_at: float, response_s: float) -> tuple[list, list, list]:
+    """Export pinned at a 5 kW limit; a 2 kW load switches off at ``drop_at``.
+
+    Export overshoots to 7 kW, then the inverter winds generation from 7 kW to 5 kW in a
+    straight line over ``response_s``, walking the trackers 9% up the curve as it goes.
+    Net power is import-positive: house load minus generation.
+    """
+    gen, net, volts = [], [], []
+    for t in range(int(START), int(END)):
+        wound = min(max((t - drop_at) / response_s, 0.0), 1.0)
+        g = 7000.0 - 2000.0 * wound
+        gen.append((float(t), g))
+        net.append((float(t), (2000.0 if t < drop_at else 0.0) - g))
+        volts.append((float(t), 380.0 + 35.0 * wound))
+    return gen, net, volts
+
+
+@pytest.mark.parametrize("response_s", [5.0, 15.0, 30.0])
+@pytest.mark.parametrize("offset_s", [0.0, 7.0, 15.0, 22.0, 29.0])
+def test_a_limiter_winding_back_after_a_load_drop_is_never_a_cut(response_s: float, offset_s: float) -> None:
+    """Every response a code allows (UK 5 s, AU 15 s, US 30 s), wherever the drop falls in a window.
+
+    Judged only between the windows either side of the step, the export overshoot settling
+    back reads as a cut: generation down, import up, trackers walked up. The owner's 11 Nov
+    2026 history booked one that way at 11:35:30 under 1.16.0b1.dev2.
+    """
+    gen, net, v = _limiter_after_load_drop(600.0 + offset_s, response_s)
+    got = measure_steps(START, END, net, gen, [v, v])
+    assert got["gen_steps"] >= 1
+    assert got["cut_steps"] == 0
+
+
+def test_a_cut_must_still_be_on_the_grid_a_window_later() -> None:
+    """A drop that lands on the grid and recovers inside the next window is not a cap or a trip."""
+    gen = _series([(0, 4000.0), (300, 400.0), (330, 4000.0)])
+    net = _series([(0, -3500.0), (300, 100.0), (330, -3500.0)])
+    up = _series([(0, 400.0), (300, 430.0), (330, 400.0)])
+    assert measure_steps(START, END, net, gen, [up, up])["cut_steps"] == 0
+
+
+@pytest.mark.parametrize(("at", "judged"), [(60, False), (90, True), (1740, True), (1770, False)])
+def test_a_cut_needs_its_reference_and_settled_windows_inside_the_slot(at: int, judged: bool) -> None:
+    """The reference sits three windows back and the settled one a window on, so the slot's edges go unjudged."""
+    gen = _series([(0, 4000.0), (at, 400.0)])
+    net = _series([(0, -3500.0), (at, 100.0)])
+    up = _series([(0, 400.0), (at, 430.0)])
+    assert measure_steps(START, END, net, gen, [up, up])["cut_steps"] == int(judged)
+
+
+def test_the_look_back_covers_the_slowest_limiter_any_code_allows() -> None:
+    """A US power control system may take 30 s; the reference must not drift inside that."""
+    assert STEP_LIMITER_RESPONSE_S >= 30.0
 
 
 def test_a_rise_is_never_a_cut() -> None:

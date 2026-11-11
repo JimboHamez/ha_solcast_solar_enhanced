@@ -140,6 +140,15 @@ STEP_REGULATED_V = 0.01
 # from at least STEP_CUT_MIN_W: output pulled away from the MPP, not a cloud.
 STEP_CUT_V = 0.05
 STEP_CUT_MIN_W = 1000.0
+# A cut must also show against the slot before the episode and still hold one window
+# later: the grid takes at least STEP_CUT_ABSORBED of the generation lost between them.
+# When a load drops at an export limit, export overshoots the limit until the inverter
+# winds generation back. Codes allow up to STEP_LIMITER_RESPONSE_S for that (AS/NZS
+# 4777.2 soft limit 15 s, ENA G100 5 s, a US power control system up to 30 s; a Fronius
+# GEN24 measured at most 11 s), so the reference window ends that long before the window
+# ahead of the step: a reference taken inside the overshoot reads the recovery as a cut.
+STEP_CUT_ABSORBED = 0.75
+STEP_LIMITER_RESPONSE_S = 30.0
 # Grid and generation power inputs updating more slowly than this cannot resolve a
 # step; a repair issue says so once STEP_INPUT_CHECK_SLOTS daylight slots agree.
 STEP_INPUT_MAX_GAP_S = 60.0
