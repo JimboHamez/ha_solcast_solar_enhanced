@@ -9,7 +9,7 @@ import statistics
 import time
 from collections import Counter, deque
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -165,6 +165,37 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _SlotReductions(NamedTuple):
+    """One slot's reductions of the batched recorder samples, built in the executor."""
+
+    pv_export_max: float
+    total_dc: tuple[float, float, float, float]
+    site_dc: dict[str, tuple[float, float, float, float]]
+    total_vmed: tuple[float, float]
+    site_vmed: dict[str, tuple[float, float]]
+    total_imed: tuple[float, float]
+    site_imed: dict[str, tuple[float, float]]
+
+
+def _worst_inverter(results: list[SlotVoltage]) -> SlotVoltage:
+    """Combine each inverter's voltage-model result for the property row.
+
+    Like ``dc_offmpp_min``, the worst inverter stands for the property, so limiting
+    on any one shows. Only inverters whose model was ready count; the row is unknown
+    until at least one is.
+    """
+    ready = [r for r in results if r["ready"]]
+    if not ready:
+        return {"vexcess_s": -1.0, "vratio_p50": -1.0, "vratio_p90": -1.0, "ready": False}
+    return {
+        "vexcess_s": max(r["vexcess_s"] for r in ready),
+        "vratio_p50": max(r["vratio_p50"] for r in ready),
+        "vratio_p90": max(r["vratio_p90"] for r in ready),
+        "ready": True,
+    }
+
 
 # The coordinator is carried on the entry itself (``entry.runtime_data``) rather
 # than in ``hass.data``; this alias is what makes that access typed at every use
@@ -711,24 +742,11 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 slot_start_epoch,
                 period_epoch,
             )
-            dc_hist = self._values_only(samples)
             curtailment, site_offmpp = await self._capture_curtailment(opts, samples, slot_start_epoch, period_epoch)
-            pv_export_max = self._interval_peak_kw(
-                export_entity,
-                str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)),
-                samples,
-            )
-            site_dc = self._read_site_dc_telemetry(opts, dc_hist)
-            # The property-wide trackers: the flat config keys on a single-array
-            # system, the arrays' own trackers otherwise (see _property_mppt_list).
-            property_mppts = self._property_mppt_list(opts)
-            total_dc = self._read_mppt_telemetry(property_mppts, dc_hist) or (0.0, 0.0, 0.0, 0.0)
-            # Median operating voltage and current per tracker (reductions of the
-            # same per-sec series) — the shading-mechanism pair; forward-only.
-            total_vmed = self._read_mppt_vmed(property_mppts, dc_hist)
-            site_vmed = self._read_site_vmed(opts, dc_hist)
-            total_imed = self._read_mppt_imed(property_mppts, dc_hist)
-            site_imed = self._read_site_imed(opts, dc_hist)
+            reduced = await self.hass.async_add_executor_job(self._reduce_slot_samples, opts, samples, export_entity)
+            pv_export_max, total_dc, site_dc = reduced.pv_export_max, reduced.total_dc, reduced.site_dc
+            total_vmed, site_vmed = reduced.total_vmed, reduced.site_vmed
+            total_imed, site_imed = reduced.total_imed, reduced.site_imed
             # Surface the latest reading on the diagnostic sensor (None when no DC
             # sensors are configured, so the entity stays unavailable rather than
             # reporting a misleading 0).
@@ -1813,7 +1831,18 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     @staticmethod
     def _property_mppt_list(opts: dict[str, Any]) -> list[MpptTracker]:
-        """MPPT pairs for the ``_total`` row, falling back to the per-array trackers.
+        """MPPT pairs for the ``_total`` row's stored DC columns, capped at ``MAX_MPPT_TRACKERS``.
+
+        The row has two voltage/current column pairs, so this keeps the first two of
+        ``_property_trackers``: on a system with more trackers than columns, the first
+        two rather than none. Only the stored columns take the cap; everything that
+        judges the trackers together uses ``_property_trackers``.
+        """
+        return SolcastEnhancedCoordinator._property_trackers(opts)[:MAX_MPPT_TRACKERS]
+
+    @staticmethod
+    def _property_trackers(opts: dict[str, Any]) -> list[MpptTracker]:
+        """Every MPPT pair on the property, falling back to the per-array trackers.
 
         The flat ``CONF_MPPT*`` keys only exist for a single-array system; the sites
         step clears them when a multi-array config is saved, because each array then
@@ -1822,9 +1851,9 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         per site and simply never reaches the aggregate row.
 
         So: use the flat keys when any is set, otherwise gather the configured
-        arrays' trackers in order. Truncated to ``MAX_MPPT_TRACKERS`` like every
-        other tracker list, which on a system with more arrays than trackers keeps
-        the first two rather than none.
+        arrays' trackers in order. Not capped: a three-MPPT inverter is common at
+        8-10 kW, and a test that needs every tracker to agree must see all of them
+        (issue #109: the third string never reached the voltage model).
         """
         flat = SolcastEnhancedCoordinator._mppt_list_from_opts(opts)
         if any(m.get("voltage_sensor") or m.get("current_sensor") for m in flat):
@@ -1835,7 +1864,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 for m in cfg.get("mppts") or []:
                     if m.get("voltage_sensor") or m.get("current_sensor"):
                         collected.append(m)
-        return collected[:MAX_MPPT_TRACKERS]
+        return collected
 
     def _collect_dc_entities(self, opts: dict[str, Any]) -> set[str]:
         """Return every configured MPPT voltage/current entity.
@@ -1873,6 +1902,15 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         ``_interval_values``.
         """
         raw = await self._recorder_states(entity_ids, start_epoch, end_epoch)
+        if not raw:
+            return {}
+        # A slot of 1 Hz inputs is ~12k states: converting them is CPU work, so it
+        # runs in the executor rather than holding the event loop.
+        return await self.hass.async_add_executor_job(self._states_to_samples, raw)
+
+    @classmethod
+    def _states_to_samples(cls, raw: dict[str, list[Any]]) -> dict[str, list[tuple[float, float]]]:
+        """Recorded states as time-ordered ``(epoch, value)`` pairs, skipping non-numeric ones."""
         out: dict[str, list[tuple[float, float]]] = {}
         for eid, states in raw.items():
             vals: list[tuple[float, float]] = []
@@ -1881,7 +1919,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     value = float(st.state)
                 except (TypeError, ValueError):
                     continue  # 'unknown'/'unavailable' between real readings
-                vals.append((self._state_epoch(st), value))
+                vals.append((cls._state_epoch(st), value))
             if vals:
                 vals.sort(key=lambda pair: pair[0])
                 out[eid] = vals
@@ -1989,27 +2027,17 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         Returns:
             ``(columns, site_offmpp)``, with unknown inputs carrying their sentinels.
         """
-        hist = self._values_only(samples)
         grid_v_entity = str(opts.get(CONF_GRID_VOLTAGE_SENSOR, "") or "")
         temp_entity = str(opts.get(CONF_INVERTER_TEMP_SENSOR, "") or "")
         limited_entity = str(opts.get(CONF_INVERTER_LIMITED_SENSOR, "") or "")
         export_limit = self._resolve_export_limit(opts)
-
-        offmpp_total: float | None = None
-        site_offmpp: dict[str, float] = {}
-        for trackers, sites in self._offmpp_tracker_sets(opts):
-            minutes = self._offmpp_minutes(trackers, samples, start_epoch, end_epoch)
-            if minutes is None:
-                continue
-            # '_total' takes the worst inverter, so curtailment on any one shows.
-            offmpp_total = minutes if offmpp_total is None else max(offmpp_total, minutes)
-            for site in sites:
-                site_offmpp[site] = minutes
-
+        (grid_v_max, grid_v_med, temp_max), offmpp_total, site_offmpp = await self.hass.async_add_executor_job(
+            self._reduce_curtailment, opts, samples, start_epoch, end_epoch
+        )
         columns: StoreRecord = {
-            "grid_v_max": round(self._interval_extreme(grid_v_entity, "max", hist) or 0.0, 2),
-            "grid_v_med": round(self._interval_median(grid_v_entity, hist) or 0.0, 2),
-            "inverter_temp_max": round(self._interval_extreme(temp_entity, "max", hist) or 0.0, 2),
+            "grid_v_max": grid_v_max,
+            "grid_v_med": grid_v_med,
+            "inverter_temp_max": temp_max,
             "inverter_limited": await self._interval_on_fraction(limited_entity, start_epoch, end_epoch),
             # 0 kW means "no limit configured" until a dynamic limit can be told
             # apart from a disabled one, so it is stamped as unknown.
@@ -2027,6 +2055,39 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             "site_offmpp_min": dict(site_offmpp),
         }
         return columns, site_offmpp
+
+    def _reduce_curtailment(
+        self,
+        opts: dict[str, Any],
+        samples: dict[str, list[tuple[float, float]]],
+        start_epoch: int,
+        end_epoch: int,
+    ) -> tuple[tuple[float, float, float], float | None, dict[str, float]]:
+        """The sample-walking half of ``_capture_curtailment``, run in the executor.
+
+        Returns:
+            ``((grid_v_max, grid_v_med, inverter_temp_max), dc_offmpp_min for '_total'
+            or None when unknown, {site: off-MPP minutes})``.
+        """
+        hist = self._values_only(samples)
+        grid_v_entity = str(opts.get(CONF_GRID_VOLTAGE_SENSOR, "") or "")
+        temp_entity = str(opts.get(CONF_INVERTER_TEMP_SENSOR, "") or "")
+        offmpp_total: float | None = None
+        site_offmpp: dict[str, float] = {}
+        for trackers, sites in self._offmpp_tracker_sets(opts):
+            minutes = self._offmpp_minutes(trackers, samples, start_epoch, end_epoch)
+            if minutes is None:
+                continue
+            # '_total' takes the worst inverter, so curtailment on any one shows.
+            offmpp_total = minutes if offmpp_total is None else max(offmpp_total, minutes)
+            for site in sites:
+                site_offmpp[site] = minutes
+        extremes = (
+            round(self._interval_extreme(grid_v_entity, "max", hist) or 0.0, 2),
+            round(self._interval_median(grid_v_entity, hist) or 0.0, 2),
+            round(self._interval_extreme(temp_entity, "max", hist) or 0.0, 2),
+        )
+        return extremes, offmpp_total, site_offmpp
 
     @staticmethod
     def _offmpp_tracker_sets(opts: dict[str, Any]) -> list[tuple[list[MpptTracker], list[str]]]:
@@ -2153,6 +2214,34 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
     def _values_only(samples: dict[str, list[tuple[float, float]]]) -> dict[str, list[float]]:
         """Project ``_interval_samples`` output down to bare value lists."""
         return {eid: [v for _, v in pairs] for eid, pairs in samples.items()}
+
+    def _reduce_slot_samples(
+        self, opts: dict[str, Any], samples: dict[str, list[tuple[float, float]]], export_entity: str
+    ) -> _SlotReductions:
+        """Reduce the slot's batched samples to the stored DC and export columns.
+
+        Runs in the executor: a slot of 1 Hz inputs is ~12k samples, too many to walk
+        on the event loop.
+        """
+        hist = self._values_only(samples)
+        # The property-wide trackers: the flat config keys on a single-array
+        # system, the arrays' own trackers otherwise (see _property_mppt_list).
+        property_mppts = self._property_mppt_list(opts)
+        return _SlotReductions(
+            pv_export_max=self._interval_peak_kw(
+                export_entity,
+                str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)),
+                samples,
+            ),
+            total_dc=self._read_mppt_telemetry(property_mppts, hist) or (0.0, 0.0, 0.0, 0.0),
+            site_dc=self._read_site_dc_telemetry(opts, hist),
+            # Median operating voltage and current per tracker (reductions of the
+            # same per-sec series): the shading-mechanism pair; forward-only.
+            total_vmed=self._read_mppt_vmed(property_mppts, hist),
+            site_vmed=self._read_site_vmed(opts, hist),
+            total_imed=self._read_mppt_imed(property_mppts, hist),
+            site_imed=self._read_site_imed(opts, hist),
+        )
 
     def _interval_peak_kw(
         self,
@@ -2404,6 +2493,24 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         return counter_power([(t, self._to_kwh(max(0.0, v), mode)) for t, v in pairs], end=hold_to), "counter"
 
     @staticmethod
+    def _paired_samples(
+        mppts: list[MpptTracker] | None, samples: dict[str, list[tuple[float, float]]]
+    ) -> dict[str, tuple[Samples, Samples]]:
+        """``{voltage entity: (voltage samples, current samples)}`` for each paired tracker.
+
+        A configured pair with no samples is kept with empty series, so the voltage
+        model reads the slot as unknown rather than judging the other trackers alone.
+        """
+        return {
+            str(m["voltage_sensor"]): (
+                samples.get(str(m["voltage_sensor"])) or [],
+                samples.get(str(m["current_sensor"])) or [],
+            )
+            for m in mppts or []
+            if m.get("voltage_sensor") and m.get("current_sensor")
+        }
+
+    @staticmethod
     def _tracker_pairs(
         mppts: list[MpptTracker] | None, samples: dict[str, list[tuple[float, float]]]
     ) -> list[tuple[Samples, Samples]]:
@@ -2458,7 +2565,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 kinds[site] = "dc"
         if arrays:
             return arrays, kinds
-        pairs = self._tracker_pairs(self._property_mppt_list(opts), samples)
+        pairs = self._tracker_pairs(self._property_trackers(opts), samples)
         if pairs:
             return {DEFAULT_SITE_ID: dc_power(pairs)}, {DEFAULT_SITE_ID: "dc"}
         series, kind = self._power_series(
@@ -2506,38 +2613,40 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
         """
         lat = float(opts.get(CONF_LATITUDE, -37.9))
         lon = float(opts.get(CONF_LONGITUDE, 145.0))
-        arrays, kinds = self._gate_arrays(opts, samples, float(end_epoch))
-        orientations = {site: self._array_orientation(opts, site) for site in arrays}
-        has_shape = bool(arrays) and all(orientations.values())
-        export, export_kind = self._power_series(
-            export_entity, str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)), samples, float(end_epoch)
-        )
         limit_kw = self._resolve_export_limit(opts)
         clip = float(opts.get(CONF_CLIPPING_THRESHOLD, DEFAULT_CLIPPING_THRESHOLD))
-        trackers = {
-            str(m["voltage_sensor"]): pair
-            for m, pair in zip(
-                (m for m in self._property_mppt_list(opts) if m.get("voltage_sensor") and m.get("current_sensor")),
-                self._tracker_pairs(self._property_mppt_list(opts), samples),
-                strict=False,
-            )
-        }
-        net_w, gen_w, gen_from_sensor = self._step_inputs(opts, samples)
-        tracker_volts = [pair[0] for pair in trackers.values()]
         temp = self._weather.get("temp")
         ghi = self._irradiance.get("ghi")
         cs_mid = clearsky_ghi(zenith)
         kt = (float(ghi) / cs_mid) if ghi and cs_mid >= KT_GHI_CS_FLOOR else None
-        total_orientation = self._array_orientation(opts, DEFAULT_SITE_ID) or next(
-            (o for o in orientations.values() if o), None
-        )
 
-        def shape(site: str, t: float) -> float:
-            orientation = orientations.get(site)
-            assert orientation is not None  # Only passed when every array has one.
-            return self._clear_sky_poa(lat, lon, orientation, t)
+        def run() -> tuple[StoreRecord, dict[str, float], StepMeasures, bool]:
+            # Everything that walks the slot's samples runs here, in the executor:
+            # the V x I products, the counter-to-power conversions and the step inputs
+            # are each O(samples), and a slot of 1 Hz inputs is ~12k of them.
+            arrays, kinds = self._gate_arrays(opts, samples, float(end_epoch))
+            orientations = {site: self._array_orientation(opts, site) for site in arrays}
+            has_shape = bool(arrays) and all(orientations.values())
+            export, export_kind = self._power_series(
+                export_entity,
+                str(opts.get(CONF_PV_EXPORT_INPUT_MODE, DEFAULT_PV_INPUT_MODE)),
+                samples,
+                float(end_epoch),
+            )
+            # The voltage model judges each inverter's trackers together, as the off-MPP
+            # walk does: a limit moves every tracker on one inverter, not across two.
+            inverters = [self._paired_samples(mppts, samples) for mppts, _sites in self._offmpp_tracker_sets(opts)]
+            net_w, gen_w, gen_from_sensor = self._step_inputs(opts, samples)
+            tracker_volts = [pair[0] for pair in self._paired_samples(self._property_trackers(opts), samples).values()]
+            total_orientation = self._array_orientation(opts, DEFAULT_SITE_ID) or next(
+                (o for o in orientations.values() if o), None
+            )
 
-        def run() -> tuple[StoreRecord, dict[str, float], StepMeasures]:
+            def shape(site: str, t: float) -> float:
+                orientation = orientations.get(site)
+                assert orientation is not None  # Only passed when every array has one.
+                return self._clear_sky_poa(lat, lon, orientation, t)
+
             measures = measure_slot(
                 float(start_epoch),
                 float(end_epoch),
@@ -2551,16 +2660,23 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 low_sun=(90.0 - zenith) < GATE_LOW_SUN_ELEVATION,
             )
             voltage: SlotVoltage = {"vexcess_s": -1.0, "vratio_p50": -1.0, "vratio_p90": -1.0, "ready": False}
-            if trackers and temp is not None and kt is not None and total_orientation is not None:
-                voltage = evaluate_slot(
-                    float(start_epoch),
-                    float(end_epoch),
-                    trackers,
-                    float(temp),
-                    lambda t: kt * self._clear_sky_poa(lat, lon, total_orientation, t),
-                    self._vmodel,
-                    export or None,
-                    limit_kw,
+            if temp is not None and kt is not None and total_orientation is not None:
+                orientation = total_orientation
+                voltage = _worst_inverter(
+                    [
+                        evaluate_slot(
+                            float(start_epoch),
+                            float(end_epoch),
+                            trackers,
+                            float(temp),
+                            lambda t: kt * self._clear_sky_poa(lat, lon, orientation, t),
+                            self._vmodel,
+                            export or None,
+                            limit_kw,
+                        )
+                        for trackers in inverters
+                        if trackers
+                    ]
                 )
             steps = measure_steps(float(start_epoch), float(end_epoch), net_w, gen_w, tracker_volts)
             flags = measures["gate_flags"] | (int(GateFlag.VMODEL_READY) if voltage["ready"] else 0)
@@ -2580,10 +2696,10 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 "regulated_steps": float(steps["regulated_steps"]),
                 "cut_steps": float(steps["cut_steps"]),
             }
-            return prop, dict(measures["shade_dip_s"]), steps
+            return prop, dict(measures["shade_dip_s"]), steps, gen_from_sensor
 
         try:
-            prop, shade, steps = await self.hass.async_add_executor_job(run)
+            prop, shade, steps, gen_from_sensor = await self.hass.async_add_executor_job(run)
         except Exception as exc:  # noqa: BLE001 — record-only: never cost the row
             _LOGGER.debug("Slot gate measures unavailable: %s", exc)
             return {}, {}
@@ -2620,7 +2736,7 @@ class SolcastEnhancedCoordinator(DataUpdateCoordinator[CoordinatorData]):
             net_w = [(t, -w) for t, w in net_w]
         if opts.get(CONF_GENERATION_POWER_SENSOR):
             return net_w, power_w(opts.get(CONF_GENERATION_POWER_SENSOR)), True
-        pairs = self._tracker_pairs(self._property_mppt_list(opts), samples)
+        pairs = self._tracker_pairs(self._property_trackers(opts), samples)
         return net_w, (dc_power(pairs) or None) if pairs else None, False
 
     def _check_step_inputs(self, opts: dict[str, Any], steps: StepMeasures, gen_from_sensor: bool) -> None:

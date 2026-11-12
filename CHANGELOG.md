@@ -5,6 +5,51 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0b1.dev4] - 2026-11-12
+
+> Private test build, not published. Changes how the step counts are taken, where the per-slot work
+> runs, and which trackers the voltage model judges and how, so installing over 1.16.0b1.dev3 needs
+> nothing else. The stored voltage model is kept. Rows dev3 recorded keep their old values.
+
+### Changed
+
+- **A step's count no longer depends on where it falls in a 30 s window.** The windows either side of
+  a boundary are now compared every 5 s, not only every 30 s, and the largest step within any one
+  window's span is the one counted. On the fixed grid a step that straddled a boundary split in two:
+  a 400 W load step half way into a window vanished, a 1 kW one counted twice. Replayed over 179
+  daylight slots of 1 Hz history (5–12 Nov 2026), whether a slot held anything changed with the grid's
+  alignment on 31 slots before and 8 now, and the 6 Nov step test's cut, missed at 3 of 10 alignments,
+  is now found at all of them. Free-running slots still show about 4% of steps held. Pinned slots rise
+  from 44% to 53%, because a step that used to split into two sub-300 W halves now counts once.
+  `gen_steps` therefore counts distinct steps, still at most one per 30 s. The cut look-back is unchanged:
+  a step within 90 s of the slot's start or 60 s of its end still can't be judged a cut.
+
+### Fixed
+
+- **The per-slot sample work no longer runs on Home Assistant's event loop.** Converting the slot's
+  recorder states (about 12,000 a half-hour with 1 Hz inputs), the DC and export reductions, and the
+  off-MPP walk of the curtailment capture ran on the loop since 1.15.0. That was about 21 ms per
+  daylight slot on an Intel i5, an estimated 100–170 ms on a Raspberry Pi 4, during which automations
+  and the UI waited. All of it now runs in the executor beside the slot gate. Measured total cost is
+  unchanged at about 75–90 ms per daylight half-hour on the i5, roughly 0.4–0.7 s on a Pi 4
+  (estimated). A 2,000-slot soak in a thread pool showed no memory growth and no reference cycles.
+  The gate's input preparation also moved inside the job's error guard, so a failure there now leaves
+  that slot's gate columns unknown rather than abandoning the update.
+- **Every tracker on the inverter is now judged** (issue #109). The property's trackers were capped at
+  two, so on a three-MPPT inverter the third string never reached the voltage model, and the step
+  measures' voltage check (and their DC fallback for generation) missed it too. The cap now applies
+  only to the two stored `dc_voltage`/`dc_current` column pairs. The voltage model also runs per
+  inverter now, the way `dc_offmpp_min` already did, and the property row takes the worst inverter.
+- **The voltage model trains on strings of different lengths** (issue #109). Its bypass-shading test
+  rejected any sample where the trackers sat more than 5% apart in raw volts. Strings of different
+  lengths sit 20–35% apart, so every sample failed and the model never trained (`n = 0` on the
+  reporter's three-string system; 0 samples in four hours of their 19 Oct trace under 1.15.0, 1,323
+  under this build). Each tracker is now judged against its own reference: the model's prediction once
+  it is ready, before that the tracker's usual share of the slot voltage over its last 48 slots. That
+  share is kept in memory, so a model that is not yet ready waits three slots after a restart before
+  it trains. A string shaded 15% below its own normal is still rejected, before and after the model
+  is ready.
+
 ## [1.16.0b1.dev3] - 2026-11-11
 
 > Private test build, not published. Changes only how `cut_steps` is counted, so installing over

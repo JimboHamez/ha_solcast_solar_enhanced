@@ -7,11 +7,14 @@ import random
 
 import pytest
 
-from custom_components.solcast_solar_enhanced.const import VMODEL_FORGET, VMODEL_MIN_SAMPLES
+from custom_components.solcast_solar_enhanced.const import VMODEL_FORGET, VMODEL_MIN_SAMPLES, VMODEL_SHARE_MIN_SLOTS
 from custom_components.solcast_solar_enhanced.vmodel import TrackerFit, VoltageModel, _solve, evaluate_slot, features
 
 SLOT = 1800.0
 G_FLAT = 900.0
+# Issue #109: strings of different lengths on one inverter (East 202 V against North 269 V).
+STRING_RATIO = 202.0 / 269.0
+UNKNOWN = {"vexcess_s": -1.0, "vratio_p50": -1.0, "vratio_p90": -1.0, "ready": False}
 
 
 def _true_v(temp: float, g: float) -> float:
@@ -49,16 +52,19 @@ def _slot(
     return {"t1": (v1, i1), "t2": (v2, i2)}
 
 
-def _trained(seed: int = 0) -> VoltageModel:
-    """A model trained on varied healthy slots until ready."""
+def _trained(seed: int = 0, tracker2_scale: float = 1.0) -> VoltageModel:
+    """A model trained on varied healthy slots until ready (bounded, so a model that never trains fails)."""
     model = VoltageModel()
     rng = random.Random(seed)
     start = 0.0
-    while not (model.ready("t1") and model.ready("t2")):
+    for _ in range(500):
+        if model.ready("t1") and model.ready("t2"):
+            return model
         temp, g = rng.uniform(5, 35), rng.uniform(300, 1050)
-        evaluate_slot(start, start + SLOT, _slot(start, temp=temp, g=g, seed=int(start)), temp, lambda _t, g=g: g, model)
+        trackers = _slot(start, temp=temp, g=g, seed=int(start), tracker2_scale=tracker2_scale)
+        evaluate_slot(start, start + SLOT, trackers, temp, lambda _t, g=g: g, model)
         start += SLOT
-    return model
+    raise AssertionError("the model never became ready")
 
 
 def _run(model, start=10_000_000.0, temp=20.0, g=G_FLAT, export=None, limit=0.0, **slot_kw):
@@ -80,10 +86,62 @@ def test_the_fit_recovers_the_true_voltage_across_temperature_and_irradiance():
 
 
 def test_not_ready_until_enough_samples_then_everything_unknown_before():
+    """Two trackers: the first slots only learn each tracker's share (the shading reference)."""
     model = VoltageModel()
-    first = _run(model, start=0.0)
-    assert first == {"vexcess_s": -1.0, "vratio_p50": -1.0, "vratio_p90": -1.0, "ready": False}
-    assert model.fit("t1").n > 0 and model.fit("t1").n < VMODEL_MIN_SAMPLES
+    for k in range(VMODEL_SHARE_MIN_SLOTS):
+        assert _run(model, start=k * SLOT, seed=k) == UNKNOWN
+        assert model.fit("t1").n == 0
+    assert _run(model, start=VMODEL_SHARE_MIN_SLOTS * SLOT) == UNKNOWN
+    assert 0 < model.fit("t1").n < VMODEL_MIN_SAMPLES
+
+
+def test_a_single_tracker_trains_from_its_first_slot():
+    """No other tracker to be shaded against, so nothing to wait for."""
+    model = VoltageModel()
+    trackers = {"t1": _slot(0.0)["t1"]}
+    evaluate_slot(0.0, SLOT, trackers, 20.0, lambda _t: G_FLAT, model)
+    assert model.fit("t1").n > 0
+
+
+def test_strings_of_different_lengths_train_and_judge():
+    """Issue #109: raw volts 25% apart failed the bypass test on every sample, so n stayed 0 forever."""
+    model = _trained(tracker2_scale=STRING_RATIO)
+    healthy = _run(model, tracker2_scale=STRING_RATIO)
+    assert healthy["ready"] and healthy["vexcess_s"] == 0.0
+    assert healthy["vratio_p50"] == pytest.approx(1.0, abs=0.005)
+    limited = _run(model, start=11_000_000.0, v_scale=1.08, amps=7.0, tracker2_scale=STRING_RATIO)
+    assert limited["vexcess_s"] == pytest.approx(SLOT, abs=60)
+
+
+def test_bypass_shading_before_the_model_is_ready_is_judged_against_each_trackers_own_share():
+    model = VoltageModel()
+    for k in range(VMODEL_SHARE_MIN_SLOTS + 1):
+        _run(model, start=k * SLOT, seed=k, tracker2_scale=STRING_RATIO)
+    n0 = model.fit("t1").n
+    assert n0 > 0
+    _run(model, start=100 * SLOT, tracker2_scale=STRING_RATIO * 0.85)  # 15% below its own normal.
+    assert model.fit("t1").n == pytest.approx(n0)
+    _run(model, start=101 * SLOT, tracker2_scale=STRING_RATIO)  # The shaded slot did not shift the shares.
+    assert model.fit("t1").n > n0
+
+
+def test_bypass_shading_on_unequal_strings_is_judged_against_the_model():
+    model = _trained(tracker2_scale=STRING_RATIO)
+    n0 = model.fit("t1").n
+    r = _run(model, v_scale=1.08, tracker2_scale=STRING_RATIO * 0.85)
+    assert r["vexcess_s"] == 0.0 and r["vratio_p50"] == -1.0
+    assert model.fit("t1").n == pytest.approx(n0)
+
+
+def test_a_shaded_first_slot_does_not_poison_the_shares():
+    """The shares are a median: one whole slot with a string shaded must not set them."""
+    model = VoltageModel()
+    _run(model, start=0.0, tracker2_scale=0.85)
+    for k in range(1, VMODEL_SHARE_MIN_SLOTS):
+        _run(model, start=k * SLOT, seed=k)
+    n0 = model.fit("t1").n
+    _run(model, start=10 * SLOT, seed=10)
+    assert model.fit("t1").n > n0
 
 
 def test_solve_matches_a_known_system_and_refuses_a_singular_one():

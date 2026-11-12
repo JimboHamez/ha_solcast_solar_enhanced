@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import bisect
 import math
+import statistics
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TypedDict
 
@@ -46,6 +48,9 @@ from .const import (
     VMODEL_SCAN_RATIO,
     VMODEL_SCAN_WINDOW_S,
     VMODEL_SHADE_SPREAD,
+    VMODEL_SHARE_MIN_SAMPLES,
+    VMODEL_SHARE_MIN_SLOTS,
+    VMODEL_SHARE_SLOTS,
     VMODEL_STEADY_CV,
     VMODEL_STEADY_WINDOW_S,
 )
@@ -146,6 +151,25 @@ class VoltageModel:
     def __init__(self) -> None:
         """Start with no trackers."""
         self.trackers: dict[str, TrackerFit] = {}
+        # Each tracker's recent share of the slot voltage (its median over the mean of
+        # every tracker's median): the bypass-spread reference until the model is ready.
+        # In memory only; after a restart training waits VMODEL_SHARE_MIN_SLOTS slots.
+        self.shares: dict[str, deque[float]] = {}
+
+    def share(self, tracker: str) -> float | None:
+        """The tracker's usual share of the slot voltage, or ``None`` before enough slots."""
+        recent = self.shares.get(tracker)
+        if recent is None or len(recent) < VMODEL_SHARE_MIN_SLOTS:
+            return None
+        return statistics.median(recent)
+
+    def add_shares(self, medians: Mapping[str, float]) -> None:
+        """Record one slot's per-tracker median voltages as shares of their mean."""
+        mean = sum(medians.values()) / len(medians)
+        if mean <= 0:
+            return
+        for tracker, median in medians.items():
+            self.shares.setdefault(tracker, deque(maxlen=VMODEL_SHARE_SLOTS)).append(median / mean)
 
     def fit(self, tracker: str) -> TrackerFit:
         """The fit for ``tracker``, created on first use."""
@@ -224,8 +248,14 @@ def evaluate_slot(
         clean_export = [p is not None and p < VMODEL_CLEAN_EXPORT_FRAC * export_limit_kw for p in peak]
 
     ready_before = all(model.ready(n) for n in names)
+    # Before the model is ready, the bypass-spread test needs each tracker's usual share
+    # of the slot voltage; without one, a multi-tracker slot cannot be judged for shading,
+    # so it is not trained on (its medians still count toward the shares).
+    shares = {n: model.share(n) for n in names}
+    spread_ref_known = ready_before or len(names) < 2 or all(v is not None for v in shares.values())
     excess_s = 0.0
     ratios: list[float] = []
+    judged: dict[str, list[float]] = {n: [] for n in names}
     for k, t in enumerate(grid):
         vs = [volts[n][k] for n in names]
         cs = [amps[n][k] for n in names]
@@ -237,13 +267,20 @@ def evaluate_slot(
             continue
         if any(v < VMODEL_SCAN_RATIO * (scan_max[n][k] or v) for n, v in zip(names, v_ok, strict=True)):
             continue  # An MPPT scan sweeps the voltage down for a few seconds.
-        if len(v_ok) >= 2 and max(v_ok) > (1 + VMODEL_SHADE_SPREAD) * min(v_ok):
-            continue  # Bypass diodes: shading lowers one tracker's voltage. Never limiting.
         g = g_at(t)
         if g < VMODEL_MIN_G:
             continue  # Outside the fitted range, and too dim for an export limit to bind.
+        for n, v in zip(names, v_ok, strict=True):
+            judged[n].append(v)
         x = features(temp, g)
         preds = [model.fit(n).predict(x) for n in names]
+        if len(names) >= 2:
+            if not spread_ref_known:
+                continue
+            refs = preds if ready_before else [shares[n] for n in names]
+            rel = [v / r for v, r in zip(v_ok, refs, strict=True) if r]
+            if len(rel) < len(names) or max(rel) > (1 + VMODEL_SHADE_SPREAD) * min(rel):
+                continue  # Bypass diodes: shading lowers one tracker against its own normal. Never limiting.
         if ready_before:
             per_tracker = [v / p for v, p in zip(v_ok, preds, strict=True) if p]
             if len(per_tracker) < len(names):
@@ -265,6 +302,8 @@ def evaluate_slot(
             ):
                 continue  # No export series: a sample far above the fit is likely limited.
             fit.add(x, v)
+    if len(names) >= 2 and all(len(judged[n]) >= VMODEL_SHARE_MIN_SAMPLES for n in names):
+        model.add_shares({n: statistics.median(judged[n]) for n in names})
     for n in names:
         model.fit(n).solve()
     if not ready_before:

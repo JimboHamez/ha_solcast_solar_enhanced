@@ -8,7 +8,11 @@ dynamic one), the inverter follows the house: a load step moves generation and
 leaves net power where it was. Free running, a generation step is the sky changing
 and lands on the grid instead. So each slot counts:
 
-* ``gen_steps`` — window-to-window changes in generation of at least ``STEP_MIN_W``.
+* ``gen_steps`` — changes in generation of at least ``STEP_MIN_W`` between the windows
+  either side of a boundary. Boundaries are tried every ``STEP_HOP_S``, not only a
+  window apart, and of the qualifying ones the largest step within any one window's
+  span is the one counted, so neither the count nor a step's verdict depends on where
+  it fell relative to the slot's start.
 * ``held_steps`` — those net power absorbed (moved by at most ``STEP_HELD_FRACTION``
   of the step). Needs only grid power and generation power, so it works on any system,
   string or microinverter, and never needs to know the limit.
@@ -29,24 +33,24 @@ and lands on the grid instead. So each slot counts:
 
 The last two need DC voltage and are ``-1`` without it; the first two are ``-1``
 without both power series. Series are compared as time-weighted window means, on
-which see ``STEP_WINDOW_S``. Net power is import-positive (Home Assistant's grid
+which see ``STEP_WINDOW_S`` and ``STEP_HOP_S``. Net power is import-positive (Home Assistant's grid
 convention); only the cut test reads its sign, the held test uses its size.
 """
 
 from __future__ import annotations
 
 import bisect
-import math
 import statistics
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from itertools import pairwise
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 from .const import (
     STEP_CUT_ABSORBED,
     STEP_CUT_MIN_W,
     STEP_CUT_V,
     STEP_HELD_FRACTION,
+    STEP_HOP_S,
     STEP_LIMITER_RESPONSE_S,
     STEP_MIN_W,
     STEP_REGULATED_V,
@@ -54,7 +58,10 @@ from .const import (
 )
 
 Samples = Sequence[tuple[float, float]]
+WindowMean = Callable[[float, float], float | None]
 UNKNOWN = -1
+# Float slack for comparing boundary times built from integer hops.
+_EPS = 1e-6
 
 
 class StepMeasures(TypedDict):
@@ -68,32 +75,48 @@ class StepMeasures(TypedDict):
     gen_gap_s: float | None
 
 
-def window_means(samples: Samples, start: float, end: float, window_s: float = STEP_WINDOW_S) -> list[float | None]:
-    """Time-weighted mean of a held series over each ``window_s`` window in ``[start, end)``.
+class _Step(NamedTuple):
+    """A qualifying boundary: generation and net power in the windows either side of ``at``."""
 
-    A recorded state holds until the next one. A window the series has no value at the
-    start of (no sample at or before it) is ``None``.
+    at: float
+    g0: float
+    g1: float
+    n0: float
+    n1: float
+
+    @property
+    def dp(self) -> float:
+        """The generation step, W."""
+        return self.g1 - self.g0
+
+
+def held_mean(samples: Samples) -> WindowMean:
+    """The time-weighted mean of a held series over any window ``[a, b)``.
+
+    A recorded state holds until the next one, and the last one holds to the end.
+    The mean is ``None`` for a window the series has no value at the start of (no
+    sample at or before it). Built once from running totals, so each window costs
+    a bisection rather than a scan, which is what makes a short hop affordable.
+    The samples must be in time order.
     """
     times = [t for t, _ in samples]
-    out: list[float | None] = []
-    a = start
-    while a + window_s <= end + 1e-9:
-        b = a + window_s
-        i = bisect.bisect_right(times, a) - 1
-        if i < 0:
-            out.append(None)
-            a = b
-            continue
-        total, t, value = 0.0, a, samples[i][1]
-        j = i + 1
-        while j < len(samples) and samples[j][0] < b:
-            total += value * (samples[j][0] - t)
-            t, value = samples[j][0], samples[j][1]
-            j += 1
-        total += value * (b - t)
-        out.append(total / window_s)
-        a = b
-    return out
+    values = [v for _, v in samples]
+    area = [0.0]
+    for i in range(1, len(times)):
+        area.append(area[-1] + values[i - 1] * (times[i] - times[i - 1]))
+
+    def integral(x: float) -> float | None:
+        i = bisect.bisect_right(times, x) - 1
+        return None if i < 0 else area[i] + values[i] * (x - times[i])
+
+    def mean(a: float, b: float) -> float | None:
+        lo = integral(a)
+        hi = integral(b)
+        if lo is None or hi is None:
+            return None
+        return (hi - lo) / (b - a)
+
+    return mean
 
 
 def median_gap(samples: Samples, start: float, end: float) -> float | None:
@@ -132,61 +155,90 @@ def measure_steps(
     }
     if not net_w or not gen_w:
         return out
-    net = window_means(net_w, start, end)
-    gen = window_means(gen_w, start, end)
-    volts = [window_means(v, start, end) for v in tracker_volts if v]
+    gen, net = held_mean(gen_w), held_mean(net_w)
+    volts = [held_mean(v) for v in tracker_volts if v]
     has_dc = bool(volts) and len(volts) == len(tracker_volts)
-    steps = held = regulated = cut = 0
-    for k in range(1, len(gen)):
-        g0, g1, n0, n1 = gen[k - 1], gen[k], net[k - 1], net[k]
-        if g0 is None or g1 is None or n0 is None or n1 is None:
-            continue
-        dp = g1 - g0
-        if abs(dp) < STEP_MIN_W:
-            continue
-        steps += 1
-        is_held = abs(n1 - n0) <= STEP_HELD_FRACTION * abs(dp)
+    held = regulated = cut = 0
+    steps = _peak_steps(_candidates(start, end, gen, net))
+    for step in steps:
+        is_held = abs(step.n1 - step.n0) <= STEP_HELD_FRACTION * abs(step.dp)
         held += is_held
         if not has_dc:
             continue
-        against = _against(volts, k, dp)
+        against = _against(volts, step.at, step.dp)
         if against is None:
             continue
         if is_held and against >= STEP_REGULATED_V:
             regulated += 1
         elif (
             not is_held
-            and dp < 0
+            and step.dp < 0
             and against >= STEP_CUT_V
-            and g0 >= STEP_CUT_MIN_W
-            and _grid_carries_the_drop(gen, net, k)
+            and step.g0 >= STEP_CUT_MIN_W
+            and _grid_carries_the_drop(gen, net, step.at, start, end)
         ):
             cut += 1
-    out["gen_steps"], out["held_steps"] = steps, held
+    out["gen_steps"], out["held_steps"] = len(steps), held
     if has_dc:
         out["regulated_steps"], out["cut_steps"] = regulated, cut
     return out
 
 
-def _grid_carries_the_drop(gen: Sequence[float | None], net: Sequence[float | None], k: int) -> bool:
-    """Whether the drop at window ``k`` still lands on the grid, judged from before the episode.
+def _candidates(start: float, end: float, gen: WindowMean, net: WindowMean) -> list[_Step]:
+    """Every boundary on the ``STEP_HOP_S`` grid whose generation step is at least ``STEP_MIN_W``.
 
-    The reference window ends ``STEP_LIMITER_RESPONSE_S`` before window ``k - 1`` starts,
-    so a limiter's overshoot after a load drop cannot reach it; the settled window is
-    ``k + 1``. A limiter still winding back there holds export above the limit, which
-    only lowers import, so it cannot pass for a cut either.
+    A boundary needs a full window either side inside the slot, and a value from both
+    series in each.
     """
-    ref, settled = k - 2 - math.ceil(STEP_LIMITER_RESPONSE_S / STEP_WINDOW_S), k + 1
-    if ref < 0 or settled >= len(gen):
+    out: list[_Step] = []
+    j = 0
+    while (at := start + STEP_WINDOW_S + j * STEP_HOP_S) + STEP_WINDOW_S <= end + _EPS:
+        j += 1
+        g0, g1 = gen(at - STEP_WINDOW_S, at), gen(at, at + STEP_WINDOW_S)
+        n0, n1 = net(at - STEP_WINDOW_S, at), net(at, at + STEP_WINDOW_S)
+        if g0 is None or g1 is None or n0 is None or n1 is None or abs(g1 - g0) < STEP_MIN_W:
+            continue
+        out.append(_Step(at, g0, g1, n0, n1))
+    return out
+
+
+def _peak_steps(candidates: list[_Step]) -> list[_Step]:
+    """The largest steps, no two closer than a window: one step is counted once.
+
+    Overlapping windows see a step at every boundary within a window of it, each
+    with a share of its size. Taking the largest first keeps the boundary that
+    straddles the step, and a window's spacing is what the fixed grid allowed, so
+    two real steps a window apart are both kept.
+    """
+    picked: list[_Step] = []
+    for step in sorted(candidates, key=lambda s: (-abs(s.dp), s.at)):
+        if all(abs(step.at - p.at) >= STEP_WINDOW_S - _EPS for p in picked):
+            picked.append(step)
+    return sorted(picked, key=lambda s: s.at)
+
+
+def _grid_carries_the_drop(gen: WindowMean, net: WindowMean, at: float, start: float, end: float) -> bool:
+    """Whether the drop at ``at`` still lands on the grid, judged from before the episode.
+
+    The reference window ends ``STEP_LIMITER_RESPONSE_S`` before the window ahead of
+    the step starts, so a limiter's overshoot after a load drop cannot reach it; the
+    settled window is the one after the window behind the step. A limiter still
+    winding back there holds export above the limit, which only lowers import, so it
+    cannot pass for a cut either.
+    """
+    ref_end = at - STEP_WINDOW_S - STEP_LIMITER_RESPONSE_S
+    ref_start, settled_start = ref_end - STEP_WINDOW_S, at + STEP_WINDOW_S
+    if ref_start < start - _EPS or settled_start + STEP_WINDOW_S > end + _EPS:
         return False
-    g0, g1, n0, n1 = gen[ref], gen[settled], net[ref], net[settled]
+    g0, g1 = gen(ref_start, ref_end), gen(settled_start, settled_start + STEP_WINDOW_S)
+    n0, n1 = net(ref_start, ref_end), net(settled_start, settled_start + STEP_WINDOW_S)
     if g0 is None or g1 is None or n0 is None or n1 is None:
         return False
     lost = g0 - g1
     return lost >= STEP_MIN_W and n1 - n0 >= STEP_CUT_ABSORBED * lost
 
 
-def _against(volts: Sequence[Sequence[float | None]], k: int, dp: float) -> float | None:
+def _against(volts: Sequence[WindowMean], at: float, dp: float) -> float | None:
     """The smallest relative voltage move against the power step, over every tracker.
 
     Positive when every tracker's voltage moved opposite to power (power up, voltage
@@ -194,8 +246,8 @@ def _against(volts: Sequence[Sequence[float | None]], k: int, dp: float) -> floa
     """
     sign = 1.0 if dp > 0 else -1.0
     moves: list[float] = []
-    for series in volts:
-        v0, v1 = series[k - 1], series[k]
+    for mean in volts:
+        v0, v1 = mean(at - STEP_WINDOW_S, at), mean(at, at + STEP_WINDOW_S)
         if v0 is None or v1 is None or v0 <= 0:
             return None
         moves.append(-sign * (v1 - v0) / v0)

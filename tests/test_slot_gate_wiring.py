@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,8 +29,10 @@ from custom_components.solcast_solar_enhanced.const import (
     DEFAULT_SITE_ID,
     DOMAIN,
     VMODEL_FORGET,
+    VMODEL_SHARE_MIN_SLOTS,
     GateFlag,
 )
+from custom_components.solcast_solar_enhanced import coordinator as coordinator_module
 from custom_components.solcast_solar_enhanced.coordinator import SolcastEnhancedCoordinator
 
 TRACKERS = {
@@ -176,6 +180,48 @@ async def test_a_gate_failure_never_costs_the_row(hass, base_with_forecast):
     assert set(rows) == {DEFAULT_SITE_ID, "A", "B"}
     assert "sky_dip_s" not in rows[DEFAULT_SITE_ID]  # The store writes its unknown default.
     assert rows["A"]["shade_dip_s"] == -1.0
+
+
+THREE = {
+    s: {"voltage_sensor": f"sensor.v{s}", "current_sensor": f"sensor.i{s}"} for s in ("east", "north", "west")
+}
+
+
+def _three_strings(start, end):
+    """Issue #109's inverter: three strings of different lengths on one inverter, all healthy."""
+    volts = {"east": 202.0, "north": 269.0, "west": 239.0}
+    out = {"sensor.export_power": [(float(start), 1.0)]}
+    for s, v in volts.items():
+        out[f"sensor.v{s}"] = [(float(t), v) for t in range(int(start), int(end))]
+        out[f"sensor.i{s}"] = [(float(t), 8.0) for t in range(int(start), int(end))]
+    return out
+
+
+async def test_every_tracker_on_a_three_mppt_inverter_is_judged(hass, base_with_forecast):
+    """Issue #109: a cap of two left the third string out of the voltage model and the step measures."""
+    group = {
+        "ac_sensor": "sensor.pv_power_30min",
+        "strings": [{"site": s, "mppts": [THREE[s]]} for s in ("east", "north", "west")],
+    }
+    coord = _coordinator(hass, [group])
+    coord._weather = {"temp": 22.0}
+    coord._irradiance = {"ghi": 850.0, "dni": 800.0, "dhi": 90.0}
+    seen: list[int] = []
+    real_steps = coordinator_module.measure_steps
+
+    def steps(start, end, net_w, gen_w, tracker_volts=()):
+        seen.append(len(tracker_volts))
+        return real_steps(start, end, net_w, gen_w, tracker_volts)
+
+    with (
+        patch.object(coord._vmodel_store, "async_delay_save"),
+        patch.object(coordinator_module, "measure_steps", side_effect=steps),
+    ):
+        for _ in range(VMODEL_SHARE_MIN_SLOTS + 1):
+            await _update(coord, _three_strings)
+    assert {f"sensor.v{s}" for s in THREE} <= set(coord._vmodel.trackers)
+    assert all(coord._vmodel.fit(f"sensor.v{s}").n > 0 for s in THREE)
+    assert seen and all(n == 3 for n in seen)
 
 
 async def test_the_model_trains_and_is_saved(hass, base_with_forecast):
@@ -371,3 +417,54 @@ async def test_the_query_asks_for_the_gate_inputs(hass, base_with_forecast):
     ):
         await coord._do_update()
     assert "sensor.ac_a" in asked
+
+
+# ---------------------------------------------------------------------------
+# Sample walking stays off the event loop
+# ---------------------------------------------------------------------------
+
+
+def _record_thread(coord, name: str, seen: dict[str, int]):
+    """Wrap ``coord.<name>`` to note the thread it runs on, then run the original.
+
+    A plain function, not a Mock: the test harness runs a Mock handed to
+    ``async_add_executor_job`` inline on the loop, which would hide the dispatch.
+    """
+    original = getattr(coord, name)
+
+    def wrapper(*args, **kwargs):
+        seen[name] = threading.get_ident()
+        return original(*args, **kwargs)
+
+    return patch.object(coord, name, new=wrapper)
+
+
+async def test_slot_reductions_run_off_the_event_loop(hass, base_with_forecast):
+    """A slot of 1 Hz inputs is ~12k samples: every walk over them belongs in the executor.
+
+    Measured in 1.16.0b1.dev3: ~21 ms per slot on an i5 held the loop, an estimated
+    100-170 ms on a Raspberry Pi 4.
+    """
+    coord = _coordinator(hass, _dc_groups())
+    seen: dict[str, int] = {}
+    names = ("_reduce_slot_samples", "_reduce_curtailment", "_offmpp_minutes", "_gate_arrays", "_step_inputs")
+    with contextlib.ExitStack() as stack:
+        for name in names:
+            stack.enter_context(_record_thread(coord, name, seen))
+        await _update(coord, lambda s, e: _samples_with_dips(s, e, dip_a=[(100, 400)], dip_b=[(100, 400)]))
+    loop_thread = threading.get_ident()
+    assert set(seen) == set(names)
+    assert all(ident != loop_thread for ident in seen.values()), seen
+
+
+async def test_recorder_states_are_converted_off_the_event_loop(hass, base_with_forecast):
+    coord = _coordinator(hass, _dc_groups())
+    seen: dict[str, int] = {}
+
+    async def raw(entity_ids, start, end):
+        return {"sensor.v1": [SimpleNamespace(state="370.0", last_updated_timestamp=float(start + 1))]}
+
+    with patch.object(coord, "_recorder_states", side_effect=raw), _record_thread(coord, "_states_to_samples", seen):
+        out = await coord._interval_samples({"sensor.v1"}, 0, 1800)
+    assert out == {"sensor.v1": [(1.0, 370.0)]}
+    assert seen["_states_to_samples"] != threading.get_ident()

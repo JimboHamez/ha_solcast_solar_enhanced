@@ -297,7 +297,7 @@ to the Solcast `resource_id`, with `0 = '_total'`.
 | `vratio_p90` | property | ×1000 | −1 (unknown) | gate: p90 V ÷ model, lowest tracker |
 | `sample_gap_s` | property | ×100 | −1 (unknown) | gate: median sample interval of the inputs (s) |
 | `gate_flags` | property | ×1 | −1 (unknown) | gate: `GateFlag` bits (below) |
-| `gen_steps` | property | ×1 | −1 (unknown) | steps: generation steps of at least 300 W between 30 s windows |
+| `gen_steps` | property | ×1 | −1 (unknown) | steps: generation steps of at least 300 W between 30 s windows (compared every 5 s, one per 30 s) |
 | `held_steps` | property | ×1 | −1 (unknown) | steps: those net power absorbed (an export hold) |
 | `regulated_steps` | property | ×1 | −1 (unknown) | steps: held steps with every tracker's voltage moving against power |
 | `cut_steps` | property | ×1 | −1 (unknown) | steps: unabsorbed drops with every tracker's voltage up ≥ 5% that the grid still carries a window later, judged against a window before any limiter overshoot |
@@ -357,7 +357,7 @@ batched recorder query as the DC capture (about 25 ms a slot on an i5, an estima
 | `vratio_p50`, `vratio_p90` | property | median and p90 of V ÷ model (lowest tracker), the evidence behind `vexcess_s` |
 | `sample_gap_s` | property | median sample interval of the inputs |
 | `gate_flags` | property | `GateFlag` bits below |
-| `gen_steps`, `held_steps` | property | generation steps between 30 s windows, and how many net power absorbed (1.16.0b1.dev1) |
+| `gen_steps`, `held_steps` | property | generation steps between 30 s windows, and how many net power absorbed (1.16.0b1.dev1; overlapping windows since dev4) |
 | `regulated_steps`, `cut_steps` | property | held steps with tracker voltage moving against power; unabsorbed drops with voltage up ≥ 5% that the grid still carries, judged by look-back |
 
 Everything is **time-weighted** on the merged event timeline (a state holds until the
@@ -396,7 +396,13 @@ rise by at least `STEP_CUT_ABSORBED` (75%) of that. Codes allow a limiter up to 
 soft limit), 5 s (ENA G100) or 30 s (a US power control system); the owner's GEN24 measured 570
 overshoots over 8–11 Nov, median 2.9 s, longest 11 s. So even the slowest has not started by the
 reference, and one still winding back at the settled window holds export *above* the limit, which only
-lowers import. A step in a slot's first three windows or its last goes unjudged.
+lowers import. A step within 90 s of a slot's start or 60 s of its end goes unjudged.
+Since 1.16.0b1.dev4 the windows either side of a boundary are compared every `STEP_HOP_S` (5 s)
+rather than only every 30 s, and of the qualifying boundaries the largest step within any one
+window's span is kept. On the fixed grid a step that straddled a boundary split in two, so whether
+it counted, and how, depended on where the slot happened to start: over 179 replayed slots whether a
+slot held anything changed with the grid's alignment on 31 (8 at 5 s), and the step test's cut was
+missed at 3 of 10 alignments (none at 5 s).
 The window matters: a regulator settles a few seconds after each step, and on the 6 Nov 2026 Fronius step test (0 kW then 2 kW) 30 s and 60 s windows
 gave 47–60% held in the holds against 0% free running, while 5 s windows could not separate
 them. Generation comes from the generation-power sensor when configured, else from the
@@ -438,6 +444,21 @@ of the fit), and judges nothing below `VMODEL_MIN_G` (150 W/m²). Replayed onlin
 22 Oct–1 Nov 2026 against export-pinned truth: **0 false slot flags**, 15 of 57 pinned
 slots caught; the misses are broken-cloud bursts and shallow trims, where little energy
 was lost. `dc_offmpp_min` keeps its old rule during the soak, for comparison.
+
+Since 1.16.0b1.dev4 (issue #109) the model runs **per inverter**, on every paired tracker
+of it (the sets `dc_offmpp_min` already used), and the property row takes the worst
+inverter. Before, the property's trackers were capped at two, so a third string never
+reached it; the cap now binds only the two stored `dc_voltage`/`dc_current` column pairs.
+The bypass-shading test judges each tracker against **its own** reference, never the other
+trackers' raw volts: strings of different lengths sit 20–35% apart, so the 5% raw spread
+rejected every sample and the model never trained (guiguan's 10 Nov store: `n = 0`; on
+their 19 Oct trace 1.15.0 trains 0 samples in four hours, dev4 1,323). Once ready the
+reference is the model's prediction. Before that it is the tracker's median share of the
+slot voltage over the last 48 slots (in memory), used once three slots have been seen, so
+a fresh model, or one after a restart that is not yet ready, trains from its fourth slot.
+**Known limit:** a model that is not yet ready has no excess test, so a curtailment
+episode during that window can be trained on when export sits below the limit (a ~0 kW
+cap does): 60 of 216 samples in guiguan's 19 Oct event, judged alone.
 
 ### Total PV energy balance
 

@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.solcast_solar_enhanced.const import STEP_LIMITER_RESPONSE_S, STEP_MIN_W, STEP_WINDOW_S
-from custom_components.solcast_solar_enhanced.step_measures import median_gap, measure_steps, window_means
+from custom_components.solcast_solar_enhanced.const import STEP_HOP_S, STEP_LIMITER_RESPONSE_S, STEP_MIN_W, STEP_WINDOW_S
+from custom_components.solcast_solar_enhanced.step_measures import held_mean, median_gap, measure_steps
 
 START, END = 0.0, 1800.0
 FIXTURE = Path(__file__).parent / "fixtures" / "step_test_2026-11-06.json.gz"
@@ -31,14 +31,18 @@ def _series(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return out
 
 
-def test_window_means_are_time_weighted() -> None:
-    samples = [(0.0, 100.0), (10.0, 400.0), (40.0, 0.0)]
-    means = window_means(samples, 0.0, 60.0)
-    assert means == pytest.approx([(100 * 10 + 400 * 20) / 30, (400 * 10 + 0 * 20) / 30])
+def test_held_mean_is_time_weighted() -> None:
+    mean = held_mean([(0.0, 100.0), (10.0, 400.0), (40.0, 0.0)])
+    assert mean(0.0, 30.0) == pytest.approx((100 * 10 + 400 * 20) / 30)
+    assert mean(30.0, 60.0) == pytest.approx((400 * 10 + 0 * 20) / 30)
+    assert mean(5.0, 35.0) == pytest.approx((100 * 5 + 400 * 25) / 30)  # Any window, not only a grid one.
 
 
-def test_window_means_need_a_value_at_the_window_start() -> None:
-    assert window_means([(45.0, 5.0)], 0.0, 90.0) == [None, None, pytest.approx(5.0)]
+def test_held_mean_needs_a_value_at_the_window_start() -> None:
+    mean = held_mean([(45.0, 5.0)])
+    assert mean(0.0, 30.0) is None
+    assert mean(30.0, 60.0) is None
+    assert mean(60.0, 90.0) == pytest.approx(5.0)
 
 
 def test_a_load_step_under_a_hold_is_held() -> None:
@@ -47,6 +51,33 @@ def test_a_load_step_under_a_hold_is_held() -> None:
     net = _series([(0, 0.0)])
     got = measure_steps(START, END, net, gen)
     assert (got["gen_steps"], got["held_steps"]) == (1, 1)
+
+
+@pytest.mark.parametrize("offset_s", range(int(STEP_WINDOW_S)))
+def test_a_step_counts_once_wherever_it_falls_in_a_window(offset_s: int) -> None:
+    """A 400 W held load step is one held step at any offset from the slot's grid.
+
+    On a fixed 30 s grid a step half way into a window splits into two 200 W changes, both
+    under STEP_MIN_W, and vanishes; a 1 kW step there counts twice. Overlapping windows
+    with one step kept per window's span count it once.
+    """
+    gen = _series([(0, 2000.0), (300 + offset_s, 2400.0)])
+    got = measure_steps(START, END, _series([(0, 0.0)]), gen)
+    assert (got["gen_steps"], got["held_steps"]) == (1, 1)
+    big = _series([(0, 2000.0), (300 + offset_s, 3000.0)])
+    assert measure_steps(START, END, _series([(0, 0.0)]), big)["gen_steps"] == 1
+
+
+def test_two_steps_a_window_apart_are_both_counted() -> None:
+    """Keeping one step per window's span must not swallow the next real step."""
+    gen = _series([(0, 2000.0), (300, 3000.0), (300 + int(STEP_WINDOW_S), 3600.0)])
+    assert measure_steps(START, END, _series([(0, 0.0)]), gen)["gen_steps"] == 2
+
+
+def test_the_hop_resolves_inside_a_window() -> None:
+    """The hop must divide the window into several boundaries, or the overlap does nothing."""
+    assert STEP_HOP_S <= STEP_WINDOW_S / 3
+    assert (STEP_WINDOW_S / STEP_HOP_S).is_integer()
 
 
 def test_a_cloud_step_lands_on_the_grid() -> None:
@@ -237,15 +268,52 @@ def test_real_export_hold_is_held_and_regulated(step_test: dict, generation: str
     assert got["held_steps"] / got["gen_steps"] > 0.3
 
 
+@pytest.mark.parametrize("shift_s", range(0, int(STEP_WINDOW_S), 3))
+def test_real_step_test_cut_survives_any_alignment(step_test: dict, shift_s: int) -> None:
+    """The 6 Nov 0 kW switch is a cut whatever second the slot's grid happens to start on.
+
+    The fixed 30 s grid of 1.16.0b1.dev3 missed it at 3 of these 10 alignments.
+    """
+    slot = step_test["hold"]
+
+    def shifted(key: str) -> list[tuple[float, float]]:
+        return [(t - shift_s, v) for t, v in _real(slot, key)]
+
+    got = measure_steps(START, END, shifted("grid"), shifted("ac"), [shifted("v1"), shifted("v2")])
+    assert got["cut_steps"] >= 1
+
+
+# The free slot's last two minutes break into sun and brush the 5 kW limit (export
+# 4.82 -> 4.91 kW at 28:50): a real, brief hold. Free running is judged before it.
+FREE_RUNNING_END = 1680.0
+
+
 @pytest.mark.parametrize("generation", ["ac", "dc"])
 def test_real_free_running_slot_holds_nothing(step_test: dict, generation: str) -> None:
     """The same morning an hour earlier, unconstrained under passing cloud: many steps, none held."""
     slot = step_test["free"]
     gen = _real(slot, "ac") if generation == "ac" else _dc_power(slot)
-    got = measure_steps(START, END, _real(slot, "grid"), gen, [_real(slot, "v1"), _real(slot, "v2")])
+    got = measure_steps(START, FREE_RUNNING_END, _real(slot, "grid"), gen, [_real(slot, "v1"), _real(slot, "v2")])
     assert got["gen_steps"] >= 10
-    assert got["held_steps"] <= 1
+    assert got["held_steps"] == 0
     assert got["regulated_steps"] == 0
+    assert got["cut_steps"] == 0
+
+
+@pytest.mark.parametrize("shift_s", range(0, int(STEP_WINDOW_S), 3))
+def test_real_limit_brush_is_held_at_any_alignment(step_test: dict, shift_s: int) -> None:
+    """The free slot's closing brush with the 5 kW limit is one held step, wherever the grid starts.
+
+    The fixed 30 s grid of 1.16.0b1.dev3 saw it at only 3 of these 10 alignments, and counted it
+    twice at two of those.
+    """
+    slot = step_test["free"]
+
+    def shifted(key: str) -> list[tuple[float, float]]:
+        return [(t - shift_s, v) for t, v in _real(slot, key)]
+
+    got = measure_steps(START, END, shifted("grid"), shifted("ac"), [shifted("v1"), shifted("v2")])
+    assert got["held_steps"] == 1
     assert got["cut_steps"] == 0
 
 

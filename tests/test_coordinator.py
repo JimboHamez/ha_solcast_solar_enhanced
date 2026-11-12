@@ -835,6 +835,8 @@ async def test_property_mppt_list_truncates_to_max_trackers(coordinator):
     got = coordinator._property_mppt_list(opts)
     assert len(got) == MAX_MPPT_TRACKERS
     assert got[0]["current_sensor"] == "sensor.ia"
+    # Only the two stored column pairs take the cap; judging the trackers together sees all three.
+    assert [m["current_sensor"] for m in coordinator._property_trackers(opts)] == ["sensor.ia", "sensor.ib", "sensor.ic"]
 
 
 # ---------------------------------------------------------------------------

@@ -129,6 +129,13 @@ GATE_COARSE_GAP_S = 60.0
 # Validated on a Fronius GEN24: 30 s and 60 s windows, or Envoy-style 60 s polls,
 # separate a hold from free running; 5 s does not.
 STEP_WINDOW_S = 30.0
+# Windows are compared at every boundary this far apart, not only a window apart, and
+# the largest step within any one window's span is the one counted. On a fixed grid a
+# step that straddled a boundary split between two, so its count and verdict depended
+# on where it fell: replayed over 179 slots of 1 Hz history (5-12 Nov 2026), whether a
+# slot held anything flipped with the grid's alignment on 31 slots (8 at 5 s), and the
+# 6 Nov step test's cut was missed at 3 of 10 alignments (none at 5 s).
+STEP_HOP_S = 5.0
 # A change in generation between windows at least this large is a step (W).
 STEP_MIN_W = 300.0
 # A step is "held" when net power moved by no more than this share of it.
@@ -169,6 +176,15 @@ VMODEL_STEADY_CV = 0.03  # Current coefficient of variation below which a sample
 VMODEL_SCAN_WINDOW_S = 30.0  # MPPT scan dips are judged against the max over this half-width.
 VMODEL_SCAN_RATIO = 0.95
 VMODEL_SHADE_SPREAD = 0.05  # Trackers further apart than this are bypass-shaded, not limited.
+# The spread is judged on each tracker's voltage over its own reference, never across raw
+# volts: strings of different lengths sit 20-35% apart (issue #109: 202/269/239 V), so a
+# raw comparison rejected every sample and the model never trained. Before the model is
+# ready the reference is the tracker's median share of the slot voltage over the last
+# VMODEL_SHARE_SLOTS slots (in memory), used once VMODEL_SHARE_MIN_SLOTS have been seen;
+# a slot adds its shares only with at least VMODEL_SHARE_MIN_SAMPLES judged samples.
+VMODEL_SHARE_SLOTS = 48
+VMODEL_SHARE_MIN_SLOTS = 3
+VMODEL_SHARE_MIN_SAMPLES = 60
 VMODEL_MIN_CURRENT_A = 0.5
 VMODEL_MIN_SAMPLES = 2000.0  # Healthy samples per tracker before the model is used.
 VMODEL_FORGET = 0.93  # Daily decay of the running sums: about a 14-day memory.
